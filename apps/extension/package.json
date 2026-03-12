@@ -10,7 +10,8 @@
     "build:prod": "node scripts/build.js prod",
     "build:all": "node scripts/build.js dev && node scripts/build.js staging && node scripts/build.js prod",
     "watch": "node scripts/watch.js",
-    "package": "node scripts/package.js"
+    "package": "node scripts/package.js",
+    "release": "node scripts/publish.js"
   },
   "devDependencies": {
     "esbuild": "^0.20.0"

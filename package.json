@@ -13,7 +13,8 @@
     "ext:staging": "pnpm --filter myvmk-genie-extension build:staging",
     "ext:prod": "pnpm --filter myvmk-genie-extension build:prod",
     "ext:watch": "pnpm --filter myvmk-genie-extension watch",
-    "ext:package": "pnpm --filter myvmk-genie-extension package"
+    "ext:package": "pnpm --filter myvmk-genie-extension package",
+    "ext:release": "pnpm --filter myvmk-genie-extension release"
   },
   "keywords": ["myvmk", "companion", "gaming"],
   "author": "",
