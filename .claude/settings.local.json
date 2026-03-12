@@ -23,7 +23,8 @@
       "Bash(git config:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(pnpm ext:publish:*)"
+      "Bash(pnpm ext:publish:*)",
+      "Bash(pnpm ext:release:*)"
     ]
   }
 }

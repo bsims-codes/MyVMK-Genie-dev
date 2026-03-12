@@ -9,12 +9,10 @@
     "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
 
-    "ext:dev": "pnpm --filter myvmk-genie-extension build:dev",
-    "ext:staging": "pnpm --filter myvmk-genie-extension build:staging",
-    "ext:prod": "pnpm --filter myvmk-genie-extension build:prod",
+    "ext:dev": "pnpm --filter myvmk-genie-extension dev",
     "ext:watch": "pnpm --filter myvmk-genie-extension watch",
-    "ext:package": "pnpm --filter myvmk-genie-extension package",
-    "ext:release": "pnpm --filter myvmk-genie-extension release"
+    "ext:release": "pnpm --filter myvmk-genie-extension release",
+    "ext:package": "pnpm --filter myvmk-genie-extension package"
   },
   "keywords": ["myvmk", "companion", "gaming"],
   "author": "",
