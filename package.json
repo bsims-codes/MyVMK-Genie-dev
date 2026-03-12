@@ -1,0 +1,22 @@
+{
+  "name": "myvmkpal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MyVMK Genie - A companion app for MyVMK",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm --filter web lint",
+
+    "ext:dev": "pnpm --filter myvmk-genie-extension build:dev",
+    "ext:staging": "pnpm --filter myvmk-genie-extension build:staging",
+    "ext:prod": "pnpm --filter myvmk-genie-extension build:prod",
+    "ext:watch": "pnpm --filter myvmk-genie-extension watch",
+    "ext:package": "pnpm --filter myvmk-genie-extension package"
+  },
+  "keywords": ["myvmk", "companion", "gaming"],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.32.0"
+}

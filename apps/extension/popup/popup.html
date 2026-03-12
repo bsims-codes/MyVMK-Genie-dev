@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyVMK Genie</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+      color: white;
+    }
+
+    .header {
+      padding: 16px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .section:last-child {
+      border-bottom: none;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 12px;
+    }
+
+    .phrase-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .phrase-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .phrase-number {
+      width: 24px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .phrase-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+
+    .phrase-input:focus {
+      outline: none;
+      border-color: #818cf8;
+    }
+
+    .phrase-input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      margin-top: 8px;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .status {
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      padding: 8px;
+    }
+
+    .status.success {
+      color: #4ade80;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .action-btn {
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn-icon {
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+
+    .action-btn-label {
+      font-size: 11px;
+    }
+
+    /* Commands View Styles */
+    .commands-view {
+      display: none;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .commands-view.active {
+      display: block;
+    }
+
+    .main-view.hidden {
+      display: none;
+    }
+
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 12px;
+    }
+
+    .back-btn:hover {
+      color: white;
+    }
+
+    .commands-header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .commands-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .commands-header p {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .command-category {
+      margin-bottom: 16px;
+    }
+
+    .category-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fbbf24;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(251, 191, 36, 0.3);
+    }
+
+    .command-item {
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .command-item:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .command-name {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+
+    .command-desc {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+    }
+
+    .shortcut-item {
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .shortcut-item:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .shortcut-keys {
+      font-size: 11px;
+      color: #818cf8;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .shortcut-desc {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <!-- Main View -->
+  <div class="main-view" id="main-view">
+  <div class="header">
+    <h1>MyVMK Genie</h1>
+    <p>Your companion for MyVMK</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Quick Actions</div>
+    <div class="quick-actions">
+      <button class="action-btn" id="screenshot-btn">
+        <div class="action-btn-icon">📸</div>
+        <div class="action-btn-label">Screenshot</div>
+      </button>
+      <button class="action-btn" id="webapp-btn">
+        <div class="action-btn-icon">🌐</div>
+        <div class="action-btn-label">Open Web App</div>
+      </button>
+      <button class="action-btn" id="game-btn">
+        <div class="action-btn-icon">🎮</div>
+        <div class="action-btn-label">Open MyVMK</div>
+      </button>
+      <button class="action-btn" id="gallery-btn">
+        <div class="action-btn-icon">🖼️</div>
+        <div class="action-btn-label">Gallery</div>
+      </button>
+      <button class="action-btn" id="commands-btn">
+        <div class="action-btn-icon">📖</div>
+        <div class="action-btn-label">Commands</div>
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Quick Phrases (Ctrl+Alt+#)</div>
+    <div id="phrases-container">
+      <!-- Phrases will be loaded here -->
+    </div>
+    <button class="btn btn-primary" id="save-btn" style="margin-top: 12px;">Save Phrases</button>
+    <div id="status" class="status"></div>
+  </div>
+  </div><!-- End Main View -->
+
+  <!-- Commands View -->
+  <div class="commands-view" id="commands-view">
+    <div class="section">
+      <button class="back-btn" id="back-btn">
+        <span>&larr;</span> Back
+      </button>
+
+      <div class="commands-header">
+        <h2>MyVMK Commands</h2>
+        <p>Type commands in chat. The leading ! or :: is required.</p>
+      </div>
+
+      <!-- General Commands -->
+      <div class="command-category">
+        <div class="category-title">General Commands</div>
+
+        <div class="command-item">
+          <div class="command-name">!me (text)</div>
+          <div class="command-desc">Sends a message in the room with your character name.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!s / !sig / !signature</div>
+          <div class="command-desc">Updates your signature with any text placed after the command.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!notrades / !toggletrades / !toggledtrading</div>
+          <div class="command-desc">Stops you from getting trade requests. Type again to re-enable.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!nofriends</div>
+          <div class="command-desc">Stops you from getting friend requests. Type again to re-enable.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!invisiblemode</div>
+          <div class="command-desc">Enables invisible mode so you appear offline. Type again or relog to disable.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!lucky</div>
+          <div class="command-desc">Sends you to a random guest room.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!sniff (user)</div>
+          <div class="command-desc">Sniffs a user and randomly generates a scent.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!roll #</div>
+          <div class="command-desc">Rolls a random number between 1 and #.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::screenshot</div>
+          <div class="command-desc">Downloads a picture of the room (hides chat bubbles).</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::screenshot av</div>
+          <div class="command-desc">Downloads a picture of the room (hides avatars).</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::screenshot chat</div>
+          <div class="command-desc">Downloads a picture of the room (includes chat bubbles).</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::presets</div>
+          <div class="command-desc">Opens a popup interface to view, delete, and edit clothing presets.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::discordtrade</div>
+          <div class="command-desc">Opens a searchable interface for trades and Discord's #trading-post.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::up</div>
+          <div class="command-desc">Clears your game window of chats.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::nolanyards</div>
+          <div class="command-desc">Prevents opening a user's pin lanyard. Type again to re-enable.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::avatars</div>
+          <div class="command-desc">Lists all users in the same room.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">::cratewins</div>
+          <div class="command-desc">Displays all items you won from crates.</div>
+        </div>
+      </div>
+
+      <!-- Keyboard Shortcuts -->
+      <div class="command-category">
+        <div class="category-title">Keyboard Shortcuts</div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift + Click a User</div>
+          <div class="shortcut-desc">Types the user's name into the chat box.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift + Press Next in Messages</div>
+          <div class="shortcut-desc">Deletes all messages.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift + Press - or + in Shops</div>
+          <div class="shortcut-desc">Bulk adds/subtracts 10 of an item.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift + Highlight in Inventory</div>
+          <div class="shortcut-desc">Allows you to sell the entire stack of a sellable item.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Right Click on Item While Trading</div>
+          <div class="shortcut-desc">Opens a dropdown for bulk adding items.</div>
+        </div>
+      </div>
+
+      <!-- Guest Room Commands -->
+      <div class="command-category">
+        <div class="category-title">Guest Room Commands</div>
+
+        <div class="command-item">
+          <div class="command-name">!spin</div>
+          <div class="command-desc">Spins all generators in the current room.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!resetstates rng</div>
+          <div class="command-desc">Resets only the random number generators to zero.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!resetstates</div>
+          <div class="command-desc">Resets all items in the room to default state (Generators, Flaming Ransacked Windows, Lanterns, Candles, etc.).</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!kick (user)</div>
+          <div class="command-desc">Kicks a specific user from the guest room.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!q / !queue</div>
+          <div class="command-desc">Shows users, queue size, and room capacity.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!preload</div>
+          <div class="command-desc">Toggles loading of all items in a room before entering. Type again to disable.</div>
+        </div>
+
+        <div class="command-item">
+          <div class="command-name">!cage (username)</div>
+          <div class="command-desc">Only available in Oogie's Lair guestroom; sends a user to the cage.</div>
+        </div>
+      </div>
+
+      <!-- Furniture Shortcuts -->
+      <div class="command-category">
+        <div class="category-title">Furniture Shortcuts</div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift While Placing Furniture</div>
+          <div class="shortcut-desc">Places multiples of an item consecutively if you have several in inventory.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Shift + Click a Furniture Item</div>
+          <div class="shortcut-desc">Puts the item back into your inventory.</div>
+        </div>
+
+        <div class="shortcut-item">
+          <div class="shortcut-keys">Hold Control + Click/Scroll a Furniture Item</div>
+          <div class="shortcut-desc">Rotates the item before placing it.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

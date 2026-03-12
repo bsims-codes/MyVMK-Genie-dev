@@ -1,0 +1,74 @@
+{
+  "manifest_version": 3,
+  "name": "MyVMK Genie",
+  "version": "1.0.0",
+  "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "tabCapture",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.myvmk.com/*",
+    "https://myvmk.com/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "myvmk-genie.png",
+      "32": "myvmk-genie.png",
+      "48": "myvmk-genie.png",
+      "128": "myvmk-genie.png"
+    }
+  },
+  "icons": {
+    "16": "myvmk-genie.png",
+    "32": "myvmk-genie.png",
+    "48": "myvmk-genie.png",
+    "128": "myvmk-genie.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.myvmk.com/*",
+        "https://myvmk.com/*",
+        "https://www.myvmk.com/client/*",
+        "https://myvmk.com/client/*"
+      ],
+      "js": ["audio-interceptor.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://www.myvmk.com/*",
+        "https://myvmk.com/*",
+        "https://www.myvmk.com/client/*",
+        "https://myvmk.com/client/*"
+      ],
+      "js": ["tesseract.min.js", "rooms.js", "audio-room-map.js", "content.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "take-screenshot": {
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Take screenshot"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["raingif.gif", "myvmk-genie.png", "genie-background.png", "genie-host-events.png", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png"],
+      "matches": ["https://www.myvmk.com/*", "https://myvmk.com/*"]
+    }
+  ]
+}

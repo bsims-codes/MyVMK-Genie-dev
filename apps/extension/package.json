@@ -1,0 +1,18 @@
+{
+  "name": "myvmk-genie-extension",
+  "version": "1.0.0",
+  "description": "MyVMK Genie Chrome Extension",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.js prod",
+    "build:dev": "node scripts/build.js dev",
+    "build:staging": "node scripts/build.js staging",
+    "build:prod": "node scripts/build.js prod",
+    "build:all": "node scripts/build.js dev && node scripts/build.js staging && node scripts/build.js prod",
+    "watch": "node scripts/watch.js",
+    "package": "node scripts/package.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}

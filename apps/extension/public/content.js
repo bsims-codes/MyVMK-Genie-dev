@@ -1,0 +1,5651 @@
+// MyVMK Genie - Content Script
+// Injected into myvmk.com pages (including game client popup)
+
+console.log('MyVMK Genie loaded on:', window.location.href)
+
+// ============================================
+// AUDIO CONTROL (uses audio-interceptor.js)
+// Communicates via custom events since interceptor runs in page context
+// ============================================
+function muteAllAudioContexts() {
+  // Dispatch event to page context where the interceptor runs
+  window.dispatchEvent(new CustomEvent('vmkgenie-mute'))
+  console.log('MyVMK Genie: Sent mute command to page')
+}
+
+function unmuteAllAudioContexts() {
+  // Dispatch event to page context where the interceptor runs
+  window.dispatchEvent(new CustomEvent('vmkgenie-unmute'))
+  console.log('MyVMK Genie: Sent unmute command to page')
+}
+// ============================================
+
+let currentRoom = null
+let currentRoomId = null
+let currentLand = null
+let detectedAudioUrl = null
+let audioRoomMappings = {} // Maps audio URL patterns to room IDs
+
+// Find room info by matching audio URL
+// Returns { id, land } object or null
+function findRoomByAudio(audioUrl) {
+  if (!audioUrl) return null
+
+  // Extract folder name from URL (e.g., "vmk_snd_pirates_lobby_II" from room_sound/vmk_snd_pirates_lobby_II/file.webm)
+  const folderMatch = audioUrl.match(/room_sound\/([^\/]+)\//)
+  const currentFolder = folderMatch ? folderMatch[1] : null
+
+  // Check built-in AUDIO_ROOM_MAP first (most reliable)
+  if (currentFolder && typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[currentFolder]) {
+    const entry = AUDIO_ROOM_MAP[currentFolder]
+    // Handle both old format (just id) and new format ({ id, land })
+    if (typeof entry === 'object') {
+      return entry
+    } else {
+      return { id: entry, land: null }
+    }
+  }
+
+  // Check user-created mappings
+  if (Object.keys(audioRoomMappings).length > 0) {
+    // Check for exact URL match
+    if (audioRoomMappings[audioUrl]) {
+      return { id: audioRoomMappings[audioUrl], land: null }
+    }
+
+    // Check for folder match in user mappings
+    if (currentFolder) {
+      for (const [pattern, roomId] of Object.entries(audioRoomMappings)) {
+        const patternFolderMatch = pattern.match(/room_sound\/([^\/]+)\//)
+        if (patternFolderMatch && patternFolderMatch[1] === currentFolder) {
+          return { id: roomId, land: null }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+// Extract folder name from audio URL for display
+function getAudioFolder(audioUrl) {
+  if (!audioUrl) return null
+
+  // Try room_sound folder pattern first (e.g., room_sound/vmk_snd_pirates_lobby_II/)
+  const folderMatch = audioUrl.match(/room_sound\/([^\/]+)\//)
+  if (folderMatch) return folderMatch[1]
+
+  // Try sound/room pattern (e.g., sound/room/VMK-camera.webm) - show filename
+  const fileMatch = audioUrl.match(/sound\/room\/([^\/]+)$/)
+  if (fileMatch) return `sound/room: ${fileMatch[1]}`
+
+  // Fallback: show last part of URL
+  const parts = audioUrl.split('/')
+  return parts[parts.length - 1] || null
+}
+
+// Get game canvas bounds for positioning overlays
+// Excludes bottom toolbar (~85px) from overlay area
+const GAME_TOOLBAR_HEIGHT = 0
+
+function getGameCanvasBounds() {
+  const gameCanvas = document.getElementById('canvas')
+  if (gameCanvas) {
+    const rect = gameCanvas.getBoundingClientRect()
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height - GAME_TOOLBAR_HEIGHT,
+      found: true
+    }
+  }
+  // Fallback to full viewport if game canvas not found
+  return {
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight - GAME_TOOLBAR_HEIGHT,
+    found: false
+  }
+}
+
+// Update all overlay canvases to match game canvas bounds
+function updateOverlayBounds() {
+  const bounds = getGameCanvasBounds()
+
+  const overlays = [
+    { canvas: rainCanvas, ctx: rainCtx },
+    { canvas: snowCanvas, ctx: snowCtx },
+    { canvas: fireworksCanvas, ctx: fireworksCtx },
+    { canvas: moneyCanvas, ctx: moneyCtx },
+    { canvas: emojiCanvas, ctx: emojiCtx }
+  ]
+
+  overlays.forEach(({ canvas, ctx }) => {
+    if (canvas) {
+      canvas.style.left = bounds.left + 'px'
+      canvas.style.top = bounds.top + 'px'
+      canvas.style.width = bounds.width + 'px'
+      canvas.style.height = bounds.height + 'px'
+      canvas.width = bounds.width
+      canvas.height = bounds.height
+    }
+  })
+
+  // Also update night overlay if enabled
+  if (isNightOverlayEnabled) {
+    updateNightOverlayBounds()
+  }
+}
+
+let currentAudio = null
+let phrasesCache = {}
+let lastQueuePosition = null
+let queueAlertThreshold = 5 // Alert when position is this or lower
+let tesseractWorker = null
+let isOcrReady = false
+let ocrScanInterval = null
+let mediaRecorder = null
+let recordedChunks = []
+let isRecording = false
+let recordBtn = null
+let currentStream = null
+let lastCaptchaCode = null
+let isRainEnabled = false
+let isStarsOverlayEnabled = false
+let isNightOverlayEnabled = false
+let isMoneyRainEnabled = false
+let isFireworksEnabled = false
+let isSnowEnabled = false
+let isEmojiRainEnabled = false
+let selectedEmoji = '🎉'
+let isPositionLocked = false
+let isSmallIconEnabled = false
+let customBackgroundColor = null // null means use default image
+
+// Rain effect (canvas-based like The Swan game)
+let rainDrops = []
+let rainAnimationId = null
+let rainCanvas = null
+let rainCtx = null
+let lastRainTime = 0
+const RAIN_DROP_COUNT = 150
+const RAIN_SPEED_MIN = 400
+const RAIN_SPEED_MAX = 700
+const RAIN_LENGTH_MIN = 15
+const RAIN_LENGTH_MAX = 30
+const RAIN_OPACITY = 0.3
+
+// Money rain effect
+let moneyDrops = []
+let moneyAnimationId = null
+let moneyCanvas = null
+let moneyCtx = null
+let lastMoneyTime = 0
+const MONEY_DROP_COUNT = 40
+const MONEY_SPEED_MIN = 150
+const MONEY_SPEED_MAX = 300
+const MONEY_SYMBOLS = ['💵', '💰', '💲', '🤑', '💸']
+const MONEY_SIZES = [20, 24, 28, 32]
+
+// Fireworks effect
+let fireworksCanvas = null
+let fireworksCtx = null
+let fireworksAnimationId = null
+let rockets = []
+let particles = []
+let lastFireworkTime = 0
+let nextLaunchTime = 0
+const FIREWORK_COLORS = [
+  ['255,68,68', '255,136,136', '255,204,204'], // Red
+  ['68,255,68', '136,255,136', '204,255,204'], // Green
+  ['68,68,255', '136,136,255', '204,204,255'], // Blue
+  ['255,255,68', '255,255,136', '255,255,204'], // Yellow
+  ['255,68,255', '255,136,255', '255,204,255'], // Magenta
+  ['68,255,255', '136,255,255', '204,255,255'], // Cyan
+  ['255,136,68', '255,170,102', '255,204,136'], // Orange
+  ['255,255,255', '238,238,238', '221,221,221'], // White
+  ['255,102,153', '255,153,187', '255,204,221'], // Pink
+  ['170,68,255', '204,136,255', '238,204,255'], // Purple
+]
+const PARTICLE_COUNT = 100
+const GRAVITY = 60
+const LAUNCH_INTERVAL_MIN = 600
+const LAUNCH_INTERVAL_MAX = 1500
+
+// Snow effect
+let snowflakes = []
+let snowAnimationId = null
+let snowCanvas = null
+let snowCtx = null
+let lastSnowTime = 0
+const SNOWFLAKE_COUNT = 150
+const SNOW_SPEED_MIN = 30
+const SNOW_SPEED_MAX = 80
+
+// Custom emoji rain effect
+let emojiDrops = []
+let emojiAnimationId = null
+let emojiCanvas = null
+let emojiCtx = null
+let lastEmojiTime = 0
+const EMOJI_DROP_COUNT = 35
+const EMOJI_SPEED_MIN = 100
+const EMOJI_SPEED_MAX = 200
+const EMOJI_PRESETS = ['🎉', '❤️', '⭐', '🔥', '🎈', '🌸', '🍀', '🎃', '🐱', '🦋', '🌈', '🍕']
+
+// Haunted Mansion ghost effect
+let activeGhosts = []
+let ghostSpawnInterval = null
+let ghostAnimationId = null
+let isGhostEffectActive = false
+const HAUNTED_MANSION_LOBBY_ID = 1104
+const GHOST_IMAGES = ['beadie-genie-1.png', 'beadie-genie-2.png']
+const GHOST_GLOW_COLOR = '118, 241, 243' // #76f1f3 in RGB
+const GHOST_MAX_COUNT = 1
+const GHOST_SPAWN_INTERVAL = 4000 // ms between spawns
+const GHOST_LIFETIME = 8000 // ms total lifetime
+
+// Room detection - tries multiple methods to find current room
+function detectRoom() {
+  let roomName = null
+  let roomSource = null
+
+  // Method 1: Check page title (might contain room name)
+  if (document.title) {
+    const title = document.title.trim()
+    // Ignore generic titles
+    if (title && !title.match(/^MyVMK(\s*[-–—]\s*Game)?$/i)) {
+      // Extract room name from title patterns like "MyVMK - Room Name"
+      const titleMatch = title.match(/MyVMK\s*[-–—]\s*(.+)/i)
+      if (titleMatch && titleMatch[1]) {
+        roomName = titleMatch[1].trim()
+        roomSource = 'title'
+      }
+    }
+  }
+
+  // Method 2: Look for room name in DOM elements
+  if (!roomName) {
+    const selectors = [
+      '.room-name', '#room-name', '[data-room]',
+      '.location-name', '#location', '.current-room',
+      '.room-title', '#roomName', '.area-name'
+    ]
+    for (const selector of selectors) {
+      const el = document.querySelector(selector)
+      if (el && el.textContent.trim()) {
+        roomName = el.textContent.trim()
+        roomSource = 'dom'
+        break
+      }
+    }
+  }
+
+  // Method 3: Check for any game state in window object
+  if (!roomName && window.gameState?.room) {
+    roomName = window.gameState.room
+    roomSource = 'gameState'
+  }
+
+  // Method 4: Check localStorage/sessionStorage for room data
+  if (!roomName) {
+    try {
+      const stored = sessionStorage.getItem('currentRoom') || localStorage.getItem('currentRoom')
+      if (stored) {
+        roomName = stored
+        roomSource = 'storage'
+      }
+    } catch (e) {}
+  }
+
+  // Update if room changed
+  if (roomName && roomName !== currentRoom) {
+    const oldRoom = currentRoom
+    currentRoom = roomName
+    console.log(`MyVMK Genie: Room detected [${roomSource}]:`, currentRoom)
+    onRoomChange(oldRoom, currentRoom)
+  }
+
+  return currentRoom
+}
+
+// Debug helper - runs automatically and logs info
+function runDebug() {
+  console.log('=== MyVMK Genie Debug Info ===')
+  console.log('Page title:', document.title)
+  console.log('Current detected room:', currentRoom)
+
+  // Check sessionStorage
+  console.log('SessionStorage:')
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const key = sessionStorage.key(i)
+    console.log(`  ${key}:`, sessionStorage.getItem(key))
+  }
+
+  // Check localStorage
+  console.log('LocalStorage:')
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    const value = localStorage.getItem(key)
+    console.log(`  ${key}:`, value?.substring(0, 200))
+  }
+
+  // Look for any visible text elements - log each one clearly
+  console.log('=== All Text Elements ===')
+  const textElements = document.querySelectorAll('div, span, p, h1, h2, h3, label, a, button')
+  let textIndex = 0
+  textElements.forEach(el => {
+    const text = el.textContent?.trim()
+    // Only elements with direct text content (no children or only text children)
+    if (text && text.length < 100 && text.length > 1) {
+      const hasOnlyText = el.children.length === 0 ||
+        (el.children.length > 0 && el.innerText === text)
+      if (hasOnlyText || el.children.length === 0) {
+        console.log(`  [${textIndex}] <${el.tagName.toLowerCase()}${el.id ? '#'+el.id : ''}${el.className ? '.'+el.className.split(' ')[0] : ''}>: "${text}"`)
+        textIndex++
+      }
+    }
+  })
+
+  // Check for canvas elements
+  const canvases = document.querySelectorAll('canvas')
+  console.log('Canvas elements:', canvases.length)
+  canvases.forEach((c, i) => {
+    const rect = c.getBoundingClientRect()
+    console.log(`  Canvas ${i}: internal=${c.width}x${c.height}, rendered=${Math.round(rect.width)}x${Math.round(rect.height)}, position=(${Math.round(rect.left)},${Math.round(rect.top)}), id=${c.id || 'none'}`)
+  })
+
+  // Check for any game-related global variables
+  console.log('=== Checking window variables ===')
+  const gameVars = ['game', 'gameState', 'vmk', 'VMK', 'room', 'currentRoom', 'player', 'client']
+  gameVars.forEach(v => {
+    if (window[v] !== undefined) {
+      console.log(`  window.${v}:`, window[v])
+    }
+  })
+
+  // Check for iframes
+  const iframes = document.querySelectorAll('iframe')
+  console.log('Iframes found:', iframes.length)
+  iframes.forEach((f, i) => console.log(`  iframe ${i}:`, f.src || '(no src)'))
+
+  // Look for queue-related elements
+  console.log('=== Queue Detection ===')
+  const queueKeywords = ['queue', 'vmk pass', 'number', 'waiting', 'position']
+  document.querySelectorAll('*').forEach(el => {
+    const text = el.textContent?.toLowerCase() || ''
+    if (queueKeywords.some(k => text.includes(k)) && el.children.length === 0) {
+      console.log('  Queue-related element:', el.tagName, el.className, `"${el.textContent?.trim()}"`)
+    }
+  })
+}
+
+// Queue monitoring - watches for queue position changes
+function startQueueMonitor() {
+  console.log('MyVMK Genie: Queue monitor active')
+
+  // Watch for DOM changes that might be queue-related (fallback)
+  const queueObserver = new MutationObserver((mutations) => {
+    checkForQueueInfo()
+  })
+
+  queueObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  })
+}
+
+// Initialize Tesseract OCR (bundled with extension to bypass CSP)
+async function initOCR() {
+  if (isOcrReady) return true
+
+  try {
+    if (typeof Tesseract === 'undefined') {
+      console.error('MyVMK Genie: Tesseract not loaded')
+      return false
+    }
+
+    console.log('MyVMK Genie: Initializing OCR worker...')
+    tesseractWorker = await Tesseract.createWorker('eng')
+    isOcrReady = true
+    console.log('MyVMK Genie: OCR ready!')
+    return true
+  } catch (err) {
+    console.error('MyVMK Genie: Failed to initialize OCR:', err)
+    return false
+  }
+}
+
+// Capture the screen via background script (avoids tainted canvas issues)
+async function captureScreen() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_FOR_OCR' })
+    if (response && response.success && response.dataUrl) {
+      console.log('MyVMK Genie: Screen captured for OCR')
+      return response.dataUrl
+    } else {
+      console.error('MyVMK Genie: Capture failed:', response?.error)
+      return null
+    }
+  } catch (err) {
+    console.error('MyVMK Genie: Failed to capture screen:', err)
+    return null
+  }
+}
+
+// Legacy function - kept for compatibility but now uses captureScreen
+function captureCanvas() {
+  // This function is now async and returns a promise via captureScreen
+  // Keeping for any code that might reference it
+  console.log('MyVMK Genie: captureCanvas called - use captureScreen instead')
+  return null
+}
+
+// Scan canvas for queue information using OCR
+async function scanForQueue() {
+  // Capture screen via background script (avoids tainted canvas)
+  const imageData = await captureScreen()
+  if (!imageData) {
+    showNotification('Could not capture game screen', 'error')
+    return null
+  }
+
+  // Initialize OCR if needed
+  if (!isOcrReady) {
+    showNotification('Starting OCR engine...', 'info')
+    const ready = await initOCR()
+    if (!ready) {
+      showNotification('OCR failed to initialize', 'error')
+      return null
+    }
+  }
+
+  try {
+    console.log('MyVMK Genie: Scanning for queue...')
+
+    const result = await tesseractWorker.recognize(imageData)
+    const text = result.data.text
+    console.log('MyVMK Genie: OCR result:', text)
+
+    // Look for queue patterns
+    const patterns = [
+      /you are number\s*(\d+)/i,
+      /number\s*(\d+)\s*in queue/i,
+      /number\s+(\d+)/i,
+      /are number\s*(\d+)/i
+    ]
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern)
+      if (match && match[1]) {
+        const position = parseInt(match[1])
+        if (position > 0 && position < 1000) {
+          console.log('MyVMK Genie: Queue position found:', position)
+          handleQueuePosition(position)
+          return position
+        }
+      }
+    }
+
+    // Check if VMK Pass popup might be visible
+    if (text.toLowerCase().includes('vmk') || text.toLowerCase().includes('queue') || text.toLowerCase().includes('pass')) {
+      console.log('MyVMK Genie: Queue popup may be visible but number not detected')
+    }
+
+    return null
+  } catch (err) {
+    console.error('MyVMK Genie: OCR scan failed:', err)
+    return null
+  }
+}
+
+// Scan canvas for captcha code using OCR
+async function scanForCaptcha() {
+  // Capture screen via background script (avoids tainted canvas)
+  const imageData = await captureScreen()
+  if (!imageData) {
+    showNotification('Could not capture game screen', 'error')
+    return null
+  }
+
+  // Initialize OCR if needed
+  if (!isOcrReady) {
+    showNotification('Starting OCR engine...', 'info')
+    const ready = await initOCR()
+    if (!ready) {
+      showNotification('OCR failed to initialize', 'error')
+      return null
+    }
+  }
+
+  try {
+    console.log('MyVMK Genie: Scanning for captcha...')
+
+    const result = await tesseractWorker.recognize(imageData)
+    const text = result.data.text
+    console.log('MyVMK Genie: OCR result for captcha:', text)
+
+    // Look for captcha patterns - typically 4-digit numbers
+    // The captcha popup shows "Captcha Code" header and a number below
+    const patterns = [
+      /captcha[:\s]*code[:\s]*(\d{4,6})/i,
+      /captcha[:\s]*(\d{4,6})/i,
+      /code[:\s]*(\d{4,6})/i,
+      // Also look for standalone 4-6 digit numbers near captcha text
+      /(\d{4,6})/g
+    ]
+
+    // First, check if "captcha" is mentioned in the text
+    const hasCaptchaContext = text.toLowerCase().includes('captcha') || text.toLowerCase().includes('code')
+
+    for (const pattern of patterns) {
+      const matches = text.match(pattern)
+      if (matches) {
+        // For the global pattern, find the best match
+        if (pattern.global) {
+          for (const match of matches) {
+            const code = match
+            // Prefer 4-digit codes (most common captcha length)
+            if (code.length >= 4 && code.length <= 6) {
+              console.log('MyVMK Genie: Captcha code found:', code)
+              handleCaptchaCode(code)
+              return code
+            }
+          }
+        } else if (matches[1]) {
+          const code = matches[1]
+          console.log('MyVMK Genie: Captcha code found:', code)
+          handleCaptchaCode(code)
+          return code
+        }
+      }
+    }
+
+    // If we found captcha context but no code, let user know
+    if (hasCaptchaContext) {
+      console.log('MyVMK Genie: Captcha popup detected but code not readable')
+      showNotification('Captcha detected but code unclear', 'info')
+    }
+
+    return null
+  } catch (err) {
+    console.error('MyVMK Genie: Captcha OCR scan failed:', err)
+    return null
+  }
+}
+
+// Handle detected captcha code
+function handleCaptchaCode(code) {
+  if (code === lastCaptchaCode) return // Avoid duplicate notifications
+
+  lastCaptchaCode = code
+  console.log('MyVMK Genie: Captcha code detected:', code)
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(code).then(() => {
+    showNotification(`📋 Captcha: ${code} (copied!)`, 'success')
+    // Play a quick notification sound
+    playCaptchaSound()
+  }).catch(err => {
+    showNotification(`🔢 Captcha: ${code}`, 'success')
+  })
+
+  // Reset after a few seconds to allow detecting a new captcha
+  setTimeout(() => {
+    lastCaptchaCode = null
+  }, 5000)
+}
+
+// Play a quick sound for captcha detection
+function playCaptchaSound() {
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    oscillator.frequency.value = 600
+    oscillator.type = 'sine'
+    gainNode.gain.value = 0.2
+
+    oscillator.start()
+    oscillator.stop(audioContext.currentTime + 0.1)
+  } catch (e) {
+    // Silent fail
+  }
+}
+
+// Start automatic queue scanning
+function startAutoScan(intervalMs = 5000) {
+  stopAutoScan() // Clear any existing interval
+
+  console.log('MyVMK Genie: Starting auto-scan every', intervalMs, 'ms')
+  showNotification('Auto-scanning started', 'success')
+
+  // Initial scan
+  scanForQueue()
+
+  ocrScanInterval = setInterval(async () => {
+    const position = await scanForQueue()
+    if (position !== null) {
+      console.log('MyVMK Genie: Auto-scan found position:', position)
+    }
+  }, intervalMs)
+}
+
+// Stop automatic queue scanning
+function stopAutoScan() {
+  if (ocrScanInterval) {
+    clearInterval(ocrScanInterval)
+    ocrScanInterval = null
+    console.log('MyVMK Genie: Auto-scan stopped')
+  }
+}
+
+
+// Check DOM for queue information
+function checkForQueueInfo() {
+  // Look for elements containing queue position
+  // Pattern: "You are number X in queue" or similar
+  const allText = document.body.innerText || ''
+
+  // Try to find queue position pattern
+  const queuePatterns = [
+    /you are number\s*(\d+)\s*in queue/i,
+    /position[:\s]*(\d+)/i,
+    /queue[:\s]*#?(\d+)/i,
+    /number\s*(\d+)\s*in\s*(queue|line)/i
+  ]
+
+  for (const pattern of queuePatterns) {
+    const match = allText.match(pattern)
+    if (match && match[1]) {
+      const position = parseInt(match[1])
+      handleQueuePosition(position)
+      return
+    }
+  }
+
+  // Also look for specific elements
+  document.querySelectorAll('*').forEach(el => {
+    if (el.children.length > 0) return // Only leaf elements
+
+    const text = el.textContent?.trim() || ''
+    // Look for just a number in a small element (might be the queue number)
+    if (/^\d{1,3}$/.test(text)) {
+      const parent = el.parentElement
+      const parentText = parent?.textContent?.toLowerCase() || ''
+      if (parentText.includes('queue') || parentText.includes('number')) {
+        const position = parseInt(text)
+        handleQueuePosition(position)
+      }
+    }
+  })
+}
+
+// Handle detected queue position
+function handleQueuePosition(position) {
+  if (position === lastQueuePosition) return // No change
+
+  console.log('MyVMK Genie: Queue position detected:', position)
+  lastQueuePosition = position
+
+  // Update queue display if we have one
+  updateQueueDisplay(position)
+
+  // Check if we should alert
+  chrome.storage.local.get(['queueAlertThreshold', 'queueAlertsEnabled'], (result) => {
+    const threshold = result.queueAlertThreshold || 5
+    const enabled = result.queueAlertsEnabled !== false // Default to enabled
+
+    if (enabled && position <= threshold && position > 0) {
+      // Alert the user!
+      showQueueAlert(position)
+    }
+  })
+}
+
+// Show queue alert
+function showQueueAlert(position) {
+  // Visual notification
+  showNotification(`🎫 Queue position: ${position} - Get ready!`, 'success')
+
+  // Play alert sound
+  playQueueAlertSound()
+
+  // Flash the title
+  flashTitle(`[${position}] Queue Alert!`)
+}
+
+// Play queue alert sound
+function playQueueAlertSound() {
+  try {
+    // Create a simple beep sound
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    oscillator.frequency.value = 800
+    oscillator.type = 'sine'
+    gainNode.gain.value = 0.3
+
+    oscillator.start()
+    oscillator.stop(audioContext.currentTime + 0.2)
+
+    // Second beep
+    setTimeout(() => {
+      const osc2 = audioContext.createOscillator()
+      osc2.connect(gainNode)
+      osc2.frequency.value = 1000
+      osc2.type = 'sine'
+      osc2.start()
+      osc2.stop(audioContext.currentTime + 0.2)
+    }, 250)
+  } catch (e) {
+    console.log('MyVMK Genie: Could not play alert sound')
+  }
+}
+
+// Flash the page title
+function flashTitle(alertText) {
+  const originalTitle = document.title
+  let isAlert = true
+  let flashes = 0
+
+  const flashInterval = setInterval(() => {
+    document.title = isAlert ? alertText : originalTitle
+    isAlert = !isAlert
+    flashes++
+
+    if (flashes >= 10) {
+      clearInterval(flashInterval)
+      document.title = originalTitle
+    }
+  }, 500)
+}
+
+// Update queue display in toolbar
+function updateQueueDisplay(position) {
+  const display = document.getElementById('vmkpal-queue-display')
+  if (display) {
+    display.textContent = `#${position}`
+    display.style.display = 'inline'
+  }
+}
+
+// Called when room changes
+function onRoomChange(oldRoom, newRoom) {
+  // Update room display in toolbar
+  updateRoomDisplay()
+
+  // Auto-play room audio if configured
+  chrome.storage.local.get(['roomAudio'], (result) => {
+    const roomAudioMap = result.roomAudio || {}
+    const audioUrl = roomAudioMap[newRoom]
+    if (audioUrl) {
+      console.log('MyVMK Genie: Playing room audio for', newRoom)
+      playAudio(audioUrl)
+    } else if (oldRoom && roomAudioMap[oldRoom]) {
+      // Stop audio when leaving a room with custom audio
+      stopAudio()
+    }
+  })
+}
+
+// Update room display in the toolbar
+function updateRoomDisplay() {
+  const roomDisplay = document.getElementById('vmkpal-room-display')
+  if (roomDisplay) {
+    roomDisplay.textContent = currentRoom || 'Unknown'
+  }
+}
+
+// Watch for room changes and load saved room
+function startRoomWatcher() {
+  // Load saved room from storage
+  chrome.storage.local.get(['currentRoom', 'currentRoomId'], (result) => {
+    if (result.currentRoom) {
+      currentRoom = result.currentRoom
+      currentRoomId = result.currentRoomId
+      updateRoomDisplay()
+      console.log('MyVMK Genie: Loaded saved room:', currentRoom)
+    }
+  })
+
+  // Watch for title changes (in case game updates title with room name)
+  const titleObserver = new MutationObserver(() => {
+    detectRoom()
+  })
+  const titleEl = document.querySelector('title')
+  if (titleEl) {
+    titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true })
+  }
+
+  // Monitor network requests for NPC sound files (contains room info!)
+  monitorNetworkForRooms()
+}
+
+// NPC folder name to Room mapping
+const NPC_ROOM_MAP = {
+  'vmk_npc_emporium': { id: 43, name: 'Emporium' },
+  'vmk_npc_shrunken_neds_shop': { id: 16, name: "Shrunken Ned's Shop" },
+  'vmk_npc_matterhorn': { id: 33, name: 'Matterhorn' },
+  'vmk_npc_jungle_cruise': { id: 11, name: 'Jungle Cruise Dock' },
+  'vmk_npc_haunted_mansion': { id: 12, name: 'Haunted Mansion Conservatory' },
+  'vmk_npc_pirates': { id: 1001, name: 'Pirates of the Caribbean Game Lobby' },
+  'vmk_npc_tiki_room': { id: 1, name: 'Tiki Tiki Tiki Room' },
+  'vmk_npc_penny_arcade': { id: 140, name: 'Penny Arcade' },
+  'vmk_npc_magic_shop': { id: 1108, name: 'Main Street Magic Shop' },
+  'vmk_npc_inner_space': { id: 45, name: 'Inner-Space Shop' },
+  'vmk_npc_small_world': { id: 38, name: "\"it's a small world\" Imports" },
+  'vmk_npc_frontierland': { id: 58, name: 'Frontierland Hub' },
+  'vmk_npc_splash_mountain': { id: 49, name: 'Splash Mountain' },
+  'vmk_npc_thunder_mountain': { id: 61, name: 'Big Thunder Mountain' },
+  'vmk_npc_space_mountain': { id: 73, name: 'Space Mountain Quest Deck' },
+  'vmk_npc_tomorrowland': { id: 47, name: 'Tomorrowland Hub' },
+  'vmk_npc_fantasyland': { id: 99, name: 'Fantasyland Courtyard' },
+  'vmk_npc_adventureland': { id: 5, name: 'Adventureland Bazaar' },
+  'vmk_npc_new_orleans': { id: 95, name: 'New Orleans Square' },
+  'vmk_npc_main_street': { id: 4, name: 'Main Street' },
+  'vmk_npc_castle': { id: 35, name: 'Castle Forecourt' },
+  'vmk_npc_esplanade': { id: 48, name: 'VMK Esplanade' },
+  'vmk_npc_central_plaza': { id: 2, name: 'Central Plaza' },
+  'vmk_npc_town_square': { id: 3, name: 'Town Square' },
+}
+
+// Monitor network requests using PerformanceObserver
+function monitorNetworkForRooms() {
+  // Use PerformanceObserver to watch for resource loads
+  if (typeof PerformanceObserver !== 'undefined') {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        // Check if it's an NPC sound file request
+        if (entry.name.includes('download.myvmk.com/sound/npcs/')) {
+          const match = entry.name.match(/\/npcs\/([^\/]+)\//)
+          if (match && match[1]) {
+            const npcFolder = match[1]
+            console.log('MyVMK Genie: Detected NPC folder:', npcFolder)
+
+            // Check our mapping
+            if (NPC_ROOM_MAP[npcFolder]) {
+              const roomInfo = NPC_ROOM_MAP[npcFolder]
+              setRoomFromNetwork(roomInfo.id, roomInfo.name)
+            } else {
+              // Try to parse room name from folder name
+              const parsedName = parseRoomFromNpcFolder(npcFolder)
+              if (parsedName) {
+                console.log('MyVMK Genie: Parsed room from NPC folder:', parsedName)
+                setRoomFromNetwork(null, parsedName)
+              }
+            }
+          }
+        }
+
+        // Check for room audio files (room_sound folder or sound/room folder)
+        if (entry.name.includes('download.myvmk.com') &&
+            (entry.name.includes('/room_sound/') || entry.name.includes('/sound/room/'))) {
+          detectedAudioUrl = entry.name
+          console.log('MyVMK Genie: Detected room audio:', entry.name)
+
+          // Extract folder name for room matching (e.g., vmk_snd_pirates_lobby_II)
+          const folderMatch = entry.name.match(/room_sound\/([^\/]+)\//)
+          if (folderMatch) {
+            console.log('MyVMK Genie: Audio folder:', folderMatch[1])
+          }
+
+          // Check if this audio matches a known room
+          const matchedRoom = findRoomByAudio(entry.name)
+          if (matchedRoom !== null) {
+            currentRoomId = matchedRoom.id
+            currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
+            currentLand = matchedRoom.land
+            console.log('MyVMK Genie: Auto-detected room from audio:', currentRoom, currentLand ? `(${currentLand})` : '')
+            updateRoomInfoDisplay()
+          }
+        }
+
+        // Also check for room background/asset files
+        if (entry.name.includes('download.myvmk.com')) {
+          // Log all myvmk downloads for analysis
+          if (entry.name.includes('/room') || entry.name.includes('/bg') || entry.name.includes('/map')) {
+            console.log('MyVMK Genie: Game resource:', entry.name)
+          }
+
+          // Check for room background patterns like /rooms/roomname/ or /backgrounds/roomname/
+          const roomPatterns = [
+            /\/rooms\/([^\/]+)\//,
+            /\/backgrounds\/([^\/]+)\//,
+            /\/maps\/([^\/]+)\//,
+            /\/room_(\d+)\//,
+            /\/room(\d+)\//
+          ]
+
+          for (const pattern of roomPatterns) {
+            const match = entry.name.match(pattern)
+            if (match && match[1]) {
+              console.log('MyVMK Genie: Found room pattern:', match[1], 'in', entry.name)
+              // If it's a number, look up in room map
+              const id = parseInt(match[1])
+              if (!isNaN(id) && ROOM_MAP[id]) {
+                setRoomFromNetwork(id, ROOM_MAP[id])
+              }
+            }
+          }
+        }
+      }
+    })
+
+    try {
+      observer.observe({ entryTypes: ['resource'] })
+      console.log('MyVMK Genie: Network monitoring active for room detection')
+    } catch (e) {
+      console.log('MyVMK Genie: Could not start network monitoring:', e)
+    }
+  }
+}
+
+// Parse room name from NPC folder name (e.g., vmk_npc_shrunken_neds_shop -> Shrunken Ned's Shop)
+function parseRoomFromNpcFolder(folder) {
+  // Remove vmk_npc_ prefix
+  let name = folder.replace(/^vmk_npc_/, '')
+
+  // Replace underscores with spaces
+  name = name.replace(/_/g, ' ')
+
+  // Capitalize each word
+  name = name.replace(/\b\w/g, c => c.toUpperCase())
+
+  // Fix common patterns
+  name = name.replace(/Neds/g, "Ned's")
+  name = name.replace(/Its A/g, "it's a")
+
+  return name
+}
+
+// Set room from network detection
+function setRoomFromNetwork(roomId, roomName) {
+  if (roomName === currentRoom) return // No change
+
+  const oldRoom = currentRoom
+  currentRoom = roomName
+  currentRoomId = roomId
+
+  console.log('MyVMK Genie: Room auto-detected:', roomName)
+
+  // Update display
+  updateRoomDisplay()
+
+  // Update the dropdown if it exists
+  const select = document.getElementById('vmkpal-room-select')
+  if (select && roomId) {
+    select.value = roomId
+  }
+
+  // Save to storage
+  chrome.storage.local.set({
+    currentRoom: roomName,
+    currentRoomId: roomId
+  })
+
+  // Show notification
+  showNotification(`📍 ${roomName}`, 'info')
+
+  // Trigger room change handler
+  onRoomChange(oldRoom, currentRoom)
+}
+
+// Load phrases from local storage
+function loadPhrases() {
+  try {
+    chrome.storage.local.get(['phrases'], (result) => {
+      if (chrome.runtime.lastError) {
+        console.log('MyVMK Genie: Extension reloaded, please refresh page')
+        return
+      }
+      phrasesCache = result.phrases || {}
+      console.log('Phrases loaded:', phrasesCache)
+    })
+  } catch (e) {
+    console.log('MyVMK Genie: Extension reloaded, please refresh page')
+  }
+}
+
+// Listen for keyboard shortcuts (Alt + 1-0 for phrases, Alt+C for captcha)
+// Use capture phase to catch events before Canvas consumes them
+document.addEventListener('keydown', (e) => {
+  // Debug: log all Alt key combos
+  if (e.altKey) {
+    console.log('MyVMK Genie - Alt key pressed:', e.key)
+  }
+
+  if (!e.altKey) return
+
+  // Alt + C = Scan captcha
+  if (e.key.toLowerCase() === 'c') {
+    e.preventDefault()
+    e.stopPropagation()
+    console.log('MyVMK Genie - Scanning captcha...')
+    showNotification('Scanning captcha...', 'info')
+    scanForCaptcha().then(result => {
+      if (result === null) {
+        showNotification('No captcha found', 'info')
+      }
+    })
+    return
+  }
+
+  // Alt + 1-9 = slots 1-9, Alt + 0 = slot 10
+  const keyToSlot = {
+    '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
+    '6': 6, '7': 7, '8': 8, '9': 9, '0': 10
+  }
+
+  const slot = keyToSlot[e.key]
+  if (slot) {
+    e.preventDefault()
+    e.stopPropagation()
+    console.log('MyVMK Genie - Phrase slot:', slot, 'Phrase:', phrasesCache[slot])
+    const phrase = phrasesCache[slot]
+    if (phrase) {
+      sendPhraseToChat(phrase)
+    } else {
+      showNotification(`No phrase in slot ${slot}`, 'info')
+    }
+  }
+}, true) // true = capture phase
+
+// Listen for storage changes (when phrases updated from popup)
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.phrases) {
+    phrasesCache = changes.phrases.newValue || {}
+    console.log('Phrases updated:', phrasesCache)
+  }
+})
+
+// Listen for messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'SCREENSHOT_TAKEN') {
+    showNotification('Screenshot saved!', 'success')
+    sendResponse({ success: true })
+  }
+
+  if (message.type === 'START_RECORDING_WITH_STREAM') {
+    startRecordingWithStream(message.streamId)
+    sendResponse({ success: true })
+  }
+
+  if (message.type === 'RECORDING_ERROR') {
+    showNotification('Recording failed: ' + message.error, 'error')
+    sendResponse({ success: true })
+  }
+})
+
+// Start recording using getDisplayMedia (shows share prompt)
+async function startRecordingDirect() {
+  try {
+    // Request screen/tab capture - user will see a prompt to select
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        displaySurface: 'browser',  // Prefer browser tab
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      },
+      audio: true,  // Capture tab audio
+      preferCurrentTab: true  // Prefer current tab
+    })
+
+    recordedChunks = []
+
+    // Try VP9, fall back to VP8
+    let mimeType = 'video/webm;codecs=vp9'
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm;codecs=vp8'
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm'
+    }
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType })
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data)
+      }
+    }
+
+    mediaRecorder.onstop = () => {
+      // Download the recording
+      const blob = new Blob(recordedChunks, { type: 'video/webm' })
+      const url = URL.createObjectURL(blob)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `myvmk-recording-${timestamp}.webm`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+
+      URL.revokeObjectURL(url)
+      showNotification('Recording saved!', 'success')
+    }
+
+    // Handle when user stops sharing via browser UI
+    stream.getVideoTracks()[0].onended = () => {
+      if (isRecording) {
+        stopRecording()
+      }
+    }
+
+    mediaRecorder.start(1000) // Capture in 1-second chunks
+    isRecording = true
+    currentStream = stream
+    updateRecordButton()
+    showNotification('Recording! Click 🔴 to stop', 'success')
+
+  } catch (err) {
+    console.error('Recording error:', err)
+    if (err.name === 'NotAllowedError') {
+      showNotification('Recording cancelled', 'info')
+    } else {
+      showNotification('Recording failed: ' + err.message, 'error')
+    }
+    isRecording = false
+    updateRecordButton()
+  }
+}
+
+// Keep for backwards compatibility
+async function startRecordingWithStream(streamId) {
+  // Fall back to direct method
+  startRecordingDirect()
+}
+
+// Stop recording
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+    showNotification('Saving recording...', 'info')
+  }
+
+  // Stop all tracks
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop())
+    currentStream = null
+  }
+
+  isRecording = false
+  updateRecordButton()
+}
+
+// Update record button appearance
+function updateRecordButton() {
+  if (recordBtn) {
+    if (isRecording) {
+      recordBtn.innerHTML = '⏹️ Stop'
+      recordBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)'
+      recordBtn.title = 'Stop Recording'
+    } else {
+      recordBtn.innerHTML = '🎥 Record'
+      recordBtn.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)'
+      recordBtn.title = 'Start Recording'
+    }
+  }
+}
+
+// Send phrase to the game chat
+// Try simulating keystrokes, fall back to clipboard
+function sendPhraseToChat(phrase) {
+  // Find the game canvas or active element
+  const target = document.querySelector('canvas') || document.activeElement || document.body
+
+  let typed = false
+
+  // Try typing each character
+  for (const char of phrase) {
+    const keyCode = char.charCodeAt(0)
+
+    // keydown
+    const downEvent = new KeyboardEvent('keydown', {
+      key: char,
+      code: `Key${char.toUpperCase()}`,
+      keyCode: keyCode,
+      charCode: keyCode,
+      which: keyCode,
+      bubbles: true,
+      cancelable: true
+    })
+    target.dispatchEvent(downEvent)
+
+    // keypress (for older systems)
+    const pressEvent = new KeyboardEvent('keypress', {
+      key: char,
+      code: `Key${char.toUpperCase()}`,
+      keyCode: keyCode,
+      charCode: keyCode,
+      which: keyCode,
+      bubbles: true,
+      cancelable: true
+    })
+    target.dispatchEvent(pressEvent)
+
+    // keyup
+    const upEvent = new KeyboardEvent('keyup', {
+      key: char,
+      code: `Key${char.toUpperCase()}`,
+      keyCode: keyCode,
+      charCode: keyCode,
+      which: keyCode,
+      bubbles: true,
+      cancelable: true
+    })
+    target.dispatchEvent(upEvent)
+  }
+
+  // Send Enter to submit
+  setTimeout(() => {
+    const enterDown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true
+    })
+    target.dispatchEvent(enterDown)
+
+    const enterUp = new KeyboardEvent('keyup', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true
+    })
+    target.dispatchEvent(enterUp)
+  }, 50)
+
+  showNotification(`Sent: ${phrase}`, 'success')
+
+  // Also copy to clipboard as backup
+  navigator.clipboard.writeText(phrase).catch(() => {})
+}
+
+// Show notification overlay
+function showNotification(text, type = 'info') {
+  // Remove existing notification
+  const existing = document.getElementById('vmkpal-notification')
+  if (existing) existing.remove()
+
+  const notification = document.createElement('div')
+  notification.id = 'vmkpal-notification'
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 2147483647;
+    animation: vmkpal-slide-in 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    ${type === 'success' ? 'background: linear-gradient(135deg, #10b981, #059669); color: white;' :
+      type === 'error' ? 'background: linear-gradient(135deg, #ef4444, #dc2626); color: white;' :
+      'background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;'}
+  `
+  notification.textContent = text
+
+  // Add animation keyframes if not present
+  if (!document.getElementById('vmkpal-styles')) {
+    const style = document.createElement('style')
+    style.id = 'vmkpal-styles'
+    style.textContent = `
+      @keyframes vmkpal-slide-in {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes vmkpal-slide-out {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  document.body.appendChild(notification)
+
+  // Remove after 2 seconds
+  setTimeout(() => {
+    notification.style.animation = 'vmkpal-slide-out 0.3s ease forwards'
+    setTimeout(() => notification.remove(), 300)
+  }, 2000)
+}
+
+// Create floating toolbar (visible in game client popup)
+function createToolbar() {
+  try {
+    // Check if toolbar already exists
+    if (document.getElementById('vmkpal-toolbar')) return
+
+    // Main container - create first so it exists for position callback
+    const container = document.createElement('div')
+    container.id = 'vmkpal-toolbar'
+    container.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2147483647;
+      font-family: system-ui, -apple-system, sans-serif;
+      cursor: move;
+    `
+
+    // Load saved position (edge-relative positioning)
+    try {
+      chrome.storage.local.get(['toolbarPositionEdge'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.log('MyVMK Genie: Could not load toolbar position')
+          return
+        }
+        if (result.toolbarPositionEdge) {
+          const pos = result.toolbarPositionEdge
+          // Apply edge-relative positioning
+          container.style.left = pos.anchorLeft ? pos.left + 'px' : 'auto'
+          container.style.right = pos.anchorLeft ? 'auto' : pos.right + 'px'
+          container.style.top = pos.anchorTop ? pos.top + 'px' : 'auto'
+          container.style.bottom = pos.anchorTop ? 'auto' : pos.bottom + 'px'
+        }
+      })
+    } catch (e) {
+      console.log('MyVMK Genie: Storage access error', e)
+    }
+
+    // Drag functionality
+  let isDragging = false
+  let dragOffset = { x: 0, y: 0 }
+
+  container.addEventListener('mousedown', (e) => {
+    // Don't drag if position is locked
+    if (isPositionLocked) return
+
+    // Only start drag if clicking on the container or menu button, not inside panel
+    if (e.target.closest('#vmkpal-panel') && !e.target.closest('#vmkpal-panel-header')) {
+      return
+    }
+    isDragging = true
+    const rect = container.getBoundingClientRect()
+    dragOffset.x = e.clientX - rect.left
+    dragOffset.y = e.clientY - rect.top
+    container.style.cursor = 'grabbing'
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return
+
+    const x = e.clientX - dragOffset.x
+    const y = e.clientY - dragOffset.y
+
+    // Keep within viewport
+    const maxX = window.innerWidth - container.offsetWidth
+    const maxY = window.innerHeight - container.offsetHeight
+
+    container.style.left = Math.max(0, Math.min(x, maxX)) + 'px'
+    container.style.top = Math.max(0, Math.min(y, maxY)) + 'px'
+    container.style.right = 'auto'
+    container.style.bottom = 'auto'
+  })
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false
+      container.style.cursor = 'move'
+
+      // Save position relative to nearest edges
+      const rect = container.getBoundingClientRect()
+      const windowWidth = window.innerWidth
+      const windowHeight = window.innerHeight
+
+      // Determine which edges to anchor to (closest edge)
+      const anchorLeft = rect.left < (windowWidth - rect.right)
+      const anchorTop = rect.top < (windowHeight - rect.bottom)
+
+      // Calculate distances from edges
+      const posData = {
+        anchorLeft,
+        anchorTop,
+        left: rect.left,
+        right: windowWidth - rect.right,
+        top: rect.top,
+        bottom: windowHeight - rect.bottom
+      }
+
+      // Apply the edge-relative positioning immediately
+      container.style.left = anchorLeft ? rect.left + 'px' : 'auto'
+      container.style.right = anchorLeft ? 'auto' : (windowWidth - rect.right) + 'px'
+      container.style.top = anchorTop ? rect.top + 'px' : 'auto'
+      container.style.bottom = anchorTop ? 'auto' : (windowHeight - rect.bottom) + 'px'
+
+      chrome.storage.local.set({ toolbarPositionEdge: posData })
+    }
+  })
+
+  // Keep toolbar within viewport on window resize (edge-relative positioning handles most cases)
+  function keepToolbarInBounds() {
+    const rect = container.getBoundingClientRect()
+    const windowWidth = window.innerWidth
+    const windowHeight = window.innerHeight
+
+    // Only need to check if icon goes off-screen in extreme resize cases
+    if (rect.left < 0 || rect.right > windowWidth || rect.top < 0 || rect.bottom > windowHeight) {
+      // Clamp to visible area
+      const clampedLeft = Math.max(0, Math.min(rect.left, windowWidth - container.offsetWidth))
+      const clampedTop = Math.max(0, Math.min(rect.top, windowHeight - container.offsetHeight))
+
+      // Re-determine anchor edges based on clamped position
+      const anchorLeft = clampedLeft < (windowWidth - clampedLeft - container.offsetWidth)
+      const anchorTop = clampedTop < (windowHeight - clampedTop - container.offsetHeight)
+
+      container.style.left = anchorLeft ? clampedLeft + 'px' : 'auto'
+      container.style.right = anchorLeft ? 'auto' : (windowWidth - clampedLeft - container.offsetWidth) + 'px'
+      container.style.top = anchorTop ? clampedTop + 'px' : 'auto'
+      container.style.bottom = anchorTop ? 'auto' : (windowHeight - clampedTop - container.offsetHeight) + 'px'
+    }
+  }
+
+  window.addEventListener('resize', keepToolbarInBounds)
+
+  // Single menu button (always visible)
+  const quickBar = document.createElement('div')
+  quickBar.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  `
+
+  // Menu toggle button
+  const menuBtn = document.createElement('button')
+  const genieIconUrl = chrome.runtime.getURL('myvmk-genie.png')
+  menuBtn.innerHTML = `<img src="${genieIconUrl}" style="width: 50px; height: 50px; object-fit: contain;">`
+  menuBtn.title = 'MyVMK Genie Menu'
+  menuBtn.style.cssText = `
+    width: 50px;
+    height: 50px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    outline: none;
+    box-shadow: 0 0 15px 5px rgba(139, 92, 246, 0.5), 0 0 30px 10px rgba(139, 92, 246, 0.3);
+  `
+  menuBtn.onmouseover = () => menuBtn.style.transform = 'scale(1.1)'
+  menuBtn.onmouseout = () => menuBtn.style.transform = 'scale(1)'
+  menuBtn.onclick = () => togglePanel()
+
+  quickBar.appendChild(menuBtn)
+
+  // Expandable panel
+  const panel = document.createElement('div')
+  panel.id = 'vmkpal-panel'
+  panel.style.cssText = `
+    display: none;
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    width: 320px;
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+  `
+
+  // Panel header (drag handle)
+  const header = document.createElement('div')
+  header.id = 'vmkpal-panel-header'
+  header.style.cssText = `
+    padding: 16px;
+    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: move;
+  `
+  header.innerHTML = `
+    <img src="${genieIconUrl}" style="width: 28px; height: 28px; object-fit: contain;">
+    <div style="flex: 1;">
+      <div style="color: white; font-weight: 600; font-size: 16px;">MyVMK Genie</div>
+    </div>
+  `
+
+  // Panel content wrapper
+  const contentWrapper = document.createElement('div')
+  contentWrapper.style.cssText = `max-height: 400px; overflow-y: auto;`
+
+  // Main content (home view)
+  const content = document.createElement('div')
+  content.id = 'vmkpal-main-content'
+  content.style.cssText = `padding: 12px;`
+
+  // Feature view (for inline feature panels)
+  const featureView = document.createElement('div')
+  featureView.id = 'vmkpal-feature-view'
+  featureView.style.cssText = `padding: 12px; display: none;`
+
+  // Event countdown ticker (scrolling)
+  const tickerContainer = document.createElement('div')
+  tickerContainer.id = 'vmkpal-ticker'
+  tickerContainer.style.cssText = `
+    overflow: hidden;
+    background: linear-gradient(90deg, rgba(245,158,11,0.2), rgba(251,191,36,0.2));
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 8px 0;
+    position: relative;
+  `
+
+  const tickerText = document.createElement('div')
+  tickerText.id = 'vmkpal-ticker-text'
+  tickerText.style.cssText = `
+    display: inline-block;
+    white-space: nowrap;
+    color: #fbbf24;
+    font-size: 12px;
+    font-weight: 500;
+    padding-left: 100%;
+    animation: vmkpal-scroll 12s linear infinite;
+  `
+  tickerText.textContent = 'Loading next event...'
+
+  // Add ticker animation styles
+  if (!document.getElementById('vmkpal-ticker-styles')) {
+    const tickerStyles = document.createElement('style')
+    tickerStyles.id = 'vmkpal-ticker-styles'
+    tickerStyles.textContent = `
+      @keyframes vmkpal-scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-100%); }
+      }
+    `
+    document.head.appendChild(tickerStyles)
+  }
+
+  tickerContainer.appendChild(tickerText)
+  content.appendChild(tickerContainer)
+
+  // Room info box (shows current detected room)
+  const roomInfoBox = document.createElement('div')
+  roomInfoBox.id = 'vmkpal-room-info'
+  roomInfoBox.style.cssText = `
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `
+  roomInfoBox.innerHTML = `
+    <span style="font-size: 18px;">📍</span>
+    <div style="flex: 1; min-width: 0;">
+      <div style="color: rgba(255,255,255,0.5); font-size: 9px; text-transform: uppercase; margin-bottom: 2px;">Current Room</div>
+      <div id="vmkpal-room-name" style="color: #4ade80; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Detecting...</div>
+      <div id="vmkpal-room-land" style="color: rgba(255,255,255,0.5); font-size: 10px;"></div>
+    </div>
+  `
+  content.appendChild(roomInfoBox)
+
+  // Quick actions row (Screenshot & Record)
+  const quickActions = document.createElement('div')
+  quickActions.style.cssText = `
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  `
+
+  // Screenshot button
+  const screenshotBtn = document.createElement('button')
+  screenshotBtn.innerHTML = '📸 Screenshot'
+  screenshotBtn.style.cssText = `
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.2s;
+  `
+  screenshotBtn.onmouseover = () => screenshotBtn.style.transform = 'scale(1.02)'
+  screenshotBtn.onmouseout = () => screenshotBtn.style.transform = 'scale(1)'
+  screenshotBtn.onclick = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' })
+      showNotification('Screenshot saved!', 'success')
+    } catch (e) {
+      showNotification('Refresh page first', 'error')
+    }
+  }
+
+  // Record button
+  recordBtn = document.createElement('button')
+  recordBtn.innerHTML = '🎥 Record'
+  recordBtn.style.cssText = `
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.2s;
+  `
+  recordBtn.onmouseover = () => recordBtn.style.transform = 'scale(1.02)'
+  recordBtn.onmouseout = () => recordBtn.style.transform = 'scale(1)'
+  recordBtn.onclick = () => {
+    if (isRecording) {
+      stopRecording()
+    } else {
+      startRecordingDirect()
+    }
+  }
+
+  quickActions.appendChild(screenshotBtn)
+  quickActions.appendChild(recordBtn)
+  content.appendChild(quickActions)
+
+  // Add feature grid
+  const featureGrid = document.createElement('div')
+  featureGrid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  `
+
+  // featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
+  // featureGrid.appendChild(createFeatureButton('👤', 'Accounts', createAccountsPanel))
+  featureGrid.appendChild(createFeatureButton('💬', 'Phrases', createPhrasesPanel))
+  featureGrid.appendChild(createFeatureButton('🎵', 'Audio', createAudioPanel))
+  featureGrid.appendChild(createFeatureButton('📅', 'Events', createEventsPanel))
+  featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel))
+  featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
+  featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
+  featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
+  featureGrid.appendChild(createFeatureButton('⚙️', 'Settings', createSettingsPanel))
+  featureGrid.appendChild(createToggleButton('🔒', 'Lock Position', togglePositionLock, () => isPositionLocked))
+
+  content.appendChild(featureGrid)
+
+  // Add both views to wrapper
+  contentWrapper.appendChild(content)
+  contentWrapper.appendChild(featureView)
+
+  panel.appendChild(header)
+  panel.appendChild(contentWrapper)
+
+    container.appendChild(panel)
+    container.appendChild(quickBar)
+    document.body.appendChild(container)
+
+    // Now that ticker is in DOM, start updating it
+    updateEventTicker()
+
+    // Load saved settings
+    loadSettings()
+  } catch (err) {
+    console.error('MyVMK Genie: Error creating toolbar', err)
+  }
+}
+
+// Create a quick action button
+function createQuickBtn(emoji, title, color, onClick) {
+  const btn = document.createElement('button')
+  btn.innerHTML = emoji
+  btn.title = title
+  btn.style.cssText = `
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    background: linear-gradient(135deg, ${color}, ${adjustColor(color, -20)});
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px ${color}66;
+    transition: transform 0.2s;
+  `
+  btn.onmouseover = () => btn.style.transform = 'scale(1.1)'
+  btn.onmouseout = () => btn.style.transform = 'scale(1)'
+  btn.onclick = onClick
+  return btn
+}
+
+// Adjust hex color brightness
+function adjustColor(hex, amount) {
+  const num = parseInt(hex.replace('#', ''), 16)
+  const r = Math.min(255, Math.max(0, (num >> 16) + amount))
+  const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount))
+  const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount))
+  return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`
+}
+
+// Toggle panel visibility
+function togglePanel() {
+  const panel = document.getElementById('vmkpal-panel')
+  const toolbar = document.getElementById('vmkpal-toolbar')
+  if (panel && toolbar) {
+    const isOpening = panel.style.display === 'none'
+    panel.style.display = isOpening ? 'block' : 'none'
+
+    // Update icon state for small icon mode
+    updateIconState()
+
+    if (isOpening) {
+      // Update room info display
+      updateRoomInfoDisplay()
+      // Position panel based on toolbar location
+      const toolbarRect = toolbar.getBoundingClientRect()
+      const windowWidth = window.innerWidth
+      const windowHeight = window.innerHeight
+
+      // Check if toolbar is on left or right half of screen
+      const isOnLeftSide = toolbarRect.left < windowWidth / 2
+
+      // Check if toolbar is near top or bottom
+      const isNearBottom = toolbarRect.top > windowHeight / 2
+
+      // Horizontal positioning
+      if (isOnLeftSide) {
+        panel.style.left = '0'
+        panel.style.right = 'auto'
+      } else {
+        panel.style.left = 'auto'
+        panel.style.right = '0'
+      }
+
+      // Vertical positioning
+      if (isNearBottom) {
+        panel.style.bottom = '70px'
+        panel.style.top = 'auto'
+      } else {
+        panel.style.top = '70px'
+        panel.style.bottom = 'auto'
+      }
+    }
+  }
+}
+
+// Create a toggle button for the grid (for features like rain overlay)
+function createToggleButton(icon, label, toggleFn, isEnabledFn) {
+  const btn = document.createElement('button')
+
+  const updateStyle = () => {
+    const enabled = isEnabledFn()
+    btn.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 12px 8px;
+      background: ${enabled ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255,255,255,0.05)'};
+      border: 1px solid ${enabled ? 'rgba(99, 102, 241, 0.5)' : 'rgba(255,255,255,0.1)'};
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+  }
+
+  updateStyle()
+
+  btn.innerHTML = `
+    <span style="font-size: 20px;">${icon}</span>
+    <span style="color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 500;">${label}</span>
+  `
+  btn.onmouseover = () => {
+    btn.style.transform = 'scale(1.05)'
+  }
+  btn.onmouseout = () => {
+    btn.style.transform = 'scale(1)'
+  }
+  btn.onclick = () => {
+    toggleFn()
+    updateStyle()
+  }
+  return btn
+}
+
+// Toggle rain overlay (canvas-based like The Swan game)
+function toggleRainOverlay() {
+  isRainEnabled = !isRainEnabled
+
+  if (isRainEnabled) {
+    startRainEffect()
+    showNotification('🌧️ Rain enabled', 'success')
+  } else {
+    stopRainEffect()
+    showNotification('☀️ Rain disabled', 'info')
+  }
+
+  chrome.storage.local.set({ rainEnabled: isRainEnabled })
+}
+
+function createRainDrop(randomY = false) {
+  const bounds = getGameCanvasBounds()
+  return {
+    x: Math.random() * (bounds.width + 100) - 50,
+    y: randomY ? Math.random() * bounds.height : -RAIN_LENGTH_MAX,
+    speed: RAIN_SPEED_MIN + Math.random() * (RAIN_SPEED_MAX - RAIN_SPEED_MIN),
+    length: RAIN_LENGTH_MIN + Math.random() * (RAIN_LENGTH_MAX - RAIN_LENGTH_MIN),
+    drift: -30 - Math.random() * 20
+  }
+}
+
+function initRainDrops() {
+  rainDrops = []
+  for (let i = 0; i < RAIN_DROP_COUNT; i++) {
+    rainDrops.push(createRainDrop(true))
+  }
+  lastRainTime = performance.now()
+}
+
+function updateRainDrops() {
+  const now = performance.now()
+  const dt = (now - lastRainTime) / 1000
+  lastRainTime = now
+
+  const bounds = getGameCanvasBounds()
+
+  for (let i = 0; i < rainDrops.length; i++) {
+    const drop = rainDrops[i]
+    drop.y += drop.speed * dt
+    drop.x += drop.drift * dt
+
+    if (drop.y > bounds.height + drop.length || drop.x < -50) {
+      rainDrops[i] = createRainDrop(false)
+    }
+  }
+}
+
+function renderRain() {
+  if (!rainCtx || !isRainEnabled) return
+
+  rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height)
+  updateRainDrops()
+
+  rainCtx.strokeStyle = `rgba(180, 200, 220, ${RAIN_OPACITY})`
+  rainCtx.lineWidth = 1.5
+  rainCtx.lineCap = 'round'
+
+  for (const drop of rainDrops) {
+    rainCtx.beginPath()
+    rainCtx.moveTo(drop.x, drop.y)
+    rainCtx.lineTo(drop.x - 3, drop.y + drop.length)
+    rainCtx.stroke()
+  }
+
+  rainAnimationId = requestAnimationFrame(renderRain)
+}
+
+function startRainEffect() {
+  const bounds = getGameCanvasBounds()
+
+  if (!rainCanvas) {
+    rainCanvas = document.createElement('canvas')
+    rainCanvas.id = 'vmkpal-rain-canvas'
+    rainCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483646;
+    `
+    rainCtx = rainCanvas.getContext('2d')
+    document.body.appendChild(rainCanvas)
+  }
+
+  // Apply bounds
+  rainCanvas.style.left = bounds.left + 'px'
+  rainCanvas.style.top = bounds.top + 'px'
+  rainCanvas.width = bounds.width
+  rainCanvas.height = bounds.height
+
+  rainCanvas.style.display = 'block'
+  initRainDrops()
+  renderRain()
+}
+
+function stopRainEffect() {
+  if (rainAnimationId) {
+    cancelAnimationFrame(rainAnimationId)
+    rainAnimationId = null
+  }
+  if (rainCanvas) {
+    rainCanvas.style.display = 'none'
+  }
+}
+
+// Money Rain Effect
+function toggleMoneyRain() {
+  isMoneyRainEnabled = !isMoneyRainEnabled
+
+  if (isMoneyRainEnabled) {
+    startMoneyRain()
+    showNotification('💸 Money rain enabled', 'success')
+  } else {
+    stopMoneyRain()
+    showNotification('💵 Money rain disabled', 'info')
+  }
+
+  chrome.storage.local.set({ moneyRainEnabled: isMoneyRainEnabled })
+}
+
+function createMoneyDrop(randomY = false) {
+  const bounds = getGameCanvasBounds()
+  return {
+    x: Math.random() * bounds.width,
+    y: randomY ? Math.random() * bounds.height : -50,
+    speed: MONEY_SPEED_MIN + Math.random() * (MONEY_SPEED_MAX - MONEY_SPEED_MIN),
+    symbol: MONEY_SYMBOLS[Math.floor(Math.random() * MONEY_SYMBOLS.length)],
+    size: MONEY_SIZES[Math.floor(Math.random() * MONEY_SIZES.length)],
+    rotation: Math.random() * 360,
+    rotationSpeed: (Math.random() - 0.5) * 180,
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 2 + Math.random() * 2,
+    wobbleAmount: 30 + Math.random() * 20
+  }
+}
+
+function initMoneyDrops() {
+  moneyDrops = []
+  for (let i = 0; i < MONEY_DROP_COUNT; i++) {
+    moneyDrops.push(createMoneyDrop(true))
+  }
+  lastMoneyTime = performance.now()
+}
+
+function updateMoneyDrops() {
+  const now = performance.now()
+  const dt = (now - lastMoneyTime) / 1000
+  lastMoneyTime = now
+
+  const bounds = getGameCanvasBounds()
+
+  for (let i = 0; i < moneyDrops.length; i++) {
+    const drop = moneyDrops[i]
+    drop.y += drop.speed * dt
+    drop.rotation += drop.rotationSpeed * dt
+    drop.wobble += drop.wobbleSpeed * dt
+
+    if (drop.y > bounds.height + 50) {
+      moneyDrops[i] = createMoneyDrop(false)
+    }
+  }
+}
+
+function renderMoney() {
+  if (!moneyCtx || !isMoneyRainEnabled) return
+
+  moneyCtx.clearRect(0, 0, moneyCanvas.width, moneyCanvas.height)
+  updateMoneyDrops()
+
+  for (const drop of moneyDrops) {
+    const wobbleX = Math.sin(drop.wobble) * drop.wobbleAmount
+
+    moneyCtx.save()
+    moneyCtx.translate(drop.x + wobbleX, drop.y)
+    moneyCtx.rotate(drop.rotation * Math.PI / 180)
+    moneyCtx.font = `${drop.size}px serif`
+    moneyCtx.textAlign = 'center'
+    moneyCtx.textBaseline = 'middle'
+    moneyCtx.fillText(drop.symbol, 0, 0)
+    moneyCtx.restore()
+  }
+
+  moneyAnimationId = requestAnimationFrame(renderMoney)
+}
+
+function startMoneyRain() {
+  const bounds = getGameCanvasBounds()
+
+  if (!moneyCanvas) {
+    moneyCanvas = document.createElement('canvas')
+    moneyCanvas.id = 'vmkpal-money-canvas'
+    moneyCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483645;
+    `
+    moneyCtx = moneyCanvas.getContext('2d')
+    document.body.appendChild(moneyCanvas)
+  }
+
+  // Apply bounds
+  moneyCanvas.style.left = bounds.left + 'px'
+  moneyCanvas.style.top = bounds.top + 'px'
+  moneyCanvas.width = bounds.width
+  moneyCanvas.height = bounds.height
+
+  moneyCanvas.style.display = 'block'
+  initMoneyDrops()
+  renderMoney()
+}
+
+function stopMoneyRain() {
+  if (moneyAnimationId) {
+    cancelAnimationFrame(moneyAnimationId)
+    moneyAnimationId = null
+  }
+  if (moneyCanvas) {
+    moneyCanvas.style.display = 'none'
+  }
+}
+
+// Fireworks Effect
+function toggleFireworks() {
+  isFireworksEnabled = !isFireworksEnabled
+
+  if (isFireworksEnabled) {
+    startFireworks()
+    showNotification('🎆 Fireworks enabled', 'success')
+  } else {
+    stopFireworks()
+    showNotification('🎇 Fireworks disabled', 'info')
+  }
+
+  chrome.storage.local.set({ fireworksEnabled: isFireworksEnabled })
+}
+
+function createRocket() {
+  const bounds = getGameCanvasBounds()
+  const colorSet = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]
+
+  return {
+    x: Math.random() * (bounds.width * 0.8) + bounds.width * 0.1, // Launch from middle 80% of screen
+    y: bounds.height,
+    targetY: bounds.height * 0.15 + Math.random() * (bounds.height * 0.35), // Explode in upper portion
+    speed: 350 + Math.random() * 150,
+    colors: colorSet,
+    trail: [],
+    exploded: false
+  }
+}
+
+function createParticle(x, y, colors) {
+  const angle = Math.random() * Math.PI * 2
+  const speed = 100 + Math.random() * 200
+  const type = Math.random() // For variety in particle behavior
+
+  return {
+    x: x,
+    y: y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    color: colors[Math.floor(Math.random() * colors.length)], // Now in "r,g,b" format
+    life: 1.0,
+    decay: 0.004 + Math.random() * 0.006, // Much slower decay for longer-lasting explosions
+    size: 2.5 + Math.random() * 2.5,
+    type: type,
+    sparkle: Math.random() > 0.7, // Some particles sparkle
+    trail: type > 0.6 ? [] : null // Some particles have trails
+  }
+}
+
+function launchRocket() {
+  rockets.push(createRocket())
+}
+
+function explodeRocket(rocket) {
+  // Create explosion particles
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(createParticle(rocket.x, rocket.y, rocket.colors))
+  }
+
+  // Create a secondary ring explosion sometimes
+  if (Math.random() > 0.5) {
+    setTimeout(() => {
+      if (!isFireworksEnabled) return
+      for (let i = 0; i < 30; i++) {
+        const p = createParticle(rocket.x, rocket.y, rocket.colors)
+        p.vx *= 0.5
+        p.vy *= 0.5
+        p.decay *= 1.5
+        particles.push(p)
+      }
+    }, 100)
+  }
+}
+
+function updateFireworks(dt) {
+  // Update rockets
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const rocket = rockets[i]
+
+    // Add trail
+    rocket.trail.push({ x: rocket.x, y: rocket.y, life: 1 })
+    if (rocket.trail.length > 10) rocket.trail.shift()
+
+    // Move rocket up
+    rocket.y -= rocket.speed * dt
+    // Slight wobble
+    rocket.x += Math.sin(rocket.y * 0.05) * 0.5
+
+    // Check if reached target
+    if (rocket.y <= rocket.targetY) {
+      explodeRocket(rocket)
+      rockets.splice(i, 1)
+    }
+
+    // Fade trail
+    for (const t of rocket.trail) {
+      t.life -= dt * 3
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i]
+
+    // Add trail for trailing particles
+    if (p.trail) {
+      p.trail.push({ x: p.x, y: p.y, life: p.life * 0.5 })
+      if (p.trail.length > 5) p.trail.shift()
+    }
+
+    // Apply velocity
+    p.x += p.vx * dt
+    p.y += p.vy * dt
+
+    // Apply gravity
+    p.vy += GRAVITY * dt
+
+    // Apply air resistance
+    p.vx *= 0.99
+    p.vy *= 0.99
+
+    // Decay life
+    p.life -= p.decay
+
+    // Remove dead particles
+    if (p.life <= 0) {
+      particles.splice(i, 1)
+    }
+  }
+}
+
+function renderFireworks() {
+  if (!fireworksCtx || !isFireworksEnabled) return
+
+  const now = performance.now()
+  const dt = Math.min((now - lastFireworkTime) / 1000, 0.1)
+  lastFireworkTime = now
+
+  // Clear canvas completely (transparent)
+  fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
+
+  // Launch new rockets
+  if (now > nextLaunchTime) {
+    launchRocket()
+    // Random chance for double or triple launch
+    if (Math.random() > 0.6) launchRocket()
+    if (Math.random() > 0.8) launchRocket()
+    nextLaunchTime = now + LAUNCH_INTERVAL_MIN + Math.random() * (LAUNCH_INTERVAL_MAX - LAUNCH_INTERVAL_MIN)
+  }
+
+  // Update physics
+  updateFireworks(dt)
+
+  // Draw rocket trails
+  for (const rocket of rockets) {
+    for (let i = 0; i < rocket.trail.length; i++) {
+      const t = rocket.trail[i]
+      if (t.life > 0) {
+        const alpha = t.life * (i / rocket.trail.length)
+        fireworksCtx.beginPath()
+        fireworksCtx.arc(t.x, t.y, 2 * alpha + 1, 0, Math.PI * 2)
+        fireworksCtx.fillStyle = `rgba(255, 200, 100, ${alpha * 0.8})`
+        fireworksCtx.fill()
+      }
+    }
+
+    // Draw rocket head with glow
+    fireworksCtx.shadowBlur = 10
+    fireworksCtx.shadowColor = '#ffcc66'
+    fireworksCtx.beginPath()
+    fireworksCtx.arc(rocket.x, rocket.y, 3, 0, Math.PI * 2)
+    fireworksCtx.fillStyle = '#fff'
+    fireworksCtx.fill()
+    fireworksCtx.shadowBlur = 0
+  }
+
+  // Draw particles
+  for (const p of particles) {
+    // Draw trail
+    if (p.trail) {
+      for (let i = 0; i < p.trail.length; i++) {
+        const t = p.trail[i]
+        const alpha = t.life * (i / p.trail.length) * 0.5
+        fireworksCtx.beginPath()
+        fireworksCtx.arc(t.x, t.y, p.size * 0.5, 0, Math.PI * 2)
+        fireworksCtx.fillStyle = `rgba(${p.color}, ${alpha})`
+        fireworksCtx.fill()
+      }
+    }
+
+    // Sparkle effect
+    const size = p.sparkle ? p.size * (0.5 + Math.random() * 1) : p.size
+    const particleSize = Math.max(0.5, size * p.life)
+
+    // Draw particle with glow
+    fireworksCtx.shadowBlur = 8
+    fireworksCtx.shadowColor = `rgba(${p.color}, ${p.life})`
+    fireworksCtx.beginPath()
+    fireworksCtx.arc(p.x, p.y, particleSize, 0, Math.PI * 2)
+    fireworksCtx.fillStyle = `rgba(${p.color}, ${p.life})`
+    fireworksCtx.fill()
+    fireworksCtx.shadowBlur = 0
+  }
+
+  fireworksAnimationId = requestAnimationFrame(renderFireworks)
+}
+
+function startFireworks() {
+  const bounds = getGameCanvasBounds()
+
+  if (!fireworksCanvas) {
+    fireworksCanvas = document.createElement('canvas')
+    fireworksCanvas.id = 'vmkpal-fireworks-canvas'
+    fireworksCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483644;
+      background: transparent;
+    `
+    fireworksCtx = fireworksCanvas.getContext('2d')
+    document.body.appendChild(fireworksCanvas)
+  }
+
+  // Apply bounds
+  fireworksCanvas.style.left = bounds.left + 'px'
+  fireworksCanvas.style.top = bounds.top + 'px'
+  fireworksCanvas.width = bounds.width
+  fireworksCanvas.height = bounds.height
+
+  fireworksCanvas.style.display = 'block'
+  rockets = []
+  particles = []
+  lastFireworkTime = performance.now()
+  nextLaunchTime = performance.now() + 500
+  renderFireworks()
+}
+
+function stopFireworks() {
+  if (fireworksAnimationId) {
+    cancelAnimationFrame(fireworksAnimationId)
+    fireworksAnimationId = null
+  }
+  if (fireworksCanvas) {
+    fireworksCanvas.style.display = 'none'
+    fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
+  }
+  rockets = []
+  particles = []
+}
+
+// Snow Effect
+function toggleSnowOverlay() {
+  isSnowEnabled = !isSnowEnabled
+
+  if (isSnowEnabled) {
+    startSnowEffect()
+    showNotification('❄️ Snow enabled', 'success')
+  } else {
+    stopSnowEffect()
+    showNotification('☀️ Snow disabled', 'info')
+  }
+
+  chrome.storage.local.set({ snowEnabled: isSnowEnabled })
+}
+
+function createSnowflake(randomY = false) {
+  const bounds = getGameCanvasBounds()
+  const size = 2 + Math.random() * 4 // Varying sizes for depth effect
+
+  return {
+    x: Math.random() * (bounds.width + 100) - 50,
+    y: randomY ? Math.random() * bounds.height : -10,
+    speed: SNOW_SPEED_MIN + Math.random() * (SNOW_SPEED_MAX - SNOW_SPEED_MIN),
+    size: size,
+    opacity: 0.4 + Math.random() * 0.6,
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 1 + Math.random() * 2,
+    wobbleAmount: 20 + Math.random() * 30,
+    rotation: Math.random() * 360,
+    rotationSpeed: (Math.random() - 0.5) * 60
+  }
+}
+
+function initSnowflakes() {
+  snowflakes = []
+  for (let i = 0; i < SNOWFLAKE_COUNT; i++) {
+    snowflakes.push(createSnowflake(true))
+  }
+  lastSnowTime = performance.now()
+}
+
+function updateSnowflakes(dt) {
+  const bounds = getGameCanvasBounds()
+
+  for (let i = 0; i < snowflakes.length; i++) {
+    const flake = snowflakes[i]
+
+    // Fall down
+    flake.y += flake.speed * dt
+
+    // Wobble side to side
+    flake.wobble += flake.wobbleSpeed * dt
+    flake.x += Math.sin(flake.wobble) * flake.wobbleAmount * dt
+
+    // Rotate
+    flake.rotation += flake.rotationSpeed * dt
+
+    // Reset if off screen
+    if (flake.y > bounds.height + 10 || flake.x < -50 || flake.x > bounds.width + 50) {
+      snowflakes[i] = createSnowflake(false)
+      snowflakes[i].x = Math.random() * (bounds.width + 100) - 50
+    }
+  }
+}
+
+function renderSnow() {
+  if (!snowCtx || !isSnowEnabled) return
+
+  const now = performance.now()
+  const dt = Math.min((now - lastSnowTime) / 1000, 0.1)
+  lastSnowTime = now
+
+  snowCtx.clearRect(0, 0, snowCanvas.width, snowCanvas.height)
+  updateSnowflakes(dt)
+
+  for (const flake of snowflakes) {
+    snowCtx.save()
+    snowCtx.translate(flake.x, flake.y)
+    snowCtx.rotate(flake.rotation * Math.PI / 180)
+
+    // Draw snowflake
+    snowCtx.beginPath()
+    snowCtx.arc(0, 0, flake.size, 0, Math.PI * 2)
+
+    // Gradient for soft glow effect
+    const gradient = snowCtx.createRadialGradient(0, 0, 0, 0, 0, flake.size)
+    gradient.addColorStop(0, `rgba(255, 255, 255, ${flake.opacity})`)
+    gradient.addColorStop(0.5, `rgba(220, 240, 255, ${flake.opacity * 0.8})`)
+    gradient.addColorStop(1, `rgba(200, 220, 255, 0)`)
+
+    snowCtx.fillStyle = gradient
+    snowCtx.fill()
+
+    snowCtx.restore()
+  }
+
+  snowAnimationId = requestAnimationFrame(renderSnow)
+}
+
+function startSnowEffect() {
+  const bounds = getGameCanvasBounds()
+
+  if (!snowCanvas) {
+    snowCanvas = document.createElement('canvas')
+    snowCanvas.id = 'vmkpal-snow-canvas'
+    snowCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483643;
+    `
+    snowCtx = snowCanvas.getContext('2d')
+    document.body.appendChild(snowCanvas)
+  }
+
+  // Apply bounds
+  snowCanvas.style.left = bounds.left + 'px'
+  snowCanvas.style.top = bounds.top + 'px'
+  snowCanvas.width = bounds.width
+  snowCanvas.height = bounds.height
+
+  snowCanvas.style.display = 'block'
+  initSnowflakes()
+  renderSnow()
+}
+
+function stopSnowEffect() {
+  if (snowAnimationId) {
+    cancelAnimationFrame(snowAnimationId)
+    snowAnimationId = null
+  }
+  if (snowCanvas) {
+    snowCanvas.style.display = 'none'
+  }
+}
+
+// Custom Emoji Rain Effect
+function toggleEmojiRain() {
+  isEmojiRainEnabled = !isEmojiRainEnabled
+
+  if (isEmojiRainEnabled) {
+    startEmojiRain()
+    showNotification(`${selectedEmoji} Emoji rain enabled`, 'success')
+  } else {
+    stopEmojiRain()
+    showNotification('Emoji rain disabled', 'info')
+  }
+
+  chrome.storage.local.set({ emojiRainEnabled: isEmojiRainEnabled })
+}
+
+function createEmojiDrop(randomY = false) {
+  const bounds = getGameCanvasBounds()
+  return {
+    x: Math.random() * bounds.width,
+    y: randomY ? Math.random() * bounds.height : -50,
+    speed: EMOJI_SPEED_MIN + Math.random() * (EMOJI_SPEED_MAX - EMOJI_SPEED_MIN),
+    size: 20 + Math.random() * 16,
+    rotation: Math.random() * 360,
+    rotationSpeed: (Math.random() - 0.5) * 120,
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 1.5 + Math.random() * 2,
+    wobbleAmount: 25 + Math.random() * 25
+  }
+}
+
+function initEmojiDrops() {
+  emojiDrops = []
+  for (let i = 0; i < EMOJI_DROP_COUNT; i++) {
+    emojiDrops.push(createEmojiDrop(true))
+  }
+  lastEmojiTime = performance.now()
+}
+
+function updateEmojiDrops(dt) {
+  const bounds = getGameCanvasBounds()
+
+  for (let i = 0; i < emojiDrops.length; i++) {
+    const drop = emojiDrops[i]
+    drop.y += drop.speed * dt
+    drop.rotation += drop.rotationSpeed * dt
+    drop.wobble += drop.wobbleSpeed * dt
+
+    if (drop.y > bounds.height + 50) {
+      emojiDrops[i] = createEmojiDrop(false)
+    }
+  }
+}
+
+function renderEmojiRain() {
+  if (!emojiCtx || !isEmojiRainEnabled) return
+
+  const now = performance.now()
+  const dt = Math.min((now - lastEmojiTime) / 1000, 0.1)
+  lastEmojiTime = now
+
+  emojiCtx.clearRect(0, 0, emojiCanvas.width, emojiCanvas.height)
+  updateEmojiDrops(dt)
+
+  for (const drop of emojiDrops) {
+    const wobbleX = Math.sin(drop.wobble) * drop.wobbleAmount
+
+    emojiCtx.save()
+    emojiCtx.translate(drop.x + wobbleX, drop.y)
+    emojiCtx.rotate(drop.rotation * Math.PI / 180)
+    emojiCtx.font = `${drop.size}px serif`
+    emojiCtx.textAlign = 'center'
+    emojiCtx.textBaseline = 'middle'
+    emojiCtx.fillText(selectedEmoji, 0, 0)
+    emojiCtx.restore()
+  }
+
+  emojiAnimationId = requestAnimationFrame(renderEmojiRain)
+}
+
+function startEmojiRain() {
+  const bounds = getGameCanvasBounds()
+
+  if (!emojiCanvas) {
+    emojiCanvas = document.createElement('canvas')
+    emojiCanvas.id = 'vmkpal-emoji-canvas'
+    emojiCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483642;
+    `
+    emojiCtx = emojiCanvas.getContext('2d')
+    document.body.appendChild(emojiCanvas)
+  }
+
+  // Apply bounds
+  emojiCanvas.style.left = bounds.left + 'px'
+  emojiCanvas.style.top = bounds.top + 'px'
+  emojiCanvas.width = bounds.width
+  emojiCanvas.height = bounds.height
+
+  emojiCanvas.style.display = 'block'
+  initEmojiDrops()
+  renderEmojiRain()
+}
+
+function stopEmojiRain() {
+  if (emojiAnimationId) {
+    cancelAnimationFrame(emojiAnimationId)
+    emojiAnimationId = null
+  }
+  if (emojiCanvas) {
+    emojiCanvas.style.display = 'none'
+  }
+}
+
+function setSelectedEmoji(emoji) {
+  selectedEmoji = emoji
+  chrome.storage.local.set({ selectedEmoji })
+}
+
+// Haunted Mansion Ghost Effect
+function createGhost() {
+  const bounds = getGameCanvasBounds()
+  const imageFile = GHOST_IMAGES[Math.floor(Math.random() * GHOST_IMAGES.length)]
+  const imageUrl = chrome.runtime.getURL(imageFile)
+
+  // Create ghost element
+  const ghost = document.createElement('img')
+  ghost.src = imageUrl
+  ghost.className = 'vmkpal-ghost'
+  ghost.style.cssText = `
+    position: fixed;
+    width: 50px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483640;
+    filter: drop-shadow(0 0 12px rgba(${GHOST_GLOW_COLOR}, 0.8))
+            drop-shadow(0 0 24px rgba(${GHOST_GLOW_COLOR}, 0.5))
+            drop-shadow(0 0 36px rgba(${GHOST_GLOW_COLOR}, 0.3));
+    transition: opacity 2s ease-in-out;
+  `
+
+  // Random starting position within game bounds
+  const startX = bounds.left + Math.random() * (bounds.width - 50)
+  const startY = bounds.top + Math.random() * (bounds.height - 60)
+  ghost.style.left = startX + 'px'
+  ghost.style.top = startY + 'px'
+
+  document.body.appendChild(ghost)
+
+  // Ghost movement data
+  const ghostData = {
+    element: ghost,
+    x: startX,
+    y: startY,
+    vx: (Math.random() - 0.5) * 30, // Horizontal drift
+    vy: (Math.random() - 0.5) * 20, // Vertical drift
+    wobblePhase: Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.5 + Math.random() * 0.5,
+    startTime: performance.now(),
+    fadeInComplete: false
+  }
+
+  activeGhosts.push(ghostData)
+
+  // Fade in
+  requestAnimationFrame(() => {
+    ghost.style.opacity = '0.85'
+  })
+
+  // Schedule fade out and removal
+  setTimeout(() => {
+    ghost.style.opacity = '0'
+    setTimeout(() => {
+      ghost.remove()
+      const index = activeGhosts.indexOf(ghostData)
+      if (index > -1) {
+        activeGhosts.splice(index, 1)
+      }
+    }, 2000) // Wait for fade out transition
+  }, GHOST_LIFETIME - 2000) // Start fade out 2s before lifetime ends
+}
+
+function updateGhosts() {
+  if (!isGhostEffectActive) return
+
+  const bounds = getGameCanvasBounds()
+  const now = performance.now()
+
+  for (const ghost of activeGhosts) {
+    // Wobble effect
+    ghost.wobblePhase += ghost.wobbleSpeed * 0.016 // ~60fps
+
+    // Update position with drift and wobble
+    ghost.x += ghost.vx * 0.016
+    ghost.y += ghost.vy * 0.016
+
+    // Add floating wobble
+    const wobbleX = Math.sin(ghost.wobblePhase) * 15
+    const wobbleY = Math.sin(ghost.wobblePhase * 0.7) * 10
+
+    // Keep within bounds (with soft bounce)
+    if (ghost.x < bounds.left || ghost.x > bounds.left + bounds.width - 50) {
+      ghost.vx *= -0.8
+      ghost.x = Math.max(bounds.left, Math.min(ghost.x, bounds.left + bounds.width - 50))
+    }
+    if (ghost.y < bounds.top || ghost.y > bounds.top + bounds.height - 60) {
+      ghost.vy *= -0.8
+      ghost.y = Math.max(bounds.top, Math.min(ghost.y, bounds.top + bounds.height - 60))
+    }
+
+    // Apply position
+    ghost.element.style.left = (ghost.x + wobbleX) + 'px'
+    ghost.element.style.top = (ghost.y + wobbleY) + 'px'
+
+    // Subtle rotation for ghostly effect
+    const rotation = Math.sin(ghost.wobblePhase * 0.5) * 5
+    ghost.element.style.transform = `rotate(${rotation}deg)`
+  }
+
+  ghostAnimationId = requestAnimationFrame(updateGhosts)
+}
+
+function startGhostEffect() {
+  if (isGhostEffectActive) return
+
+  isGhostEffectActive = true
+  console.log('MyVMK Genie: Starting Haunted Mansion ghost effect')
+
+  // Start animation loop
+  updateGhosts()
+
+  // Spawn first ghost immediately
+  if (activeGhosts.length < GHOST_MAX_COUNT) {
+    createGhost()
+  }
+
+  // Spawn ghosts periodically
+  ghostSpawnInterval = setInterval(() => {
+    if (activeGhosts.length < GHOST_MAX_COUNT && isGhostEffectActive) {
+      createGhost()
+    }
+  }, GHOST_SPAWN_INTERVAL)
+}
+
+function stopGhostEffect() {
+  if (!isGhostEffectActive) return
+
+  isGhostEffectActive = false
+  console.log('MyVMK Genie: Stopping Haunted Mansion ghost effect')
+
+  // Clear spawn interval
+  if (ghostSpawnInterval) {
+    clearInterval(ghostSpawnInterval)
+    ghostSpawnInterval = null
+  }
+
+  // Cancel animation
+  if (ghostAnimationId) {
+    cancelAnimationFrame(ghostAnimationId)
+    ghostAnimationId = null
+  }
+
+  // Fade out and remove all ghosts
+  for (const ghost of activeGhosts) {
+    ghost.element.style.opacity = '0'
+    setTimeout(() => {
+      ghost.element.remove()
+    }, 2000)
+  }
+  activeGhosts = []
+}
+
+// Check if ghost effect should be active based on current room
+function checkGhostEffectRoom() {
+  if (currentRoomId === HAUNTED_MANSION_LOBBY_ID) {
+    if (!isGhostEffectActive) {
+      startGhostEffect()
+    }
+  } else {
+    if (isGhostEffectActive) {
+      stopGhostEffect()
+    }
+  }
+}
+
+// Toggle position lock
+function togglePositionLock() {
+  isPositionLocked = !isPositionLocked
+
+  if (isPositionLocked) {
+    showNotification('🔒 Position locked', 'success')
+  } else {
+    showNotification('🔓 Position unlocked', 'info')
+  }
+
+  // Save preference
+  chrome.storage.local.set({ positionLocked: isPositionLocked })
+}
+
+// Toggle stars overlay (on top of game)
+function toggleStarsOverlay() {
+  isStarsOverlayEnabled = !isStarsOverlayEnabled
+
+  let overlay = document.getElementById('vmkpal-stars-overlay')
+
+  if (isStarsOverlayEnabled) {
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.id = 'vmkpal-stars-overlay'
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 2147483645;
+      `
+
+      // Create stars for overlay
+      const starCount = Math.floor((window.innerWidth * window.innerHeight) / 6000)
+      for (let i = 0; i < starCount; i++) {
+        const star = document.createElement('div')
+        star.className = 'vmkpal-star'
+        star.style.left = Math.random() * 100 + '%'
+        star.style.top = Math.random() * 100 + '%'
+        star.style.setProperty('--delay', Math.random() * 4 + 's')
+        star.style.setProperty('--duration', (2 + Math.random() * 3) + 's')
+        const size = 1 + Math.random() * 2
+        star.style.width = size + 'px'
+        star.style.height = size + 'px'
+        overlay.appendChild(star)
+      }
+
+      document.body.appendChild(overlay)
+    }
+    overlay.style.display = 'block'
+    showNotification('✨ Stars overlay enabled', 'success')
+  } else {
+    if (overlay) {
+      overlay.style.display = 'none'
+    }
+    showNotification('✨ Stars overlay disabled', 'info')
+  }
+
+  chrome.storage.local.set({ starsOverlayEnabled: isStarsOverlayEnabled })
+}
+
+// Toggle night overlay (dark tint over game)
+function toggleNightOverlay() {
+  isNightOverlayEnabled = !isNightOverlayEnabled
+
+  let overlay = document.getElementById('vmkpal-night-overlay')
+
+  if (isNightOverlayEnabled) {
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.id = 'vmkpal-night-overlay'
+      document.body.appendChild(overlay)
+    }
+    updateNightOverlayBounds()
+    overlay.style.display = 'block'
+    showNotification('🌙 Night mode enabled', 'success')
+  } else {
+    if (overlay) {
+      overlay.style.display = 'none'
+    }
+    showNotification('🌙 Night mode disabled', 'info')
+  }
+
+  chrome.storage.local.set({ nightOverlayEnabled: isNightOverlayEnabled })
+}
+
+// Update night overlay to match game canvas bounds
+function updateNightOverlayBounds() {
+  const overlay = document.getElementById('vmkpal-night-overlay')
+  if (!overlay) return
+
+  const bounds = getGameCanvasBounds()
+  overlay.style.cssText = `
+    position: fixed;
+    top: ${bounds.top}px;
+    left: ${bounds.left}px;
+    width: ${bounds.width}px;
+    height: ${bounds.height}px;
+    pointer-events: none;
+    z-index: 2147483630;
+    background: linear-gradient(
+      to bottom,
+      rgba(5, 10, 30, 0.45) 0%,
+      rgba(10, 15, 40, 0.35) 50%,
+      rgba(5, 10, 30, 0.4) 100%
+    );
+    mix-blend-mode: multiply;
+  `
+}
+
+// Overlays Panel - Toggle various visual overlays
+function createOverlaysPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Grid container
+  const grid = document.createElement('div')
+  grid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  `
+
+  // Rain toggle
+  grid.appendChild(createOverlayToggle(
+    '🌧️',
+    'Rain',
+    () => isRainEnabled,
+    toggleRainOverlay
+  ))
+
+  // Stars overlay toggle
+  grid.appendChild(createOverlayToggle(
+    '✨',
+    'Stars',
+    () => isStarsOverlayEnabled,
+    toggleStarsOverlay
+  ))
+
+  // Night overlay toggle
+  grid.appendChild(createOverlayToggle(
+    '🌙',
+    'Night',
+    () => isNightOverlayEnabled,
+    toggleNightOverlay
+  ))
+
+  // Money rain toggle
+  grid.appendChild(createOverlayToggle(
+    '💸',
+    'Money',
+    () => isMoneyRainEnabled,
+    toggleMoneyRain
+  ))
+
+  // Fireworks toggle
+  grid.appendChild(createOverlayToggle(
+    '🎆',
+    'Fireworks',
+    () => isFireworksEnabled,
+    toggleFireworks
+  ))
+
+  // Snow toggle
+  grid.appendChild(createOverlayToggle(
+    '❄️',
+    'Snow',
+    () => isSnowEnabled,
+    toggleSnowOverlay
+  ))
+
+  div.appendChild(grid)
+
+  // Emoji Rain Section
+  const emojiSection = document.createElement('div')
+  emojiSection.style.cssText = `
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+  `
+
+  // Header row with title and toggle
+  const emojiHeader = document.createElement('div')
+  emojiHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  `
+
+  const emojiTitle = document.createElement('div')
+  emojiTitle.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `
+  emojiTitle.innerHTML = `
+    <span style="font-size: 18px;">${selectedEmoji}</span>
+    <span style="color: white; font-size: 12px; font-weight: 500;">Emoji Rain</span>
+  `
+
+  const emojiToggleBtn = document.createElement('button')
+  const updateEmojiToggle = () => {
+    emojiToggleBtn.textContent = isEmojiRainEnabled ? 'ON' : 'OFF'
+    emojiToggleBtn.style.cssText = `
+      padding: 5px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      ${isEmojiRainEnabled
+        ? 'background: linear-gradient(135deg, #10b981, #059669); color: white;'
+        : 'background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5);'
+      }
+    `
+    // Update the title emoji display
+    emojiTitle.innerHTML = `
+      <span style="font-size: 18px;">${selectedEmoji}</span>
+      <span style="color: white; font-size: 12px; font-weight: 500;">Emoji Rain</span>
+    `
+  }
+  updateEmojiToggle()
+
+  emojiToggleBtn.onclick = () => {
+    toggleEmojiRain()
+    updateEmojiToggle()
+  }
+
+  emojiHeader.appendChild(emojiTitle)
+  emojiHeader.appendChild(emojiToggleBtn)
+  emojiSection.appendChild(emojiHeader)
+
+  // Emoji picker grid
+  const emojiGrid = document.createElement('div')
+  emojiGrid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+  `
+
+  EMOJI_PRESETS.forEach(emoji => {
+    const emojiBtn = document.createElement('button')
+    emojiBtn.textContent = emoji
+    emojiBtn.style.cssText = `
+      padding: 6px;
+      border: 2px solid ${selectedEmoji === emoji ? '#8b5cf6' : 'transparent'};
+      border-radius: 6px;
+      background: ${selectedEmoji === emoji ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255,255,255,0.05)'};
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+
+    emojiBtn.onmouseenter = () => {
+      if (selectedEmoji !== emoji) {
+        emojiBtn.style.background = 'rgba(255,255,255,0.1)'
+      }
+    }
+    emojiBtn.onmouseleave = () => {
+      emojiBtn.style.background = selectedEmoji === emoji ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255,255,255,0.05)'
+    }
+
+    emojiBtn.onclick = () => {
+      setSelectedEmoji(emoji)
+      // Update all emoji buttons
+      emojiGrid.querySelectorAll('button').forEach(btn => {
+        const isSelected = btn.textContent === emoji
+        btn.style.border = isSelected ? '2px solid #8b5cf6' : '2px solid transparent'
+        btn.style.background = isSelected ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255,255,255,0.05)'
+      })
+      updateEmojiToggle()
+    }
+
+    emojiGrid.appendChild(emojiBtn)
+  })
+
+  emojiSection.appendChild(emojiGrid)
+
+  // Custom emoji input
+  const customRow = document.createElement('div')
+  customRow.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    max-width: 100%;
+    box-sizing: border-box;
+  `
+
+  const customLabel = document.createElement('span')
+  customLabel.textContent = 'Custom:'
+  customLabel.style.cssText = `
+    color: rgba(255,255,255,0.6);
+    font-size: 10px;
+    flex-shrink: 0;
+  `
+
+  const customInput = document.createElement('input')
+  customInput.type = 'text'
+  customInput.placeholder = '🎀'
+  customInput.value = ''
+  customInput.style.cssText = `
+    width: 50px;
+    padding: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    color: white;
+    font-size: 16px;
+    text-align: center;
+    outline: none;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  `
+  customInput.onfocus = () => customInput.style.borderColor = '#8b5cf6'
+  customInput.onblur = () => customInput.style.borderColor = 'rgba(255,255,255,0.15)'
+
+  // Prevent event propagation for input
+  customInput.addEventListener('mousedown', (e) => e.stopPropagation())
+  customInput.addEventListener('click', (e) => e.stopPropagation())
+  customInput.addEventListener('keydown', (e) => {
+    e.stopPropagation()
+    if (e.key === 'Enter' && customInput.value.trim()) {
+      applyCustomEmoji()
+    }
+  }, true)
+  customInput.addEventListener('keyup', (e) => e.stopPropagation())
+  customInput.addEventListener('keypress', (e) => e.stopPropagation())
+  customInput.addEventListener('paste', (e) => e.stopPropagation())
+
+  const applyBtn = document.createElement('button')
+  applyBtn.textContent = 'Use'
+  applyBtn.style.cssText = `
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+  `
+  applyBtn.onmouseenter = () => applyBtn.style.opacity = '0.9'
+  applyBtn.onmouseleave = () => applyBtn.style.opacity = '1'
+
+  const applyCustomEmoji = () => {
+    const emoji = customInput.value.trim()
+    if (emoji) {
+      setSelectedEmoji(emoji)
+      // Deselect all preset buttons
+      emojiGrid.querySelectorAll('button').forEach(btn => {
+        btn.style.border = '2px solid transparent'
+        btn.style.background = 'rgba(255,255,255,0.05)'
+      })
+      updateEmojiToggle()
+      customInput.value = ''
+      showNotification(`${emoji} Selected!`, 'success')
+    }
+  }
+
+  applyBtn.onclick = applyCustomEmoji
+
+  customRow.appendChild(customLabel)
+  customRow.appendChild(customInput)
+  customRow.appendChild(applyBtn)
+  emojiSection.appendChild(customRow)
+
+  div.appendChild(emojiSection)
+
+  return div
+}
+
+// Helper to create overlay toggle square button
+function createOverlayToggle(icon, label, isEnabledFn, toggleFn) {
+  const btn = document.createElement('button')
+
+  const updateStyle = () => {
+    const enabled = isEnabledFn()
+    btn.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 12px 8px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      ${enabled
+        ? 'background: linear-gradient(135deg, #10b981, #059669); color: white;'
+        : 'background: rgba(255,255,255,0.08); color: white;'
+      }
+    `
+  }
+
+  updateStyle()
+
+  btn.innerHTML = `
+    <span style="font-size: 22px;">${icon}</span>
+    <span style="font-size: 10px; font-weight: 500;">${label}</span>
+  `
+
+  btn.onclick = () => {
+    toggleFn()
+    updateStyle()
+  }
+
+  btn.onmouseenter = () => {
+    if (!isEnabledFn()) {
+      btn.style.background = 'rgba(255,255,255,0.15)'
+    }
+  }
+
+  btn.onmouseleave = () => {
+    updateStyle()
+  }
+
+  return btn
+}
+
+// Commands Panel - MyVMK command reference guide
+function createCommandsPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 8px;'
+
+  // All commands data
+  const allCommands = [
+    { category: 'General Commands', command: '!me (text)', desc: 'Sends a message in the room with your character name.', copyText: '!me ' },
+    { category: 'General Commands', command: '!s / !sig / !signature', desc: 'Updates your signature with any text placed after the command.', copyText: '!sig ' },
+    { category: 'General Commands', command: '!notrades / !toggletrades', desc: 'Stops you from getting trade requests. Type again to re-enable.', copyText: '!notrades' },
+    { category: 'General Commands', command: '!nofriends', desc: 'Stops you from getting friend requests. Type again to re-enable.', copyText: '!nofriends' },
+    { category: 'General Commands', command: '!invisiblemode', desc: 'Enables invisible mode so you appear offline. Type again or relog to disable.', copyText: '!invisiblemode' },
+    { category: 'General Commands', command: '!lucky', desc: 'Sends you to a random guest room.', copyText: '!lucky' },
+    { category: 'General Commands', command: '!sniff (user)', desc: 'Sniffs a user and randomly generates a scent.', copyText: '!sniff ' },
+    { category: 'General Commands', command: '!roll #', desc: 'Rolls a random number between 1 and #.', copyText: '!roll ' },
+    { category: 'General Commands', command: '::screenshot', desc: 'Downloads a picture of the room (hides chat bubbles).', copyText: '::screenshot' },
+    { category: 'General Commands', command: '::screenshot av', desc: 'Downloads a picture of the room (hides avatars).', copyText: '::screenshot av' },
+    { category: 'General Commands', command: '::screenshot chat', desc: 'Downloads a picture of the room (includes chat bubbles).', copyText: '::screenshot chat' },
+    { category: 'General Commands', command: '::presets', desc: 'Opens a popup interface to view, delete, and edit clothing presets.', copyText: '::presets' },
+    { category: 'General Commands', command: '::discordtrade', desc: 'Opens a searchable interface for trades and Discord\'s #trading-post.', copyText: '::discordtrade' },
+    { category: 'General Commands', command: '::up', desc: 'Clears your game window of chats.', copyText: '::up' },
+    { category: 'General Commands', command: '::nolanyards', desc: 'Prevents opening a user\'s pin lanyard. Type again to re-enable.', copyText: '::nolanyards' },
+    { category: 'General Commands', command: '::avatars', desc: 'Lists all users in the same room.', copyText: '::avatars' },
+    { category: 'General Commands', command: '::cratewins', desc: 'Displays all items you won from crates.', copyText: '::cratewins' },
+    { category: 'Keyboard Shortcuts', shortcut: 'Hold Shift + Click a User', desc: 'Types the user\'s name into the chat box.' },
+    { category: 'Keyboard Shortcuts', shortcut: 'Hold Shift + Press Next in Messages', desc: 'Deletes all messages.' },
+    { category: 'Keyboard Shortcuts', shortcut: 'Hold Shift + Press - or + in Shops', desc: 'Bulk adds/subtracts 10 of an item.' },
+    { category: 'Keyboard Shortcuts', shortcut: 'Hold Shift + Highlight in Inventory', desc: 'Allows you to sell the entire stack of a sellable item.' },
+    { category: 'Keyboard Shortcuts', shortcut: 'Right Click on Item While Trading', desc: 'Opens a dropdown for bulk adding items.' },
+    { category: 'Guest Room Commands', command: '!spin', desc: 'Spins all generators in the current room.', copyText: '!spin' },
+    { category: 'Guest Room Commands', command: '!resetstates rng', desc: 'Resets only the random number generators to zero.', copyText: '!resetstates rng' },
+    { category: 'Guest Room Commands', command: '!resetstates', desc: 'Resets all items in the room to default state (Generators, Flaming Ransacked Windows, Lanterns, Candles, etc.).', copyText: '!resetstates' },
+    { category: 'Guest Room Commands', command: '!kick (user)', desc: 'Kicks a specific user from the guest room.', copyText: '!kick ' },
+    { category: 'Guest Room Commands', command: '!q / !queue', desc: 'Shows users, queue size, and room capacity.', copyText: '!q' },
+    { category: 'Guest Room Commands', command: '!preload', desc: 'Toggles loading of all items in a room before entering. Type again to disable.', copyText: '!preload' },
+    { category: 'Guest Room Commands', command: '!cage (username)', desc: 'Only available in Oogie\'s Lair guestroom; sends a user to the cage.', copyText: '!cage ' },
+    { category: 'Furniture Shortcuts', shortcut: 'Hold Shift While Placing Furniture', desc: 'Places multiples of an item consecutively if you have several in inventory.' },
+    { category: 'Furniture Shortcuts', shortcut: 'Hold Shift + Click a Furniture Item', desc: 'Puts the item back into your inventory.' },
+    { category: 'Furniture Shortcuts', shortcut: 'Hold Control + Click/Scroll a Furniture Item', desc: 'Rotates the item before placing it.' }
+  ]
+
+  // Copy feedback tooltip
+  let copyTooltip = null
+  function showCopyFeedback(element, text) {
+    if (copyTooltip) copyTooltip.remove()
+
+    copyTooltip = document.createElement('div')
+    copyTooltip.textContent = 'Copied!'
+    copyTooltip.style.cssText = `
+      position: absolute;
+      background: #10b981;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      z-index: 10000;
+      pointer-events: none;
+      animation: fadeOut 1s forwards;
+    `
+
+    const rect = element.getBoundingClientRect()
+    copyTooltip.style.left = rect.right + 8 + 'px'
+    copyTooltip.style.top = rect.top + 'px'
+
+    document.body.appendChild(copyTooltip)
+
+    setTimeout(() => {
+      if (copyTooltip) {
+        copyTooltip.remove()
+        copyTooltip = null
+      }
+    }, 1000)
+  }
+
+  // Search bar
+  const searchContainer = document.createElement('div')
+  searchContainer.style.cssText = 'margin-bottom: 12px;'
+
+  const searchInput = document.createElement('input')
+  searchInput.type = 'text'
+  searchInput.placeholder = 'Search commands...'
+  searchInput.style.cssText = `
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: white;
+    font-size: 12px;
+    outline: none;
+  `
+  searchInput.onfocus = () => searchInput.style.borderColor = '#8b5cf6'
+  searchInput.onblur = () => searchInput.style.borderColor = 'rgba(255,255,255,0.15)'
+
+  // Prevent event propagation to fix input issues
+  searchInput.addEventListener('mousedown', (e) => e.stopPropagation())
+  searchInput.addEventListener('click', (e) => e.stopPropagation())
+  searchInput.addEventListener('keydown', (e) => {
+    e.stopPropagation()
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      return true
+    }
+  }, true)
+  searchInput.addEventListener('keyup', (e) => e.stopPropagation())
+  searchInput.addEventListener('keypress', (e) => e.stopPropagation())
+  searchInput.addEventListener('paste', (e) => e.stopPropagation())
+  searchInput.addEventListener('copy', (e) => e.stopPropagation())
+  searchInput.addEventListener('cut', (e) => e.stopPropagation())
+
+  const hint = document.createElement('div')
+  hint.style.cssText = `
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    margin-top: 4px;
+  `
+  hint.textContent = 'Click any green command to copy'
+
+  searchContainer.appendChild(searchInput)
+  searchContainer.appendChild(hint)
+  div.appendChild(searchContainer)
+
+  // Content area (uses parent scroll)
+  const contentArea = document.createElement('div')
+
+  // Helper to create command row
+  function createCommandRow(item) {
+    const row = document.createElement('div')
+    row.className = 'command-row'
+    row.style.cssText = `
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    `
+
+    if (item.command) {
+      const cmd = document.createElement('div')
+      cmd.style.cssText = `
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 11px;
+        color: #4ade80;
+        background: rgba(74, 222, 128, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      `
+      cmd.textContent = item.command
+      cmd.title = 'Click to copy'
+
+      cmd.onmouseenter = () => {
+        cmd.style.background = 'rgba(74, 222, 128, 0.25)'
+        cmd.style.transform = 'scale(1.02)'
+      }
+      cmd.onmouseleave = () => {
+        cmd.style.background = 'rgba(74, 222, 128, 0.1)'
+        cmd.style.transform = 'scale(1)'
+      }
+      cmd.onclick = () => {
+        navigator.clipboard.writeText(item.copyText || item.command)
+        showCopyFeedback(cmd, item.copyText || item.command)
+      }
+
+      row.appendChild(cmd)
+    }
+
+    if (item.shortcut) {
+      const shortcut = document.createElement('div')
+      shortcut.style.cssText = `
+        font-size: 11px;
+        color: #818cf8;
+        font-weight: 600;
+        margin-bottom: 4px;
+      `
+      shortcut.textContent = item.shortcut
+      row.appendChild(shortcut)
+    }
+
+    const desc = document.createElement('div')
+    desc.style.cssText = `
+      font-size: 10px;
+      color: rgba(255,255,255,0.7);
+      line-height: 1.4;
+    `
+    desc.textContent = item.desc
+    row.appendChild(desc)
+
+    return row
+  }
+
+  // Render commands grouped by category
+  function renderCommands(filter = '') {
+    contentArea.innerHTML = ''
+    const lowerFilter = filter.toLowerCase()
+
+    const filteredCommands = filter
+      ? allCommands.filter(item =>
+          (item.command && item.command.toLowerCase().includes(lowerFilter)) ||
+          (item.shortcut && item.shortcut.toLowerCase().includes(lowerFilter)) ||
+          item.desc.toLowerCase().includes(lowerFilter) ||
+          item.category.toLowerCase().includes(lowerFilter)
+        )
+      : allCommands
+
+    if (filteredCommands.length === 0) {
+      const noResults = document.createElement('div')
+      noResults.style.cssText = `
+        text-align: center;
+        color: rgba(255,255,255,0.5);
+        font-size: 12px;
+        padding: 20px;
+      `
+      noResults.textContent = 'No commands found'
+      contentArea.appendChild(noResults)
+      return
+    }
+
+    // Group by category
+    const categories = {}
+    filteredCommands.forEach(item => {
+      if (!categories[item.category]) categories[item.category] = []
+      categories[item.category].push(item)
+    })
+
+    // Render each category
+    Object.keys(categories).forEach(categoryName => {
+      const section = document.createElement('div')
+      section.style.cssText = 'margin-bottom: 16px;'
+
+      const header = document.createElement('div')
+      header.style.cssText = `
+        font-size: 12px;
+        font-weight: 600;
+        color: #fbbf24;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(251, 191, 36, 0.3);
+      `
+      header.textContent = categoryName
+      section.appendChild(header)
+
+      categories[categoryName].forEach(item => {
+        section.appendChild(createCommandRow(item))
+      })
+
+      contentArea.appendChild(section)
+    })
+  }
+
+  // Initial render
+  renderCommands()
+
+  // Search handler
+  searchInput.oninput = (e) => {
+    renderCommands(e.target.value)
+  }
+
+  div.appendChild(contentArea)
+
+  return div
+}
+
+// Settings Panel - Extension settings and customization
+function createSettingsPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Small Icon Toggle
+  const smallIconToggle = createSettingToggle(
+    '🔍',
+    'Small Icon',
+    'Use a smaller floating menu icon',
+    () => isSmallIconEnabled,
+    () => {
+      isSmallIconEnabled = !isSmallIconEnabled
+      chrome.storage.local.set({ isSmallIconEnabled })
+      applyIconSize()
+    }
+  )
+  div.appendChild(smallIconToggle.element)
+
+  // Background Color Section
+  const bgSection = document.createElement('div')
+  bgSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  `
+
+  const bgHeader = document.createElement('div')
+  bgHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  `
+  bgHeader.innerHTML = `
+    <span style="font-size: 24px;">🎨</span>
+    <div>
+      <div style="color: white; font-size: 13px; font-weight: 500;">Background Color</div>
+      <div style="color: rgba(255,255,255,0.5); font-size: 10px;">Customize panel background</div>
+    </div>
+  `
+  bgSection.appendChild(bgHeader)
+
+  // Color picker row
+  const colorRow = document.createElement('div')
+  colorRow.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  `
+
+  const colorInput = document.createElement('input')
+  colorInput.type = 'color'
+  colorInput.value = customBackgroundColor || '#1e1b4b'
+  colorInput.style.cssText = `
+    width: 40px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+  `
+
+  const colorPreview = document.createElement('div')
+  colorPreview.style.cssText = `
+    flex: 1;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
+  `
+
+  const updateColorPreview = () => {
+    colorPreview.style.background = colorInput.value
+  }
+  updateColorPreview()
+
+  colorInput.addEventListener('input', updateColorPreview)
+
+  colorRow.appendChild(colorInput)
+  colorRow.appendChild(colorPreview)
+  bgSection.appendChild(colorRow)
+
+  // Buttons row
+  const btnRow = document.createElement('div')
+  btnRow.style.cssText = `
+    display: flex;
+    gap: 8px;
+  `
+
+  const applyBtn = document.createElement('button')
+  applyBtn.textContent = 'Apply Color'
+  applyBtn.style.cssText = `
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  `
+  applyBtn.onmouseenter = () => applyBtn.style.opacity = '0.9'
+  applyBtn.onmouseleave = () => applyBtn.style.opacity = '1'
+  applyBtn.onclick = () => {
+    customBackgroundColor = colorInput.value
+    chrome.storage.local.set({ customBackgroundColor })
+    applyBackgroundColor()
+  }
+
+  const resetBtn = document.createElement('button')
+  resetBtn.textContent = 'Reset to Default'
+  resetBtn.style.cssText = `
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  `
+  resetBtn.onmouseenter = () => resetBtn.style.background = 'rgba(255,255,255,0.2)'
+  resetBtn.onmouseleave = () => resetBtn.style.background = 'rgba(255,255,255,0.1)'
+  resetBtn.onclick = () => {
+    customBackgroundColor = null
+    colorInput.value = '#1e1b4b'
+    updateColorPreview()
+    chrome.storage.local.remove('customBackgroundColor')
+    applyBackgroundColor()
+  }
+
+  btnRow.appendChild(applyBtn)
+  btnRow.appendChild(resetBtn)
+  bgSection.appendChild(btnRow)
+
+  div.appendChild(bgSection)
+
+  // Load saved settings to update UI
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor'], (result) => {
+    if (result.isSmallIconEnabled !== undefined) {
+      isSmallIconEnabled = result.isSmallIconEnabled
+      smallIconToggle.updateState()
+    }
+    if (result.customBackgroundColor) {
+      customBackgroundColor = result.customBackgroundColor
+      colorInput.value = customBackgroundColor
+      updateColorPreview()
+    }
+  })
+
+  return div
+}
+
+// Helper to create settings toggle row
+function createSettingToggle(icon, label, description, isEnabledFn, toggleFn) {
+  const row = document.createElement('div')
+  row.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  `
+
+  const iconSpan = document.createElement('span')
+  iconSpan.style.fontSize = '24px'
+  iconSpan.textContent = icon
+
+  const info = document.createElement('div')
+  info.style.cssText = 'flex: 1;'
+  info.innerHTML = `
+    <div style="color: white; font-size: 13px; font-weight: 500;">${label}</div>
+    <div style="color: rgba(255,255,255,0.5); font-size: 10px;">${description}</div>
+  `
+
+  const toggle = document.createElement('button')
+  const updateToggle = () => {
+    const enabled = isEnabledFn()
+    toggle.textContent = enabled ? 'ON' : 'OFF'
+    toggle.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      ${enabled
+        ? 'background: linear-gradient(135deg, #10b981, #059669); color: white;'
+        : 'background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5);'
+      }
+    `
+  }
+
+  updateToggle()
+
+  toggle.onclick = () => {
+    toggleFn()
+    updateToggle()
+  }
+
+  row.appendChild(iconSpan)
+  row.appendChild(info)
+  row.appendChild(toggle)
+
+  return { element: row, updateState: updateToggle }
+}
+
+// Audio Learning Panel - Map room audio to room IDs
+function createAudioLearningPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Header/Instructions
+  const header = document.createElement('div')
+  header.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  `
+  header.innerHTML = `
+    <div style="color: #fbbf24; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Audio Room Learning Mode</div>
+    <div style="color: rgba(255,255,255,0.7); font-size: 11px; line-height: 1.5;">
+      Visit each room in the game. When audio plays, it will be detected below.
+      Select the room name and save to create a mapping.
+    </div>
+  `
+  div.appendChild(header)
+
+  // Current Audio Detection
+  const audioSection = document.createElement('div')
+  audioSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  `
+
+  const audioLabel = document.createElement('div')
+  audioLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 10px; text-transform: uppercase; margin-bottom: 8px;'
+  audioLabel.textContent = 'Detected Audio'
+  audioSection.appendChild(audioLabel)
+
+  // Folder name display (key identifier)
+  const folderDisplay = document.createElement('div')
+  folderDisplay.id = 'vmkpal-detected-folder'
+  folderDisplay.style.cssText = `
+    padding: 8px;
+    background: rgba(74, 222, 128, 0.15);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 6px;
+    color: #4ade80;
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  `
+  const currentFolder = getAudioFolder(detectedAudioUrl)
+  folderDisplay.textContent = currentFolder || 'Waiting for audio...'
+  audioSection.appendChild(folderDisplay)
+
+  // Full URL display (smaller, for reference)
+  const audioDisplay = document.createElement('div')
+  audioDisplay.id = 'vmkpal-detected-audio'
+  audioDisplay.style.cssText = `
+    padding: 6px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 4px;
+    color: rgba(255,255,255,0.5);
+    font-family: monospace;
+    font-size: 9px;
+    word-break: break-all;
+    max-height: 40px;
+    overflow: hidden;
+  `
+  audioDisplay.textContent = detectedAudioUrl || 'No audio detected yet'
+  audioSection.appendChild(audioDisplay)
+  div.appendChild(audioSection)
+
+  // Room Selector
+  const roomSection = document.createElement('div')
+  roomSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  `
+
+  const roomLabel = document.createElement('div')
+  roomLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 10px; text-transform: uppercase; margin-bottom: 8px;'
+  roomLabel.textContent = 'Select Room'
+  roomSection.appendChild(roomLabel)
+
+  const roomSelect = document.createElement('select')
+  roomSelect.style.cssText = `
+    width: 100%;
+    padding: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+  `
+  roomSelect.innerHTML = '<option value="">-- Select a room --</option>'
+
+  // Sort rooms alphabetically by name
+  const sortedRooms = Object.entries(ROOM_MAP).sort((a, b) => a[1].localeCompare(b[1]))
+  for (const [id, name] of sortedRooms) {
+    const option = document.createElement('option')
+    option.value = id
+    option.textContent = `${name} (ID: ${id})`
+    option.style.background = '#1e1b4b'
+    roomSelect.appendChild(option)
+  }
+  roomSection.appendChild(roomSelect)
+  div.appendChild(roomSection)
+
+  // Save button
+  const saveBtn = document.createElement('button')
+  saveBtn.textContent = 'Save Audio-Room Mapping'
+  saveBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 12px;
+    transition: opacity 0.2s;
+  `
+  saveBtn.onmouseenter = () => saveBtn.style.opacity = '0.9'
+  saveBtn.onmouseleave = () => saveBtn.style.opacity = '1'
+  saveBtn.onclick = () => {
+    const audioUrl = detectedAudioUrl
+    const roomId = parseInt(roomSelect.value)
+
+    if (!audioUrl) {
+      showAudioStatus('No audio detected yet!', 'error')
+      return
+    }
+    if (isNaN(roomId)) {
+      showAudioStatus('Please select a room!', 'error')
+      return
+    }
+
+    // Save the mapping
+    audioRoomMappings[audioUrl] = roomId
+    chrome.storage.local.set({ audioRoomMappings })
+
+    const roomName = ROOM_MAP[roomId] || `Room ${roomId}`
+    showAudioStatus(`Saved: ${roomName}`, 'success')
+    updateMappingsList()
+  }
+  div.appendChild(saveBtn)
+
+  // Status message
+  const status = document.createElement('div')
+  status.id = 'vmkpal-audio-status'
+  status.style.cssText = `
+    text-align: center;
+    font-size: 11px;
+    padding: 6px;
+    margin-bottom: 12px;
+  `
+  div.appendChild(status)
+
+  // Saved Mappings List
+  const mappingsSection = document.createElement('div')
+  mappingsSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  `
+
+  const mappingsHeader = document.createElement('div')
+  mappingsHeader.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  `
+  mappingsHeader.innerHTML = `
+    <span style="color: rgba(255,255,255,0.5); font-size: 10px; text-transform: uppercase;">Saved Mappings</span>
+    <span id="vmkpal-mappings-count" style="color: #4ade80; font-size: 10px;">${Object.keys(audioRoomMappings).length} rooms</span>
+  `
+  mappingsSection.appendChild(mappingsHeader)
+
+  const mappingsList = document.createElement('div')
+  mappingsList.id = 'vmkpal-mappings-list'
+  mappingsList.style.cssText = `
+    max-height: 150px;
+    overflow-y: auto;
+  `
+  mappingsSection.appendChild(mappingsList)
+  div.appendChild(mappingsSection)
+
+  // Export button
+  const exportBtn = document.createElement('button')
+  exportBtn.textContent = 'Export Mappings (Copy to Clipboard)'
+  exportBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: opacity 0.2s;
+  `
+  exportBtn.onmouseenter = () => exportBtn.style.opacity = '0.9'
+  exportBtn.onmouseleave = () => exportBtn.style.opacity = '1'
+  exportBtn.onclick = () => {
+    const exportData = JSON.stringify(audioRoomMappings, null, 2)
+    navigator.clipboard.writeText(exportData).then(() => {
+      showAudioStatus('Mappings copied to clipboard!', 'success')
+    }).catch(() => {
+      showAudioStatus('Failed to copy', 'error')
+    })
+  }
+  div.appendChild(exportBtn)
+
+  // Clear all button
+  const clearBtn = document.createElement('button')
+  clearBtn.textContent = 'Clear All Mappings'
+  clearBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  `
+  clearBtn.onmouseenter = () => clearBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+  clearBtn.onmouseleave = () => clearBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+  clearBtn.onclick = () => {
+    if (confirm('Clear all audio-room mappings?')) {
+      audioRoomMappings = {}
+      chrome.storage.local.remove('audioRoomMappings')
+      showAudioStatus('All mappings cleared', 'success')
+      updateMappingsList()
+    }
+  }
+  div.appendChild(clearBtn)
+
+  // Helper functions
+  function showAudioStatus(message, type) {
+    const statusEl = document.getElementById('vmkpal-audio-status')
+    if (statusEl) {
+      statusEl.textContent = message
+      statusEl.style.color = type === 'success' ? '#4ade80' : '#ef4444'
+      setTimeout(() => {
+        statusEl.textContent = ''
+      }, 3000)
+    }
+  }
+
+  function updateMappingsList() {
+    const listEl = document.getElementById('vmkpal-mappings-list')
+    const countEl = document.getElementById('vmkpal-mappings-count')
+    if (!listEl) return
+
+    const count = Object.keys(audioRoomMappings).length
+    if (countEl) countEl.textContent = `${count} rooms`
+
+    if (count === 0) {
+      listEl.innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size: 11px; text-align: center; padding: 8px;">No mappings yet</div>'
+      return
+    }
+
+    listEl.innerHTML = ''
+    for (const [url, roomId] of Object.entries(audioRoomMappings)) {
+      const roomName = ROOM_MAP[roomId] || `Room ${roomId}`
+      const item = document.createElement('div')
+      item.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 8px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 4px;
+        margin-bottom: 4px;
+      `
+
+      const info = document.createElement('div')
+      info.style.cssText = 'flex: 1; min-width: 0;'
+      info.innerHTML = `
+        <div style="color: white; font-size: 11px; font-weight: 500;">${roomName}</div>
+        <div style="color: rgba(255,255,255,0.4); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${url.split('/').pop()}</div>
+      `
+
+      const deleteBtn = document.createElement('button')
+      deleteBtn.textContent = '×'
+      deleteBtn.style.cssText = `
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 4px;
+        background: rgba(239, 68, 68, 0.3);
+        color: #ef4444;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        flex-shrink: 0;
+        margin-left: 8px;
+      `
+      deleteBtn.onclick = () => {
+        delete audioRoomMappings[url]
+        chrome.storage.local.set({ audioRoomMappings })
+        updateMappingsList()
+      }
+
+      item.appendChild(info)
+      item.appendChild(deleteBtn)
+      listEl.appendChild(item)
+    }
+  }
+
+  // Initialize the list
+  updateMappingsList()
+
+  // Update audio display periodically
+  const updateAudioDisplay = () => {
+    const folderEl = document.getElementById('vmkpal-detected-folder')
+    const displayEl = document.getElementById('vmkpal-detected-audio')
+    if (detectedAudioUrl) {
+      if (folderEl) {
+        const folder = getAudioFolder(detectedAudioUrl)
+        folderEl.textContent = folder || 'Unknown folder'
+        folderEl.style.color = '#4ade80'
+      }
+      if (displayEl) {
+        displayEl.textContent = detectedAudioUrl
+      }
+    }
+  }
+  setInterval(updateAudioDisplay, 500)
+
+  return div
+}
+
+// Apply icon size based on setting
+function applyIconSize() {
+  const menuBtn = document.querySelector('#vmkpal-toolbar button[title="MyVMK Genie Menu"]')
+  if (!menuBtn) return
+
+  const img = menuBtn.querySelector('img')
+  if (!img) return
+
+  const panel = document.getElementById('vmkpal-panel')
+  const isMenuOpen = panel && panel.style.display !== 'none'
+
+  if (isSmallIconEnabled) {
+    // Small icon - use questcover icons with open/closed states
+    const iconUrl = isMenuOpen
+      ? chrome.runtime.getURL('genie-questcover-clicked2.png')
+      : chrome.runtime.getURL('genie-questcover-unclicked.png')
+    img.src = iconUrl
+    img.style.width = '28px'
+    img.style.height = '28px'
+    menuBtn.style.width = '32px'
+    menuBtn.style.height = '32px'
+    menuBtn.style.boxShadow = '0 0 10px 3px rgba(139, 92, 246, 0.5), 0 0 20px 6px rgba(139, 92, 246, 0.3)'
+  } else {
+    // Large icon - use main genie icon (no open/closed state)
+    const largeIconUrl = chrome.runtime.getURL('myvmk-genie.png')
+    img.src = largeIconUrl
+    img.style.width = '50px'
+    img.style.height = '50px'
+    menuBtn.style.width = '50px'
+    menuBtn.style.height = '50px'
+    menuBtn.style.boxShadow = '0 0 15px 5px rgba(139, 92, 246, 0.5), 0 0 30px 10px rgba(139, 92, 246, 0.3)'
+  }
+}
+
+// Update icon state when menu opens/closes
+function updateIconState() {
+  if (isSmallIconEnabled) {
+    applyIconSize()
+  }
+}
+
+// Apply background color based on setting
+function applyBackgroundColor() {
+  const existingStyle = document.getElementById('vmkpal-border-fill')
+  if (!existingStyle) return
+
+  if (customBackgroundColor) {
+    existingStyle.textContent = existingStyle.textContent.replace(
+      /html, body \{[^}]+\}/,
+      `html, body {
+        background: linear-gradient(135deg, ${customBackgroundColor} 0%, ${adjustColor(customBackgroundColor, 20)} 50%, ${customBackgroundColor} 100%) !important;
+      }`
+    )
+  } else {
+    // Reset to default with image
+    const bgImageUrl = chrome.runtime.getURL('genie-background.png')
+    existingStyle.textContent = existingStyle.textContent.replace(
+      /html, body \{[^}]+\}/,
+      `html, body {
+        background: url('${bgImageUrl}') center center / cover no-repeat fixed,
+                    linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%) !important;
+      }`
+    )
+  }
+}
+
+// Load settings on startup
+function loadSettings() {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor'], (result) => {
+    if (result.isSmallIconEnabled) {
+      isSmallIconEnabled = result.isSmallIconEnabled
+      setTimeout(applyIconSize, 100)
+    }
+    if (result.customBackgroundColor) {
+      customBackgroundColor = result.customBackgroundColor
+      setTimeout(applyBackgroundColor, 100)
+    }
+  })
+}
+
+// Create a small feature button for the grid
+function createFeatureButton(icon, label, contentFn) {
+  const btn = document.createElement('button')
+  btn.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  `
+  btn.innerHTML = `
+    <span style="font-size: 20px;">${icon}</span>
+    <span style="color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 500;">${label}</span>
+  `
+  btn.onmouseover = () => {
+    btn.style.background = 'rgba(255,255,255,0.1)'
+    btn.style.borderColor = 'rgba(255,255,255,0.2)'
+    btn.style.transform = 'scale(1.05)'
+  }
+  btn.onmouseout = () => {
+    btn.style.background = 'rgba(255,255,255,0.05)'
+    btn.style.borderColor = 'rgba(255,255,255,0.1)'
+    btn.style.transform = 'scale(1)'
+  }
+  btn.onclick = () => {
+    // Open a modal/panel with the content
+    openFeaturePanel(icon, label, contentFn)
+  }
+  return btn
+}
+
+// Open a feature panel inline within the main panel
+function openFeaturePanel(icon, title, contentFn) {
+  const mainContent = document.getElementById('vmkpal-main-content')
+  const featureView = document.getElementById('vmkpal-feature-view')
+
+  if (!mainContent || !featureView) return
+
+  // Hide main content, show feature view
+  mainContent.style.display = 'none'
+  featureView.style.display = 'block'
+
+  // Clear and populate feature view
+  featureView.innerHTML = ''
+
+  // Header with back button
+  const header = document.createElement('div')
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  `
+
+  const backBtn = document.createElement('button')
+  backBtn.innerHTML = '←'
+  backBtn.style.cssText = `
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
+  backBtn.onclick = () => {
+    mainContent.style.display = 'block'
+    featureView.style.display = 'none'
+  }
+
+  const titleDiv = document.createElement('div')
+  titleDiv.style.cssText = 'display: flex; align-items: center; gap: 8px; flex: 1;'
+  titleDiv.innerHTML = `
+    <span style="font-size: 20px;">${icon}</span>
+    <span style="color: white; font-weight: 600; font-size: 16px;">${title}</span>
+  `
+
+  header.appendChild(backBtn)
+  header.appendChild(titleDiv)
+
+  const content = contentFn()
+
+  featureView.appendChild(header)
+  featureView.appendChild(content)
+}
+
+// Create a feature section (legacy - kept for compatibility)
+function createFeatureSection(icon, title, subtitle, contentFn) {
+  const section = document.createElement('div')
+  section.style.cssText = `
+    margin-bottom: 8px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.05);
+  `
+
+  const header = document.createElement('div')
+  header.style.cssText = `
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  `
+  header.onmouseover = () => header.style.background = 'rgba(255,255,255,0.05)'
+  header.onmouseout = () => header.style.background = 'transparent'
+
+  header.innerHTML = `
+    <span style="font-size: 20px;">${icon}</span>
+    <div style="flex: 1;">
+      <div style="color: white; font-weight: 500; font-size: 14px;">${title}</div>
+      <div style="color: rgba(255,255,255,0.5); font-size: 11px;">${subtitle}</div>
+    </div>
+    <span style="color: rgba(255,255,255,0.4); font-size: 12px;">▼</span>
+  `
+
+  const content = document.createElement('div')
+  content.style.cssText = `
+    display: none;
+    padding: 0 12px 12px 12px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  `
+
+  header.onclick = () => {
+    const isOpen = content.style.display !== 'none'
+    content.style.display = isOpen ? 'none' : 'block'
+    header.querySelector('span:last-child').textContent = isOpen ? '▼' : '▲'
+    if (!isOpen && contentFn) {
+      content.innerHTML = ''
+      content.appendChild(contentFn())
+    }
+  }
+
+  section.appendChild(header)
+  section.appendChild(content)
+  return section
+}
+
+// Room Selector Panel - Manual room selection
+function createRoomSelectorPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Search/filter input
+  const searchInput = document.createElement('input')
+  searchInput.type = 'text'
+  searchInput.placeholder = 'Search rooms...'
+  searchInput.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.05);
+    color: white;
+    font-size: 13px;
+    outline: none;
+  `
+
+  // Room select dropdown
+  const select = document.createElement('select')
+  select.id = 'vmkpal-room-select'
+  select.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(30,27,75,0.9);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+  `
+
+  // Add default option
+  const defaultOpt = document.createElement('option')
+  defaultOpt.value = ''
+  defaultOpt.textContent = '-- Select a room --'
+  select.appendChild(defaultOpt)
+
+  // Get rooms sorted by name (uses ROOM_MAP from rooms.js)
+  const rooms = getAllRoomsSorted()
+  rooms.forEach(room => {
+    const opt = document.createElement('option')
+    opt.value = room.id
+    opt.textContent = room.name
+    if (currentRoom === room.name) {
+      opt.selected = true
+    }
+    select.appendChild(opt)
+  })
+
+  // Handle room selection
+  select.onchange = () => {
+    const selectedId = select.value
+    if (selectedId) {
+      const roomName = getRoomName(parseInt(selectedId))
+      const oldRoom = currentRoom
+      currentRoom = roomName
+      currentRoomId = parseInt(selectedId)
+
+      // Update display
+      updateRoomDisplay()
+
+      // Save to storage
+      chrome.storage.local.set({
+        currentRoom: roomName,
+        currentRoomId: parseInt(selectedId)
+      })
+
+      // Trigger room change handler
+      onRoomChange(oldRoom, currentRoom)
+
+      showNotification(`Room set: ${roomName}`, 'success')
+    }
+  }
+
+  // Filter rooms on search
+  searchInput.oninput = () => {
+    const filter = searchInput.value.toLowerCase()
+    Array.from(select.options).forEach((opt, i) => {
+      if (i === 0) return // Skip default option
+      const match = opt.textContent.toLowerCase().includes(filter)
+      opt.style.display = match ? '' : 'none'
+    })
+  }
+
+  // Load saved room from storage
+  chrome.storage.local.get(['currentRoom', 'currentRoomId'], (result) => {
+    if (result.currentRoomId) {
+      select.value = result.currentRoomId
+      currentRoom = result.currentRoom
+      currentRoomId = result.currentRoomId
+      updateRoomDisplay()
+    }
+  })
+
+  div.appendChild(searchInput)
+  div.appendChild(select)
+
+  // Info text
+  const info = document.createElement('p')
+  info.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px;'
+  info.textContent = 'Select your current room to enable room-specific audio'
+  div.appendChild(info)
+
+  return div
+}
+
+// Queue Alerts Panel
+function createQueueAlertsPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Current queue status
+  const statusDiv = document.createElement('div')
+  statusDiv.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    text-align: center;
+  `
+  statusDiv.innerHTML = `
+    <div style="color: rgba(255,255,255,0.5); font-size: 11px; margin-bottom: 4px;">Current Position</div>
+    <div id="vmkpal-queue-display" style="color: #fbbf24; font-size: 24px; font-weight: 600;">${lastQueuePosition ? '#' + lastQueuePosition : '--'}</div>
+    <div style="color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 4px;">Auto-detected from game</div>
+  `
+  div.appendChild(statusDiv)
+
+  // Alert threshold setting
+  const thresholdDiv = document.createElement('div')
+  thresholdDiv.style.cssText = 'margin-bottom: 12px;'
+  thresholdDiv.innerHTML = `
+    <label style="color: rgba(255,255,255,0.6); font-size: 11px; display: block; margin-bottom: 6px;">
+      Alert when position reaches:
+    </label>
+  `
+
+  const thresholdInput = document.createElement('input')
+  thresholdInput.type = 'number'
+  thresholdInput.min = '1'
+  thresholdInput.max = '50'
+  thresholdInput.id = 'vmkpal-queue-threshold'
+  thresholdInput.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.05);
+    color: white;
+    font-size: 14px;
+    text-align: center;
+  `
+
+  // Load saved threshold
+  chrome.storage.local.get(['queueAlertThreshold'], (result) => {
+    thresholdInput.value = result.queueAlertThreshold || 5
+  })
+
+  thresholdInput.onchange = () => {
+    const value = parseInt(thresholdInput.value) || 5
+    chrome.storage.local.set({ queueAlertThreshold: value })
+    showNotification(`Queue alert set for position ${value}`, 'success')
+  }
+
+  thresholdDiv.appendChild(thresholdInput)
+  div.appendChild(thresholdDiv)
+
+  // Enable/disable toggle
+  const toggleDiv = document.createElement('div')
+  toggleDiv.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  `
+
+  const toggleLabel = document.createElement('span')
+  toggleLabel.textContent = 'Sound & Visual Alerts'
+  toggleLabel.style.cssText = 'color: white; font-size: 13px;'
+
+  const toggleBtn = document.createElement('button')
+  toggleBtn.style.cssText = `
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  `
+
+  function updateToggle(enabled) {
+    if (enabled) {
+      toggleBtn.textContent = 'ON'
+      toggleBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)'
+      toggleBtn.style.color = 'white'
+    } else {
+      toggleBtn.textContent = 'OFF'
+      toggleBtn.style.background = 'rgba(255,255,255,0.1)'
+      toggleBtn.style.color = 'rgba(255,255,255,0.5)'
+    }
+  }
+
+  chrome.storage.local.get(['queueAlertsEnabled'], (result) => {
+    updateToggle(result.queueAlertsEnabled !== false)
+  })
+
+  toggleBtn.onclick = () => {
+    chrome.storage.local.get(['queueAlertsEnabled'], (result) => {
+      const newValue = result.queueAlertsEnabled === false
+      chrome.storage.local.set({ queueAlertsEnabled: newValue })
+      updateToggle(newValue)
+      showNotification(newValue ? 'Queue alerts enabled' : 'Queue alerts disabled', 'info')
+    })
+  }
+
+  toggleDiv.appendChild(toggleLabel)
+  toggleDiv.appendChild(toggleBtn)
+  div.appendChild(toggleDiv)
+
+  // OCR Scanning section
+  const ocrSection = document.createElement('div')
+  ocrSection.style.cssText = `
+    padding: 12px;
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+  `
+
+  const ocrTitle = document.createElement('div')
+  ocrTitle.style.cssText = 'color: #c4b5fd; font-size: 12px; font-weight: 500; margin-bottom: 8px;'
+  ocrTitle.textContent = '🔍 Auto Queue Scanner'
+  ocrSection.appendChild(ocrTitle)
+
+  const ocrBtnRow = document.createElement('div')
+  ocrBtnRow.style.cssText = 'display: flex; gap: 8px;'
+
+  // Single scan button
+  const scanBtn = document.createElement('button')
+  scanBtn.textContent = '📷 Scan Now'
+  scanBtn.style.cssText = `
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 12px;
+  `
+  scanBtn.onclick = async () => {
+    scanBtn.textContent = '⏳ Scanning...'
+    scanBtn.disabled = true
+    const result = await scanForQueue()
+    scanBtn.textContent = '📷 Scan Now'
+    scanBtn.disabled = false
+    if (result === null) {
+      showNotification('No queue found - is VMK Pass popup visible?', 'info')
+    }
+  }
+  ocrBtnRow.appendChild(scanBtn)
+
+  // Auto-scan toggle
+  const autoBtn = document.createElement('button')
+  autoBtn.id = 'vmkpal-autoscan-btn'
+
+  function updateAutoBtn() {
+    if (ocrScanInterval) {
+      autoBtn.textContent = '⏹️ Stop'
+      autoBtn.style.cssText = `
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        border: none;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+        font-weight: 500;
+        cursor: pointer;
+        font-size: 12px;
+      `
+    } else {
+      autoBtn.textContent = '▶️ Auto'
+      autoBtn.style.cssText = `
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        border: none;
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.7);
+        font-weight: 500;
+        cursor: pointer;
+        font-size: 12px;
+      `
+    }
+  }
+  updateAutoBtn()
+
+  autoBtn.onclick = () => {
+    if (ocrScanInterval) {
+      stopAutoScan()
+      showNotification('Auto-scan stopped', 'info')
+    } else {
+      startAutoScan(5000)
+    }
+    updateAutoBtn()
+  }
+  ocrBtnRow.appendChild(autoBtn)
+
+  ocrSection.appendChild(ocrBtnRow)
+
+  const ocrInfo = document.createElement('p')
+  ocrInfo.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px; margin-bottom: 0;'
+  ocrInfo.textContent = 'Reads queue number from screen using OCR. Keep VMK Pass visible.'
+  ocrSection.appendChild(ocrInfo)
+
+  div.appendChild(ocrSection)
+
+  // Captcha Scanner section
+  const captchaSection = document.createElement('div')
+  captchaSection.style.cssText = `
+    padding: 12px;
+    background: rgba(16, 185, 129, 0.1);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  `
+
+  const captchaTitle = document.createElement('div')
+  captchaTitle.style.cssText = 'color: #6ee7b7; font-size: 12px; font-weight: 500; margin-bottom: 8px;'
+  captchaTitle.textContent = '🔢 Captcha Reader'
+  captchaSection.appendChild(captchaTitle)
+
+  const captchaDesc = document.createElement('p')
+  captchaDesc.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 10px; margin-bottom: 8px;'
+  captchaDesc.innerHTML = 'Scan and auto-copy captcha codes to clipboard<br><span style="color: #6ee7b7;">Shortcut: Alt+C</span>'
+  captchaSection.appendChild(captchaDesc)
+
+  const captchaScanBtn = document.createElement('button')
+  captchaScanBtn.textContent = '📷 Scan Captcha'
+  captchaScanBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 12px;
+  `
+  captchaScanBtn.onclick = async () => {
+    captchaScanBtn.textContent = '⏳ Scanning...'
+    captchaScanBtn.disabled = true
+    const result = await scanForCaptcha()
+    captchaScanBtn.textContent = '📷 Scan Captcha'
+    captchaScanBtn.disabled = false
+    if (result === null) {
+      showNotification('No captcha found - is the popup visible?', 'info')
+    }
+  }
+  captchaSection.appendChild(captchaScanBtn)
+
+  div.appendChild(captchaSection)
+
+  // Test alert button
+  const testBtn = document.createElement('button')
+  testBtn.textContent = '🔔 Test Alert Sound'
+  testBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 13px;
+    margin-bottom: 12px;
+  `
+  testBtn.onclick = () => {
+    showQueueAlert(3)
+  }
+  div.appendChild(testBtn)
+
+  // Info text
+  const info = document.createElement('p')
+  info.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 0; line-height: 1.4;'
+  info.textContent = 'When your queue position reaches the threshold, you\'ll hear beeps and see a notification.'
+  div.appendChild(info)
+
+  return div
+}
+
+// Game Accounts Panel
+function createAccountsPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  chrome.storage.local.get(['gameAccounts'], (result) => {
+    const accounts = result.gameAccounts || []
+
+    if (accounts.length === 0) {
+      div.innerHTML = `
+        <p style="color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 12px;">No accounts saved yet.</p>
+      `
+    } else {
+      accounts.forEach((acc, i) => {
+        const row = document.createElement('div')
+        row.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 8px;
+          margin-bottom: 8px;
+        `
+        row.innerHTML = `
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #06b6d4, #0891b2); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
+            ${acc.nickname?.charAt(0)?.toUpperCase() || '?'}
+          </div>
+          <div style="flex: 1;">
+            <div style="color: white; font-size: 13px;">${acc.nickname || 'Account'}</div>
+            <div style="color: rgba(255,255,255,0.5); font-size: 11px;">${acc.username}</div>
+          </div>
+        `
+        const copyBtn = document.createElement('button')
+        copyBtn.textContent = '📋'
+        copyBtn.title = 'Copy password'
+        copyBtn.style.cssText = `
+          background: rgba(255,255,255,0.1);
+          border: none;
+          border-radius: 6px;
+          padding: 6px 10px;
+          color: white;
+          cursor: pointer;
+          font-size: 14px;
+        `
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(acc.password || '')
+          showNotification('Password copied!', 'success')
+        }
+        row.appendChild(copyBtn)
+        div.appendChild(row)
+      })
+    }
+
+    // Add account form
+    const addForm = document.createElement('div')
+    addForm.innerHTML = `
+      <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-top: 8px;">
+        <input type="text" id="vmkpal-acc-nick" placeholder="Nickname" style="width: 100%; padding: 8px; margin-bottom: 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; font-size: 12px;">
+        <input type="text" id="vmkpal-acc-user" placeholder="Username" style="width: 100%; padding: 8px; margin-bottom: 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; font-size: 12px;">
+        <input type="password" id="vmkpal-acc-pass" placeholder="Password" style="width: 100%; padding: 8px; margin-bottom: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; font-size: 12px;">
+        <button id="vmkpal-acc-add" style="width: 100%; padding: 8px; border-radius: 6px; border: none; background: linear-gradient(135deg, #06b6d4, #0891b2); color: white; font-weight: 500; cursor: pointer; font-size: 12px;">Add Account</button>
+      </div>
+    `
+    div.appendChild(addForm)
+
+    setTimeout(() => {
+      document.getElementById('vmkpal-acc-add')?.addEventListener('click', () => {
+        const nick = document.getElementById('vmkpal-acc-nick').value.trim()
+        const user = document.getElementById('vmkpal-acc-user').value.trim()
+        const pass = document.getElementById('vmkpal-acc-pass').value
+        if (nick && user && pass) {
+          accounts.push({ nickname: nick, username: user, password: pass })
+          chrome.storage.local.set({ gameAccounts: accounts })
+          showNotification('Account saved!', 'success')
+          // Refresh panel
+          div.innerHTML = ''
+          div.appendChild(createAccountsPanel())
+        }
+      })
+    }, 0)
+  })
+
+  return div
+}
+
+// Quick Phrases Panel
+function createPhrasesPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Store references to input fields for saving
+  const inputFields = []
+
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+  keys.forEach((key, i) => {
+    const slot = i + 1
+    const phrase = phrasesCache[slot] || ''
+
+    const row = document.createElement('div')
+    row.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    `
+
+    // Key badge
+    const keyBadge = document.createElement('span')
+    keyBadge.textContent = key
+    keyBadge.style.cssText = `
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      background: rgba(139,92,246,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    `
+    row.appendChild(keyBadge)
+
+    // Editable input field
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.value = phrase
+    input.placeholder = `Alt+${key} phrase...`
+    input.dataset.slot = slot
+    input.style.cssText = `
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.08);
+      color: white;
+      font-size: 12px;
+      outline: none;
+      min-width: 0;
+    `
+
+    // Focus/blur styles
+    input.addEventListener('focus', () => {
+      input.style.borderColor = '#8b5cf6'
+      input.style.background = 'rgba(255,255,255,0.12)'
+    })
+    input.addEventListener('blur', () => {
+      input.style.borderColor = 'rgba(255,255,255,0.15)'
+      input.style.background = 'rgba(255,255,255,0.08)'
+    })
+
+    // Prevent event propagation to fix input issues (same as audio panel)
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    input.addEventListener('click', (e) => e.stopPropagation())
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      // Allow Ctrl+V paste
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        return true
+      }
+    }, true)
+    input.addEventListener('keyup', (e) => e.stopPropagation())
+    input.addEventListener('keypress', (e) => e.stopPropagation())
+    input.addEventListener('paste', (e) => e.stopPropagation())
+    input.addEventListener('copy', (e) => e.stopPropagation())
+    input.addEventListener('cut', (e) => e.stopPropagation())
+
+    row.appendChild(input)
+    div.appendChild(row)
+    inputFields.push(input)
+  })
+
+  // Save button
+  const saveBtn = document.createElement('button')
+  saveBtn.textContent = '💾 Save Phrases'
+  saveBtn.style.cssText = `
+    width: 100%;
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+  `
+  saveBtn.addEventListener('click', () => {
+    const newPhrases = {}
+    inputFields.forEach((input) => {
+      const slot = parseInt(input.dataset.slot)
+      const value = input.value.trim()
+      if (value) {
+        newPhrases[slot] = value
+      }
+    })
+
+    // Save to storage
+    chrome.storage.local.set({ phrases: newPhrases }, () => {
+      // Update local cache
+      phrasesCache = newPhrases
+      showNotification('Phrases saved!', 'success')
+    })
+  })
+  div.appendChild(saveBtn)
+
+  // Help text
+  const helpText = document.createElement('p')
+  helpText.textContent = 'Press Alt+1 through Alt+0 to send these phrases in chat'
+  helpText.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px; text-align: center;'
+  div.appendChild(helpText)
+
+  return div
+}
+
+// Room Audio Panel
+function createAudioPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+
+  // Create label
+  const label = document.createElement('label')
+  label.textContent = 'Enter YouTube or audio URL'
+  label.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 11px; display: block; margin-bottom: 6px;'
+  div.appendChild(label)
+
+  // Create input field programmatically
+  const urlInput = document.createElement('input')
+  urlInput.type = 'text'
+  urlInput.placeholder = 'YouTube link or audio URL...'
+  urlInput.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-size: 12px;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+    outline: none;
+  `
+
+  // Load saved URL
+  chrome.storage.local.get(['currentAudioUrl'], (result) => {
+    if (result.currentAudioUrl) {
+      urlInput.value = result.currentAudioUrl
+    }
+  })
+
+  // Focus/blur styles
+  urlInput.addEventListener('focus', () => {
+    urlInput.style.borderColor = '#8b5cf6'
+    urlInput.style.background = 'rgba(255,255,255,0.15)'
+  })
+  urlInput.addEventListener('blur', () => {
+    urlInput.style.borderColor = 'rgba(255,255,255,0.2)'
+    urlInput.style.background = 'rgba(255,255,255,0.1)'
+  })
+
+  // Prevent event propagation to fix input issues
+  urlInput.addEventListener('mousedown', (e) => e.stopPropagation())
+  urlInput.addEventListener('click', (e) => e.stopPropagation())
+  urlInput.addEventListener('keydown', (e) => {
+    e.stopPropagation()
+    // Ensure Ctrl+V works by not preventing default
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      // Allow paste to happen
+      return true
+    }
+  }, true)
+  urlInput.addEventListener('keyup', (e) => e.stopPropagation())
+  urlInput.addEventListener('keypress', (e) => e.stopPropagation())
+  urlInput.addEventListener('paste', (e) => e.stopPropagation())
+  urlInput.addEventListener('copy', (e) => e.stopPropagation())
+  urlInput.addEventListener('cut', (e) => e.stopPropagation())
+
+  div.appendChild(urlInput)
+
+  // Button container
+  const btnContainer = document.createElement('div')
+  btnContainer.style.cssText = 'display: flex; gap: 8px;'
+
+  // Play button
+  const playBtn = document.createElement('button')
+  playBtn.textContent = '▶ Play'
+  playBtn.style.cssText = 'flex: 1; padding: 10px; border-radius: 6px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-weight: 500;'
+  playBtn.addEventListener('click', () => {
+    const url = urlInput.value.trim()
+    if (url) {
+      playAudio(url)
+      chrome.storage.local.set({ currentAudioUrl: url })
+    } else {
+      showNotification('Enter a URL first', 'error')
+    }
+  })
+
+  // Stop button
+  const stopBtn = document.createElement('button')
+  stopBtn.textContent = '⏹ Stop'
+  stopBtn.style.cssText = 'flex: 1; padding: 10px; border-radius: 6px; border: none; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; cursor: pointer; font-weight: 500;'
+  stopBtn.addEventListener('click', () => {
+    stopAudio()
+  })
+
+  btnContainer.appendChild(playBtn)
+  btnContainer.appendChild(stopBtn)
+  div.appendChild(btnContainer)
+
+  // Status indicator (shows if audio is playing)
+  const statusDiv = document.createElement('div')
+  statusDiv.style.cssText = 'margin-top: 12px; font-size: 11px;'
+  if (youtubeIframe || audioPlayer) {
+    statusDiv.innerHTML = `<span style="color: #10b981;">▶ Audio is playing</span>`
+  }
+  div.appendChild(statusDiv)
+
+  // Help text
+  const helpText = document.createElement('p')
+  helpText.textContent = 'Supports: YouTube links, direct MP3/audio URLs'
+  helpText.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px;'
+  div.appendChild(helpText)
+
+  return div
+}
+
+// Helper to escape HTML
+function escapeHtml(str) {
+  if (!str) return ''
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// Extract YouTube video ID from various URL formats
+function getYouTubeVideoId(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]
+  }
+  return null
+}
+
+// Audio player
+let audioPlayer = null
+let youtubeIframe = null
+let mutedElements = [] // Track elements we've muted
+let persistentPlayerContainer = null // Persistent container for YouTube player
+
+// Create persistent player container (lives outside the panel)
+function ensurePersistentPlayerContainer() {
+  if (!persistentPlayerContainer) {
+    persistentPlayerContainer = document.createElement('div')
+    persistentPlayerContainer.id = 'vmkpal-persistent-player'
+    persistentPlayerContainer.style.cssText = `
+      position: fixed;
+      bottom: 80px;
+      right: 340px;
+      width: 220px;
+      z-index: 2147483645;
+      pointer-events: auto;
+      cursor: move;
+    `
+    document.body.appendChild(persistentPlayerContainer)
+
+    // Load saved position
+    chrome.storage.local.get(['playerPosition'], (result) => {
+      if (result.playerPosition) {
+        const pos = result.playerPosition
+        persistentPlayerContainer.style.right = 'auto'
+        persistentPlayerContainer.style.bottom = 'auto'
+        persistentPlayerContainer.style.left = pos.x + 'px'
+        persistentPlayerContainer.style.top = pos.y + 'px'
+      }
+    })
+
+    // Make it draggable
+    let isDragging = false
+    let dragOffset = { x: 0, y: 0 }
+
+    persistentPlayerContainer.addEventListener('mousedown', (e) => {
+      // Don't drag if clicking on buttons or iframe
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'IFRAME') {
+        return
+      }
+      isDragging = true
+      const rect = persistentPlayerContainer.getBoundingClientRect()
+      dragOffset.x = e.clientX - rect.left
+      dragOffset.y = e.clientY - rect.top
+      persistentPlayerContainer.style.cursor = 'grabbing'
+      e.preventDefault()
+    })
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return
+
+      const x = e.clientX - dragOffset.x
+      const y = e.clientY - dragOffset.y
+
+      // Keep within viewport
+      const maxX = window.innerWidth - persistentPlayerContainer.offsetWidth
+      const maxY = window.innerHeight - persistentPlayerContainer.offsetHeight
+
+      persistentPlayerContainer.style.left = Math.max(0, Math.min(x, maxX)) + 'px'
+      persistentPlayerContainer.style.top = Math.max(0, Math.min(y, maxY)) + 'px'
+      persistentPlayerContainer.style.right = 'auto'
+      persistentPlayerContainer.style.bottom = 'auto'
+    })
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false
+        persistentPlayerContainer.style.cursor = 'move'
+
+        // Save position
+        const rect = persistentPlayerContainer.getBoundingClientRect()
+        chrome.storage.local.set({
+          playerPosition: { x: rect.left, y: rect.top }
+        })
+      }
+    })
+  }
+  return persistentPlayerContainer
+}
+
+// Mute all game audio (audio/video elements and Web Audio API)
+function muteGameAudio() {
+  mutedElements = []
+
+  // Mute all audio and video elements (except our own)
+  document.querySelectorAll('audio, video').forEach(el => {
+    if (el !== audioPlayer && !el.closest('#vmkpal-toolbar')) {
+      if (!el.muted) {
+        mutedElements.push({ element: el, wasMuted: el.muted, volume: el.volume })
+        el.muted = true
+      }
+    }
+  })
+
+  // Mute all tracked audio via our interceptor (runs in page context)
+  muteAllAudioContexts()
+
+  console.log('MyVMK Genie: Muted game audio (DOM elements:', mutedElements.length, ')')
+}
+
+// Restore game audio
+function unmuteGameAudio() {
+  // Restore muted HTML elements
+  mutedElements.forEach(item => {
+    if (item.element) {
+      item.element.muted = item.wasMuted
+      if (item.volume !== undefined) {
+        item.element.volume = item.volume
+      }
+    }
+  })
+  mutedElements = []
+
+  // Unmute all tracked AudioContexts via our interceptor
+  unmuteAllAudioContexts()
+
+  console.log('MyVMK Genie: Restored game audio')
+}
+
+function playAudio(url) {
+  stopAudio(false) // Don't unmute yet, we're about to play new audio
+
+  // Mute game audio
+  muteGameAudio()
+
+  const videoId = getYouTubeVideoId(url)
+
+  if (videoId) {
+    // YouTube - embed as iframe in PERSISTENT container (survives panel navigation)
+    const container = ensurePersistentPlayerContainer()
+    container.innerHTML = `
+      <div style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 8px; padding: 8px; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <span style="color: #10b981; font-size: 10px;">▶ Now Playing</span>
+          <button id="vmkpal-persistent-stop" style="margin-left: auto; background: #ef4444; border: none; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;">Stop</button>
+        </div>
+        <iframe
+          id="vmkpal-youtube-player"
+          width="100%"
+          height="50"
+          src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}"
+          frameborder="0"
+          allow="autoplay; encrypted-media"
+          style="border-radius: 6px;"
+        ></iframe>
+      </div>
+    `
+    youtubeIframe = container.querySelector('iframe')
+
+    // Add stop button handler
+    const stopBtn = container.querySelector('#vmkpal-persistent-stop')
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => stopAudio())
+    }
+
+    showNotification('🔇 Game muted • Playing YouTube', 'success')
+  } else {
+    // Direct audio URL
+    audioPlayer = new Audio(url)
+    audioPlayer.loop = true
+    audioPlayer.volume = 0.5
+    audioPlayer.play().catch(err => {
+      showNotification('Audio failed to play', 'error')
+      unmuteGameAudio() // Restore game audio if our audio fails
+    })
+    showNotification('🔇 Game muted • Playing audio', 'success')
+  }
+}
+
+function stopAudio(restoreGameAudio = true) {
+  if (audioPlayer) {
+    audioPlayer.pause()
+    audioPlayer = null
+  }
+  if (youtubeIframe) {
+    // Clear persistent container
+    if (persistentPlayerContainer) {
+      persistentPlayerContainer.innerHTML = ''
+    }
+    youtubeIframe = null
+  }
+
+  // Restore game audio
+  if (restoreGameAudio) {
+    unmuteGameAudio()
+    showNotification('🔊 Game audio restored', 'info')
+  }
+}
+
+// Events Panel - Shows upcoming events from ICS
+function createEventsPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+  div.innerHTML = `<p style="color: rgba(255,255,255,0.5); font-size: 11px;">Loading events...</p>`
+
+  // Load events
+  loadTodaysEvents().then(result => {
+    const { allUpcomingEvents } = result
+    div.innerHTML = ''
+
+    // Show up to 5 upcoming events
+    const eventsToShow = allUpcomingEvents.slice(0, 5)
+
+    if (eventsToShow.length === 0) {
+      div.innerHTML = `<p style="color: rgba(255,255,255,0.5); font-size: 12px; text-align: center; padding: 12px;">No upcoming events</p>`
+    } else {
+      // Events list
+      const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
+      eventsToShow.forEach(event => {
+        const color = '#f59e0b' // Official events color
+
+        const row = document.createElement('div')
+        row.style.cssText = `
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 8px;
+          margin-bottom: 6px;
+          border-left: 3px solid ${color};
+        `
+        row.innerHTML = `
+          <div style="flex: 1; min-width: 0;">
+            <div style="color: white; font-size: 12px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(event.title)}</div>
+            <div style="color: rgba(255,255,255,0.5); font-size: 10px;">${event.dateStr} • ${event.timeStr}${event.location ? ' • ' + escapeHtml(event.location) : ''}</div>
+          </div>
+          <img src="${hostIconUrl}" alt="Official" title="Official Event" style="width: 24px; height: 24px; object-fit: contain;">
+        `
+        div.appendChild(row)
+      })
+    }
+
+    // Full calendar link
+    const link = document.createElement('button')
+    link.innerHTML = '📅 View Full Calendar'
+    link.style.cssText = `
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 12px;
+    `
+    link.onclick = () => window.open('http://localhost:3000/calendar', '_blank')
+    div.appendChild(link)
+  })
+
+  return div
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(str) {
+  if (!str) return ''
+  const div = document.createElement('div')
+  div.textContent = str
+  return div.innerHTML
+}
+
+// Load upcoming events from ICS - simplified version
+async function loadTodaysEvents() {
+  const allUpcomingEvents = []
+  const now = Date.now()
+  const icsUrl = 'https://bsims-codes.github.io/myvmk-ics/myvmk.ics'
+
+  try {
+    // Always fetch fresh - no caching complexity
+    const response = await fetch(icsUrl + '?t=' + now) // Cache bust
+    const icsText = await response.text()
+
+    // Parse ICS and get events
+    const events = parseICSSimple(icsText)
+    console.log('MyVMK Genie: Parsed', events.length, 'events from ICS')
+
+    // Filter to upcoming events only
+    events.forEach(event => {
+      if (event.timestamp > now) {
+        allUpcomingEvents.push(event)
+      }
+    })
+
+    // Sort by timestamp
+    allUpcomingEvents.sort((a, b) => a.timestamp - b.timestamp)
+
+    console.log('MyVMK Genie: Found', allUpcomingEvents.length, 'upcoming events')
+    if (allUpcomingEvents.length > 0) {
+      console.log('MyVMK Genie: Next event:', allUpcomingEvents[0].title, 'at', new Date(allUpcomingEvents[0].timestamp).toString())
+    }
+  } catch (err) {
+    console.error('MyVMK Genie: Failed to fetch ICS:', err)
+  }
+
+  const nextEvent = allUpcomingEvents[0] || null
+  return { todayEvents: [], nextEvent, allUpcomingEvents }
+}
+
+// Simple ICS parser - returns array of {title, timestamp, location, dateStr, timeStr}
+function parseICSSimple(icsText) {
+  const events = []
+  const lines = icsText.replace(/\r\n /g, '').split(/\r\n|\n|\r/)
+
+  let currentEvent = null
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      currentEvent = {}
+    } else if (line === 'END:VEVENT' && currentEvent) {
+      if (currentEvent.title && currentEvent.timestamp) {
+        events.push({
+          title: currentEvent.title,
+          timestamp: currentEvent.timestamp,
+          location: currentEvent.location || null,
+          dateStr: currentEvent.dateStr,
+          timeStr: currentEvent.timeStr,
+          source: 'official'
+        })
+      }
+      currentEvent = null
+    } else if (currentEvent) {
+      const colonIdx = line.indexOf(':')
+      if (colonIdx === -1) continue
+
+      const key = line.substring(0, colonIdx)
+      const value = line.substring(colonIdx + 1)
+
+      if (key.startsWith('DTSTART')) {
+        const parsed = parseICSDateSimple(value)
+        if (parsed) {
+          currentEvent.timestamp = parsed.timestamp
+          currentEvent.dateStr = parsed.dateStr
+          currentEvent.timeStr = parsed.timeStr
+        }
+      } else if (key === 'SUMMARY') {
+        currentEvent.title = value.replace(/\\,/g, ',').replace(/\\n/g, ' ').trim()
+      } else if (key === 'LOCATION') {
+        currentEvent.location = value.replace(/\\,/g, ',').trim()
+      }
+    }
+  }
+
+  return events
+}
+
+// Simple ICS date parser - treats times as Eastern Time
+function parseICSDateSimple(dateStr) {
+  // Extract YYYYMMDD or YYYYMMDDTHHMMSS
+  const match = dateStr.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/)
+  if (!match) return null
+
+  const year = parseInt(match[1])
+  const month = parseInt(match[2])
+  const day = parseInt(match[3])
+  const hour = match[4] ? parseInt(match[4]) : 0
+  const min = match[5] ? parseInt(match[5]) : 0
+
+  // Create date string in Eastern Time format and parse it
+  // This ensures the time is interpreted as Eastern Time
+  const etDateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`
+
+  // Create a Date object - this will be in local time
+  // For proper ET handling, we construct as if it's ET
+  const date = new Date(year, month - 1, day, hour, min, 0)
+
+  // Format for display
+  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric' }
+  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true }
+
+  const dateStr2 = date.toLocaleDateString('en-US', dateOptions)
+  const timeStr = date.toLocaleTimeString('en-US', timeOptions) + ' ET'
+
+  return {
+    timestamp: date.getTime(),
+    dateStr: dateStr2,
+    timeStr: timeStr
+  }
+}
+
+// Get countdown string (e.g., "2 days, 5 hours")
+function getCountdown(targetDate) {
+  const now = new Date()
+  const diff = targetDate - now
+
+  if (diff <= 0) return 'Starting now!'
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+  if (days > 0) {
+    return `${days} day${days > 1 ? 's' : ''} ${hours} hour${hours !== 1 ? 's' : ''}`
+  } else if (hours > 0) {
+    return `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} minute${minutes !== 1 ? 's' : ''}`
+  } else {
+    return `${minutes} minute${minutes !== 1 ? 's' : ''}`
+  }
+}
+
+// Update the room info display box
+function updateRoomInfoDisplay() {
+  const roomNameEl = document.getElementById('vmkpal-room-name')
+  const roomLandEl = document.getElementById('vmkpal-room-land')
+
+  if (roomNameEl) {
+    if (currentRoom) {
+      roomNameEl.textContent = currentRoom
+      roomNameEl.style.color = '#4ade80'
+    } else {
+      roomNameEl.textContent = 'Not detected yet'
+      roomNameEl.style.color = 'rgba(255,255,255,0.4)'
+    }
+  }
+
+  if (roomLandEl) {
+    if (currentLand) {
+      roomLandEl.textContent = currentLand
+    } else if (currentRoomId) {
+      roomLandEl.textContent = `Room ID: ${currentRoomId}`
+    } else {
+      roomLandEl.textContent = ''
+    }
+  }
+
+  // Check for room-specific effects (like Haunted Mansion ghosts)
+  checkGhostEffectRoom()
+}
+
+// Update the event ticker with next event countdown
+async function updateEventTicker() {
+  const tickerText = document.getElementById('vmkpal-ticker-text')
+  if (!tickerText) return
+
+  const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
+
+  try {
+    const { nextEvent } = await loadTodaysEvents()
+
+    if (nextEvent) {
+      const eventDate = new Date(nextEvent.timestamp)
+      const countdown = getCountdown(eventDate)
+      const eventName = nextEvent.title
+      const timeStr = nextEvent.timeStr || 'TBD'
+      const isHostEvent = nextEvent.source === 'official'
+
+      console.log('MyVMK Genie Ticker - Event:', eventName, 'at', eventDate.toString())
+
+      // Build ticker content with icon for host events
+      const iconHtml = isHostEvent
+        ? `<img src="${hostIconUrl}" style="width: 22px; height: 22px; vertical-align: middle; margin-right: 6px;">`
+        : '⏰ '
+
+      const eventHtml = `${iconHtml}${countdown} until ${eventName} (${timeStr})   •   `
+      tickerText.innerHTML = eventHtml + eventHtml
+    } else {
+      tickerText.innerHTML = '📅 No upcoming events scheduled   •   📅 No upcoming events scheduled   •   '
+    }
+  } catch (err) {
+    console.error('Failed to update ticker:', err)
+    tickerText.innerHTML = '📅 Check events calendar for updates   •   '
+  }
+
+  // Update every minute
+  setTimeout(updateEventTicker, 60000)
+}
+
+
+// LFG Panel
+function createLfgPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 12px;'
+  div.innerHTML = `
+    <p style="color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 12px;">Find other players to join games.</p>
+    <button onclick="window.open('http://localhost:3000/lfg', '_blank')" style="width: 100%; padding: 10px; border-radius: 6px; border: none; background: linear-gradient(135deg, #ec4899, #db2777); color: white; font-weight: 500; cursor: pointer; font-size: 12px;">Open Looking for Game</button>
+  `
+  return div
+}
+
+// Fill black borders with themed background and twinkling stars
+function fillBorderBackground() {
+  const bgImageUrl = chrome.runtime.getURL('genie-background.png')
+  const style = document.createElement('style')
+  style.id = 'vmkpal-border-fill'
+  style.textContent = `
+    html, body {
+      background: url('${bgImageUrl}') center center / cover no-repeat fixed,
+                  linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%) !important;
+    }
+
+    /* Twinkling Stars - behind everything */
+    #vmkpal-stars {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: -1;
+    }
+    .vmkpal-star {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: #fff;
+      border-radius: 50%;
+      opacity: 0;
+      animation: vmkpal-twinkle var(--duration, 3s) ease-in-out infinite;
+      animation-delay: var(--delay, 0s);
+    }
+    .vmkpal-star::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 6px;
+      height: 6px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    @keyframes vmkpal-twinkle {
+      0%, 100% { opacity: 0.2; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* Game canvas should have solid background to cover stars */
+    canvas {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Ensure iframes (if game uses them) also cover stars */
+    iframe {
+      position: relative;
+      z-index: 1;
+    }
+  `
+  document.head.appendChild(style)
+
+  // Create stars container
+  createTwinklingStars()
+}
+
+// Create twinkling stars
+function createTwinklingStars() {
+  // Remove existing stars
+  const existing = document.getElementById('vmkpal-stars')
+  if (existing) existing.remove()
+
+  const container = document.createElement('div')
+  container.id = 'vmkpal-stars'
+
+  // Calculate star count based on screen size
+  const starCount = Math.floor((window.innerWidth * window.innerHeight) / 8000)
+
+  for (let i = 0; i < starCount; i++) {
+    const star = document.createElement('div')
+    star.className = 'vmkpal-star'
+    star.style.left = Math.random() * 100 + '%'
+    star.style.top = Math.random() * 100 + '%'
+    star.style.setProperty('--delay', Math.random() * 4 + 's')
+    star.style.setProperty('--duration', (2 + Math.random() * 3) + 's')
+
+    // Random size between 1-3px
+    const size = 1 + Math.random() * 2
+    star.style.width = size + 'px'
+    star.style.height = size + 'px'
+
+    container.appendChild(star)
+  }
+
+  document.body.appendChild(container)
+}
+
+// Initialize
+async function init() {
+  console.log('MyVMK Genie initializing...')
+
+  // Fill black borders with themed background
+  fillBorderBackground()
+
+  // Force clear ICS cache to ensure fresh parsing with timezone fix
+  await chrome.storage.local.remove(['cachedIcsEvents', 'icsLastFetch', 'icsCacheVersion'])
+  console.log('MyVMK Genie: Cleared ICS cache')
+
+  // Restore overlay states and audio mappings
+  chrome.storage.local.get(['rainEnabled', 'starsOverlayEnabled', 'nightOverlayEnabled', 'moneyRainEnabled', 'fireworksEnabled', 'snowEnabled', 'emojiRainEnabled', 'selectedEmoji', 'positionLocked', 'audioRoomMappings'], (result) => {
+    if (result.audioRoomMappings) {
+      audioRoomMappings = result.audioRoomMappings
+      console.log('MyVMK Genie: Loaded', Object.keys(audioRoomMappings).length, 'audio-room mappings')
+    }
+    if (result.selectedEmoji) {
+      selectedEmoji = result.selectedEmoji
+    }
+    if (result.rainEnabled) {
+      isRainEnabled = false // Set to false so toggle will enable it
+      toggleRainOverlay()
+    }
+    if (result.starsOverlayEnabled) {
+      isStarsOverlayEnabled = false // Set to false so toggle will enable it
+      toggleStarsOverlay()
+    }
+    if (result.nightOverlayEnabled) {
+      isNightOverlayEnabled = false // Set to false so toggle will enable it
+      toggleNightOverlay()
+    }
+    if (result.moneyRainEnabled) {
+      isMoneyRainEnabled = false // Set to false so toggle will enable it
+      toggleMoneyRain()
+    }
+    if (result.fireworksEnabled) {
+      isFireworksEnabled = false // Set to false so toggle will enable it
+      toggleFireworks()
+    }
+    if (result.snowEnabled) {
+      isSnowEnabled = false // Set to false so toggle will enable it
+      toggleSnowOverlay()
+    }
+    if (result.emojiRainEnabled) {
+      isEmojiRainEnabled = false // Set to false so toggle will enable it
+      toggleEmojiRain()
+    }
+    if (result.positionLocked) {
+      isPositionLocked = true
+    }
+  })
+
+  // Listen for audio detection events from page context via postMessage (crosses isolated world boundary)
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'vmkgenie-audio-detected' && event.data.url) {
+      detectedAudioUrl = event.data.url
+      console.log('MyVMK Genie: Detected audio URL:', detectedAudioUrl)
+
+      // Extract folder name for room matching (e.g., "vmk_snd_pirates_lobby_II" from the URL)
+      const folderMatch = detectedAudioUrl.match(/room_sound\/([^\/]+)\//)
+      if (folderMatch) {
+        console.log('MyVMK Genie: Audio folder:', folderMatch[1])
+      }
+
+      // Check if this audio matches a known room
+      const matchedRoom = findRoomByAudio(detectedAudioUrl)
+      if (matchedRoom !== null) {
+        currentRoomId = matchedRoom.id
+        currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
+        currentLand = matchedRoom.land
+        console.log('MyVMK Genie: Auto-detected room from audio:', currentRoom, currentLand ? `(${currentLand})` : '')
+        updateRoomInfoDisplay()
+      }
+    }
+  })
+
+  loadPhrases()
+  createToolbar()
+  startRoomWatcher()
+  startQueueMonitor()
+
+  // Handle resize to update overlay positions to match game canvas
+  window.addEventListener('resize', () => {
+    updateOverlayBounds()
+  })
+
+  // Run debug after page settles to see what data is available
+  setTimeout(() => {
+    console.log('MyVMK Genie: Running page analysis...')
+    runDebug()
+  }, 3000)
+
+  // Reload phrases periodically
+  setInterval(loadPhrases, 30000)
+}
+
+// Wait for page to load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init)
+} else {
+  init()
+}
