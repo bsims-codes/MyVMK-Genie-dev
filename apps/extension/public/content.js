@@ -4845,14 +4845,14 @@ function createAudioPanel() {
 
   // Create label
   const label = document.createElement('label')
-  label.textContent = 'Enter YouTube or audio URL'
+  label.textContent = 'YouTube video, playlist, or audio URL'
   label.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 11px; display: block; margin-bottom: 6px;'
   div.appendChild(label)
 
   // Create input field programmatically
   const urlInput = document.createElement('input')
   urlInput.type = 'text'
-  urlInput.placeholder = 'YouTube link or audio URL...'
+  urlInput.placeholder = 'YouTube video, playlist, or audio URL...'
   urlInput.style.cssText = `
     width: 100%;
     padding: 10px;
@@ -4942,7 +4942,7 @@ function createAudioPanel() {
 
   // Help text
   const helpText = document.createElement('p')
-  helpText.textContent = 'Supports: YouTube links, direct MP3/audio URLs'
+  helpText.textContent = 'Supports: YouTube videos, playlists, and audio URLs'
   helpText.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px;'
   div.appendChild(helpText)
 
@@ -4968,11 +4968,26 @@ function getYouTubeVideoId(url) {
   return null
 }
 
+// Extract YouTube playlist ID from URL
+function getYouTubePlaylistId(url) {
+  const patterns = [
+    /[?&]list=([^&\n?#]+)/,
+    /youtube\.com\/playlist\?list=([^&\n?#]+)/
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]
+  }
+  return null
+}
+
 // Audio player
 let audioPlayer = null
 let youtubeIframe = null
 let mutedElements = [] // Track elements we've muted
 let persistentPlayerContainer = null // Persistent container for YouTube player
+let isPlayerMinimized = false
+let playerSize = { width: 400, height: 225 } // Default size
 
 // Create persistent player container (lives outside the panel)
 function ensurePersistentPlayerContainer() {
@@ -4983,12 +4998,23 @@ function ensurePersistentPlayerContainer() {
       position: fixed;
       bottom: 80px;
       right: 340px;
-      width: 220px;
+      width: ${playerSize.width}px;
       z-index: 2147483645;
       pointer-events: auto;
-      cursor: move;
     `
     document.body.appendChild(persistentPlayerContainer)
+
+    // Load saved size
+    chrome.storage.local.get(['playerSize'], (result) => {
+      if (result.playerSize) {
+        playerSize = result.playerSize
+        persistentPlayerContainer.style.width = playerSize.width + 'px'
+        const iframe = persistentPlayerContainer.querySelector('iframe')
+        if (iframe) {
+          iframe.style.height = playerSize.height + 'px'
+        }
+      }
+    })
 
     // Load saved position
     chrome.storage.local.get(['playerPosition'], (result) => {
@@ -5001,49 +5027,93 @@ function ensurePersistentPlayerContainer() {
       }
     })
 
-    // Make it draggable
+    // Make it draggable and resizable
     let isDragging = false
+    let isResizing = false
     let dragOffset = { x: 0, y: 0 }
+    let resizeStart = { x: 0, y: 0, width: 0, height: 0 }
 
     persistentPlayerContainer.addEventListener('mousedown', (e) => {
-      // Don't drag if clicking on buttons or iframe
-      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'IFRAME') {
+      // Don't drag if clicking on buttons, iframe, or resize handle
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'IFRAME' || e.target.id === 'vmkpal-resize-handle') {
         return
       }
-      isDragging = true
-      const rect = persistentPlayerContainer.getBoundingClientRect()
-      dragOffset.x = e.clientX - rect.left
-      dragOffset.y = e.clientY - rect.top
-      persistentPlayerContainer.style.cursor = 'grabbing'
-      e.preventDefault()
+      // Only drag from header area
+      const header = persistentPlayerContainer.querySelector('#vmkpal-player-header')
+      if (header && header.contains(e.target)) {
+        isDragging = true
+        const rect = persistentPlayerContainer.getBoundingClientRect()
+        dragOffset.x = e.clientX - rect.left
+        dragOffset.y = e.clientY - rect.top
+        e.preventDefault()
+      }
     })
 
     document.addEventListener('mousemove', (e) => {
-      if (!isDragging) return
+      if (isDragging) {
+        const x = e.clientX - dragOffset.x
+        const y = e.clientY - dragOffset.y
 
-      const x = e.clientX - dragOffset.x
-      const y = e.clientY - dragOffset.y
+        // Keep within viewport
+        const maxX = window.innerWidth - persistentPlayerContainer.offsetWidth
+        const maxY = window.innerHeight - persistentPlayerContainer.offsetHeight
 
-      // Keep within viewport
-      const maxX = window.innerWidth - persistentPlayerContainer.offsetWidth
-      const maxY = window.innerHeight - persistentPlayerContainer.offsetHeight
+        persistentPlayerContainer.style.left = Math.max(0, Math.min(x, maxX)) + 'px'
+        persistentPlayerContainer.style.top = Math.max(0, Math.min(y, maxY)) + 'px'
+        persistentPlayerContainer.style.right = 'auto'
+        persistentPlayerContainer.style.bottom = 'auto'
+      }
 
-      persistentPlayerContainer.style.left = Math.max(0, Math.min(x, maxX)) + 'px'
-      persistentPlayerContainer.style.top = Math.max(0, Math.min(y, maxY)) + 'px'
-      persistentPlayerContainer.style.right = 'auto'
-      persistentPlayerContainer.style.bottom = 'auto'
+      if (isResizing) {
+        const deltaX = e.clientX - resizeStart.x
+        const deltaY = e.clientY - resizeStart.y
+
+        const newWidth = Math.max(280, Math.min(800, resizeStart.width + deltaX))
+        const newHeight = Math.max(158, Math.min(450, resizeStart.height + deltaY)) // 16:9 aspect min
+
+        persistentPlayerContainer.style.width = newWidth + 'px'
+        const iframe = persistentPlayerContainer.querySelector('iframe')
+        if (iframe) {
+          iframe.style.height = newHeight + 'px'
+        }
+
+        playerSize = { width: newWidth, height: newHeight }
+      }
     })
 
     document.addEventListener('mouseup', () => {
       if (isDragging) {
         isDragging = false
-        persistentPlayerContainer.style.cursor = 'move'
 
         // Save position
         const rect = persistentPlayerContainer.getBoundingClientRect()
         chrome.storage.local.set({
           playerPosition: { x: rect.left, y: rect.top }
         })
+      }
+
+      if (isResizing) {
+        isResizing = false
+        document.body.style.cursor = ''
+
+        // Save size
+        chrome.storage.local.set({ playerSize })
+      }
+    })
+
+    // Set up resize handle listener (delegated since handle is created later)
+    document.addEventListener('mousedown', (e) => {
+      if (e.target.id === 'vmkpal-resize-handle') {
+        isResizing = true
+        document.body.style.cursor = 'se-resize'
+        const iframe = persistentPlayerContainer.querySelector('iframe')
+        resizeStart = {
+          x: e.clientX,
+          y: e.clientY,
+          width: persistentPlayerContainer.offsetWidth,
+          height: iframe ? iframe.offsetHeight : playerSize.height
+        }
+        e.preventDefault()
       }
     })
   }
@@ -5096,25 +5166,59 @@ function playAudio(url) {
   muteGameAudio()
 
   const videoId = getYouTubeVideoId(url)
+  const playlistId = getYouTubePlaylistId(url)
 
-  if (videoId) {
+  if (videoId || playlistId) {
     // YouTube - embed as iframe in PERSISTENT container (survives panel navigation)
     const container = ensurePersistentPlayerContainer()
+    isPlayerMinimized = false
+
+    // Build the embed URL
+    let embedUrl = 'https://www.youtube.com/embed/'
+    if (playlistId && !videoId) {
+      // Playlist only (no specific video) - use videoseries
+      embedUrl += `videoseries?list=${playlistId}&autoplay=1`
+    } else if (videoId && playlistId) {
+      // Video within a playlist
+      embedUrl += `${videoId}?autoplay=1&list=${playlistId}`
+    } else {
+      // Single video - loop it
+      embedUrl += `${videoId}?autoplay=1&loop=1&playlist=${videoId}`
+    }
+
+    const isPlaylist = !!playlistId
+    const playerLabel = isPlaylist ? '🎵 Playlist' : '▶ Video'
+
+    // Apply saved size
+    container.style.width = playerSize.width + 'px'
+
     container.innerHTML = `
-      <div style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 8px; padding: 8px; border: 1px solid rgba(255,255,255,0.1);">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-          <span style="color: #10b981; font-size: 10px;">▶ Now Playing</span>
-          <button id="vmkpal-persistent-stop" style="margin-left: auto; background: #ef4444; border: none; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;">Stop</button>
+      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 4px 2px; cursor: move;">
+          <span style="color: #10b981; font-size: 12px; font-weight: 500;">${playerLabel}</span>
+          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
+          <div style="margin-left: auto; display: flex; gap: 6px;">
+            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Minimize">─</button>
+            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Stop & Close">✕</button>
+          </div>
         </div>
-        <iframe
-          id="vmkpal-youtube-player"
-          width="100%"
-          height="50"
-          src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}"
-          frameborder="0"
-          allow="autoplay; encrypted-media"
-          style="border-radius: 6px;"
-        ></iframe>
+        <div id="vmkpal-player-content">
+          <iframe
+            id="vmkpal-youtube-player"
+            width="100%"
+            height="${playerSize.height}"
+            src="${embedUrl}"
+            frameborder="0"
+            allow="autoplay; encrypted-media; fullscreen"
+            allowfullscreen
+            style="border-radius: 8px; display: block;"
+          ></iframe>
+        </div>
+        <div id="vmkpal-resize-handle" style="position: absolute; bottom: 4px; right: 4px; width: 16px; height: 16px; cursor: se-resize; opacity: 0.5;" title="Drag to resize">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="rgba(255,255,255,0.6)">
+            <path d="M14 14H10V12H12V10H14V14ZM14 8H12V6H14V8ZM8 14H6V12H8V14Z"/>
+          </svg>
+        </div>
       </div>
     `
     youtubeIframe = container.querySelector('iframe')
@@ -5125,7 +5229,31 @@ function playAudio(url) {
       stopBtn.addEventListener('click', () => stopAudio())
     }
 
-    showNotification('🔇 Game muted • Playing YouTube', 'success')
+    // Add minimize/expand handler
+    const minimizeBtn = container.querySelector('#vmkpal-player-minimize')
+    const playerContent = container.querySelector('#vmkpal-player-content')
+    const resizeHandle = container.querySelector('#vmkpal-resize-handle')
+    if (minimizeBtn && playerContent) {
+      minimizeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        isPlayerMinimized = !isPlayerMinimized
+        if (isPlayerMinimized) {
+          playerContent.style.display = 'none'
+          if (resizeHandle) resizeHandle.style.display = 'none'
+          minimizeBtn.textContent = '□'
+          minimizeBtn.title = 'Expand'
+          container.style.width = '200px'
+        } else {
+          playerContent.style.display = 'block'
+          if (resizeHandle) resizeHandle.style.display = 'block'
+          minimizeBtn.textContent = '─'
+          minimizeBtn.title = 'Minimize'
+          container.style.width = playerSize.width + 'px'
+        }
+      })
+    }
+
+    showNotification(isPlaylist ? '🔇 Game muted • Playing playlist' : '🔇 Game muted • Playing YouTube', 'success')
   } else {
     // Direct audio URL
     audioPlayer = new Audio(url)
