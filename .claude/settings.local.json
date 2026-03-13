@@ -24,7 +24,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(pnpm ext:publish:*)",
-      "Bash(pnpm ext:release:*)"
+      "Bash(pnpm ext:release:*)",
+      "Bash(node -e:*)",
+      "Bash(node:*)"
     ]
   }
 }

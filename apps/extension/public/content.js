@@ -1588,6 +1588,7 @@ function createToolbar() {
   tickerContainer.appendChild(tickerText)
   content.appendChild(tickerContainer)
 
+  // INTERNAL_FEATURE_START
   // Room info box (shows current detected room)
   const roomInfoBox = document.createElement('div')
   roomInfoBox.id = 'vmkpal-room-info'
@@ -1610,6 +1611,7 @@ function createToolbar() {
     </div>
   `
   content.appendChild(roomInfoBox)
+  // INTERNAL_FEATURE_END
 
   // Quick actions row (Screenshot & Record)
   const quickActions = document.createElement('div')
@@ -1689,10 +1691,14 @@ function createToolbar() {
   featureGrid.appendChild(createFeatureButton('💬', 'Phrases', createPhrasesPanel))
   featureGrid.appendChild(createFeatureButton('🎵', 'Audio', createAudioPanel))
   featureGrid.appendChild(createFeatureButton('📅', 'Events', createEventsPanel))
+  // INTERNAL_FEATURE_START
   featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel))
+  // INTERNAL_FEATURE_END
   featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
+  // INTERNAL_FEATURE_START
   featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
+  // INTERNAL_FEATURE_END
   featureGrid.appendChild(createFeatureButton('⚙️', 'Settings', createSettingsPanel))
   featureGrid.appendChild(createToggleButton('🔒', 'Lock Position', togglePositionLock, () => isPositionLocked))
 
@@ -3642,6 +3648,7 @@ function createSettingToggle(icon, label, description, isEnabledFn, toggleFn) {
   return { element: row, updateState: updateToggle }
 }
 
+// INTERNAL_FEATURE_START
 // Audio Learning Panel - Map room audio to room IDs
 function createAudioLearningPanel() {
   const div = document.createElement('div')
@@ -3986,6 +3993,7 @@ function createAudioLearningPanel() {
 
   return div
 }
+// INTERNAL_FEATURE_END
 
 // Apply icon size based on setting
 function applyIconSize() {
@@ -5567,6 +5575,7 @@ async function updateEventTicker() {
 }
 
 
+// INTERNAL_FEATURE_START
 // LFG Panel
 function createLfgPanel() {
   const div = document.createElement('div')
@@ -5577,6 +5586,7 @@ function createLfgPanel() {
   `
   return div
 }
+// INTERNAL_FEATURE_END
 
 // Fill black borders with themed background and twinkling stars
 function fillBorderBackground() {
