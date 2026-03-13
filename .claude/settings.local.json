@@ -26,7 +26,10 @@
       "Bash(pnpm ext:publish:*)",
       "Bash(pnpm ext:release:*)",
       "Bash(node -e:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(pnpm ext:package:*)",
+      "Bash(powershell -command:*)",
+      "Bash(ls:*)"
     ]
   }
 }
