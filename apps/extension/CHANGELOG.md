@@ -1,5 +1,13 @@
 # MyVMK Genie Changelog
 
+## 1.2.0
+- Pre-event notification now stays on screen for 8 seconds
+- All 3 butterflies now permanent in Snow White Forest (no more fading/respawning)
+- Each butterfly has unique flight pattern (gentle floater, drifter, explorer)
+- Butterflies reduced to smaller size (18px)
+- One butterfly flipped to face left for variety
+- Double Credits events now show special gold icon
+
 ## 1.1.9
 - Added "Event starting shortly" notification 1 minute before scheduled events
 - Butterfly effect now displays at 75% size for better visual balance
