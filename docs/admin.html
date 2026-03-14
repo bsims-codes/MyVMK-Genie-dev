@@ -177,6 +177,71 @@
     select { cursor: pointer; }
     select option { background: #1a1a2e; padding: 10px; }
 
+    /* Fix date/time input icons */
+    input[type="date"], input[type="time"] {
+      color-scheme: dark;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="time"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      cursor: pointer;
+      opacity: 0.7;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    input[type="time"]::-webkit-calendar-picker-indicator:hover {
+      opacity: 1;
+    }
+
+    /* Effects checkbox grid */
+    .effects-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .effect-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .effect-checkbox:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.15);
+    }
+    .effect-checkbox.selected {
+      background: rgba(139, 92, 246, 0.2);
+      border-color: rgba(139, 92, 246, 0.5);
+    }
+    .effect-checkbox input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: #8b5cf6;
+      cursor: pointer;
+    }
+    .effect-checkbox span {
+      font-size: 13px;
+      color: rgba(255,255,255,0.8);
+    }
+    .effect-checkbox.selected span {
+      color: white;
+    }
+    .effect-checkbox.full-width {
+      grid-column: span 2;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(124, 58, 237, 0.1));
+      border-color: rgba(139, 92, 246, 0.3);
+    }
+    .effect-hint {
+      font-size: 10px;
+      color: rgba(255,255,255,0.4);
+      margin-left: auto;
+    }
+
     /* Checkbox styling */
     .checkbox-group {
       display: flex;
@@ -560,15 +625,42 @@
             </div>
 
             <div class="form-group span-2">
-              <label>Visual Effects (Ctrl/Cmd + click for multiple)</label>
-              <select id="genie-effect" multiple style="height: 120px;">
-                <option value="fireworks">Fireworks</option>
-                <option value="rain">Rain</option>
-                <option value="snow">Snow</option>
-                <option value="money">Money Rain</option>
-                <option value="emoji">Emoji Rain</option>
-                <option value="night">Night Mode</option>
-              </select>
+              <label>Visual Effects</label>
+              <div class="effects-grid" id="genie-effects-grid">
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="fireworks">
+                  <span>Fireworks</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="night">
+                  <span>Night Mode</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="rain">
+                  <span>Rain</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="snow">
+                  <span>Snow</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="spotlights">
+                  <span>Spotlights</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="money">
+                  <span>Money Rain</span>
+                </label>
+                <label class="effect-checkbox">
+                  <input type="checkbox" name="effect" value="emoji">
+                  <span>Emoji Rain</span>
+                </label>
+                <label class="effect-checkbox full-width" id="happily-ever-after-option">
+                  <input type="checkbox" name="effect" value="happilyEverAfter">
+                  <span>Happily Ever After</span>
+                  <span class="effect-hint">Full choreographed show</span>
+                </label>
+              </div>
             </div>
 
             <div class="form-group span-2">
@@ -1029,15 +1121,44 @@
     }
 
     function getSelectedEffects() {
-      const select = document.getElementById('genie-effect');
-      return Array.from(select.selectedOptions).map(opt => opt.value);
+      const checkboxes = document.querySelectorAll('#genie-effects-grid input[type="checkbox"]:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
     }
 
     function setSelectedEffects(effects) {
-      const select = document.getElementById('genie-effect');
       const arr = Array.isArray(effects) ? effects : (effects ? [effects] : []);
-      Array.from(select.options).forEach(opt => opt.selected = arr.includes(opt.value));
+      const checkboxes = document.querySelectorAll('#genie-effects-grid input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.checked = arr.includes(cb.value);
+        updateEffectCheckboxStyle(cb);
+      });
     }
+
+    function updateEffectCheckboxStyle(checkbox) {
+      const label = checkbox.closest('.effect-checkbox');
+      if (label) {
+        label.classList.toggle('selected', checkbox.checked);
+      }
+    }
+
+    // Add click handlers for effect checkbox styling
+    document.querySelectorAll('#genie-effects-grid input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        updateEffectCheckboxStyle(cb);
+
+        // Auto-fill for Happily Ever After
+        if (cb.value === 'happilyEverAfter' && cb.checked) {
+          const audioInput = document.getElementById('genie-audio');
+          if (!audioInput.value) {
+            audioInput.value = 'https://www.youtube.com/watch?v=ypp4iuJUW2I&t=28s';
+          }
+          const durationInput = document.getElementById('genie-duration');
+          if (durationInput.value === '5' || durationInput.value === '') {
+            durationInput.value = '18';
+          }
+        }
+      });
+    });
 
     function editGenieEvent(index) {
       const event = genieEvents[index];
@@ -1065,6 +1186,10 @@
       document.getElementById('genie-cancel-btn').style.display = 'none';
       document.getElementById('genie-tinkerbell').checked = false;
       document.getElementById('genie-enabled').checked = true;
+      // Reset effect checkbox styles
+      document.querySelectorAll('#genie-effects-grid .effect-checkbox').forEach(label => {
+        label.classList.remove('selected');
+      });
     }
 
     document.getElementById('genie-form').addEventListener('submit', (e) => {

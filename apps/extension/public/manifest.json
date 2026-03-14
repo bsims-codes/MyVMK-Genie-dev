@@ -12,9 +12,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.myvmk.com/*",
-    "https://myvmk.com/*",
-    "https://play.myvmk.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",

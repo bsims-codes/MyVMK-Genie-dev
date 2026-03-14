@@ -156,8 +156,9 @@ function updateOverlayBounds() {
 
 let currentAudio = null
 let phrasesCache = {}
-let lastQueuePosition = null
-let queueAlertThreshold = 5 // Alert when position is this or lower
+// Queue detection feature - commented out for future reference
+// let lastQueuePosition = null
+// let queueAlertThreshold = 5 // Alert when position is this or lower
 let tesseractWorker = null
 let isOcrReady = false
 let ocrScanInterval = null
@@ -231,6 +232,20 @@ const PARTICLE_COUNT = 100
 const GRAVITY = 60
 const LAUNCH_INTERVAL_MIN = 600
 const LAUNCH_INTERVAL_MAX = 1500
+
+// Choreography system for synced shows
+let choreographyActive = false
+let choreographyStartTime = 0
+let choreographyData = null
+let choreographyInterval = null
+let fireworksIntensity = 1.0 // 0 = none, 1 = normal, 2+ = intense
+
+// Spotlight effect
+let spotlightCanvas = null
+let spotlightCtx = null
+let spotlightAnimationId = null
+let spotlights = []
+let isSpotlightsEnabled = false
 
 // Snow effect
 let snowflakes = []
@@ -427,32 +442,32 @@ function runDebug() {
   console.log('Iframes found:', iframes.length)
   iframes.forEach((f, i) => console.log(`  iframe ${i}:`, f.src || '(no src)'))
 
-  // Look for queue-related elements
-  console.log('=== Queue Detection ===')
-  const queueKeywords = ['queue', 'vmk pass', 'number', 'waiting', 'position']
-  document.querySelectorAll('*').forEach(el => {
-    const text = el.textContent?.toLowerCase() || ''
-    if (queueKeywords.some(k => text.includes(k)) && el.children.length === 0) {
-      console.log('  Queue-related element:', el.tagName, el.className, `"${el.textContent?.trim()}"`)
-    }
-  })
+  // Queue detection logging - commented out for future reference
+  // console.log('=== Queue Detection ===')
+  // const queueKeywords = ['queue', 'vmk pass', 'number', 'waiting', 'position']
+  // document.querySelectorAll('*').forEach(el => {
+  //   const text = el.textContent?.toLowerCase() || ''
+  //   if (queueKeywords.some(k => text.includes(k)) && el.children.length === 0) {
+  //     console.log('  Queue-related element:', el.tagName, el.className, `"${el.textContent?.trim()}"`)
+  //   }
+  // })
 }
 
-// Queue monitoring - watches for queue position changes
-function startQueueMonitor() {
-  console.log('MyVMK Genie: Queue monitor active')
-
-  // Watch for DOM changes that might be queue-related (fallback)
-  const queueObserver = new MutationObserver((mutations) => {
-    checkForQueueInfo()
-  })
-
-  queueObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  })
-}
+// Queue monitoring - commented out for future reference
+// function startQueueMonitor() {
+//   console.log('MyVMK Genie: Queue monitor active')
+//
+//   // Watch for DOM changes that might be queue-related (fallback)
+//   const queueObserver = new MutationObserver((mutations) => {
+//     checkForQueueInfo()
+//   })
+//
+//   queueObserver.observe(document.body, {
+//     childList: true,
+//     subtree: true,
+//     characterData: true
+//   })
+// }
 
 // Initialize Tesseract OCR (bundled with extension to bypass CSP)
 async function initOCR() {
@@ -500,63 +515,63 @@ function captureCanvas() {
   return null
 }
 
-// Scan canvas for queue information using OCR
-async function scanForQueue() {
-  // Capture screen via background script (avoids tainted canvas)
-  const imageData = await captureScreen()
-  if (!imageData) {
-    showNotification('Could not capture game screen', 'error')
-    return null
-  }
-
-  // Initialize OCR if needed
-  if (!isOcrReady) {
-    showNotification('Starting OCR engine...', 'info')
-    const ready = await initOCR()
-    if (!ready) {
-      showNotification('OCR failed to initialize', 'error')
-      return null
-    }
-  }
-
-  try {
-    console.log('MyVMK Genie: Scanning for queue...')
-
-    const result = await tesseractWorker.recognize(imageData)
-    const text = result.data.text
-    console.log('MyVMK Genie: OCR result:', text)
-
-    // Look for queue patterns
-    const patterns = [
-      /you are number\s*(\d+)/i,
-      /number\s*(\d+)\s*in queue/i,
-      /number\s+(\d+)/i,
-      /are number\s*(\d+)/i
-    ]
-
-    for (const pattern of patterns) {
-      const match = text.match(pattern)
-      if (match && match[1]) {
-        const position = parseInt(match[1])
-        if (position > 0 && position < 1000) {
-          console.log('MyVMK Genie: Queue position found:', position)
-          handleQueuePosition(position)
-          return position
-        }
-      }
-    }
-
-    // Check if VMK Pass popup might be visible
-    if (text.toLowerCase().includes('vmk') || text.toLowerCase().includes('queue') || text.toLowerCase().includes('pass')) {
-      console.log('MyVMK Genie: Queue popup may be visible but number not detected')
-    }
-
-    return null
-  } catch (err) {
-    console.error('MyVMK Genie: OCR scan failed:', err)
-    return null
-  }
-}
+// Scan canvas for queue information using OCR - commented out for future reference
+// async function scanForQueue() {
+//   // Capture screen via background script (avoids tainted canvas)
+//   const imageData = await captureScreen()
+//   if (!imageData) {
+//     showNotification('Could not capture game screen', 'error')
+//     return null
+//   }
+//
+//   // Initialize OCR if needed
+//   if (!isOcrReady) {
+//     showNotification('Starting OCR engine...', 'info')
+//     const ready = await initOCR()
+//     if (!ready) {
+//       showNotification('OCR failed to initialize', 'error')
+//       return null
+//     }
+//   }
+//
+//   try {
+//     console.log('MyVMK Genie: Scanning for queue...')
+//
+//     const result = await tesseractWorker.recognize(imageData)
+//     const text = result.data.text
+//     console.log('MyVMK Genie: OCR result:', text)
+//
+//     // Look for queue patterns
+//     const patterns = [
+//       /you are number\s*(\d+)/i,
+//       /number\s*(\d+)\s*in queue/i,
+//       /number\s+(\d+)/i,
+//       /are number\s*(\d+)/i
+//     ]
+//
+//     for (const pattern of patterns) {
+//       const match = text.match(pattern)
+//       if (match && match[1]) {
+//         const position = parseInt(match[1])
+//         if (position > 0 && position < 1000) {
+//           console.log('MyVMK Genie: Queue position found:', position)
+//           handleQueuePosition(position)
+//           return position
+//         }
+//       }
+//     }
+//
+//     // Check if VMK Pass popup might be visible
+//     if (text.toLowerCase().includes('vmk') || text.toLowerCase().includes('queue') || text.toLowerCase().includes('pass')) {
+//       console.log('MyVMK Genie: Queue popup may be visible but number not detected')
+//     }
+//
+//     return null
+//   } catch (err) {
+//     console.error('MyVMK Genie: OCR scan failed:', err)
+//     return null
+//   }
+// }
 
 // Scan canvas for captcha code using OCR
 async function scanForCaptcha() {
@@ -676,139 +691,139 @@ function playCaptchaSound() {
   }
 }
 
-// Start automatic queue scanning
-function startAutoScan(intervalMs = 5000) {
-  stopAutoScan() // Clear any existing interval
+// Start automatic queue scanning - commented out for future reference
+// function startAutoScan(intervalMs = 5000) {
+//   stopAutoScan() // Clear any existing interval
+//
+//   console.log('MyVMK Genie: Starting auto-scan every', intervalMs, 'ms')
+//   showNotification('Auto-scanning started', 'success')
+//
+//   // Initial scan
+//   scanForQueue()
+//
+//   ocrScanInterval = setInterval(async () => {
+//     const position = await scanForQueue()
+//     if (position !== null) {
+//       console.log('MyVMK Genie: Auto-scan found position:', position)
+//     }
+//   }, intervalMs)
+// }
 
-  console.log('MyVMK Genie: Starting auto-scan every', intervalMs, 'ms')
-  showNotification('Auto-scanning started', 'success')
-
-  // Initial scan
-  scanForQueue()
-
-  ocrScanInterval = setInterval(async () => {
-    const position = await scanForQueue()
-    if (position !== null) {
-      console.log('MyVMK Genie: Auto-scan found position:', position)
-    }
-  }, intervalMs)
-}
-
-// Stop automatic queue scanning
-function stopAutoScan() {
-  if (ocrScanInterval) {
-    clearInterval(ocrScanInterval)
-    ocrScanInterval = null
-    console.log('MyVMK Genie: Auto-scan stopped')
-  }
-}
+// Stop automatic queue scanning - commented out for future reference
+// function stopAutoScan() {
+//   if (ocrScanInterval) {
+//     clearInterval(ocrScanInterval)
+//     ocrScanInterval = null
+//     console.log('MyVMK Genie: Auto-scan stopped')
+//   }
+// }
 
 
-// Check DOM for queue information
-function checkForQueueInfo() {
-  // Look for elements containing queue position
-  // Pattern: "You are number X in queue" or similar
-  const allText = document.body.innerText || ''
+// Check DOM for queue information - commented out for future reference
+// function checkForQueueInfo() {
+//   // Look for elements containing queue position
+//   // Pattern: "You are number X in queue" or similar
+//   const allText = document.body.innerText || ''
+//
+//   // Try to find queue position pattern
+//   const queuePatterns = [
+//     /you are number\s*(\d+)\s*in queue/i,
+//     /position[:\s]*(\d+)/i,
+//     /queue[:\s]*#?(\d+)/i,
+//     /number\s*(\d+)\s*in\s*(queue|line)/i
+//   ]
+//
+//   for (const pattern of queuePatterns) {
+//     const match = allText.match(pattern)
+//     if (match && match[1]) {
+//       const position = parseInt(match[1])
+//       handleQueuePosition(position)
+//       return
+//     }
+//   }
+//
+//   // Also look for specific elements
+//   document.querySelectorAll('*').forEach(el => {
+//     if (el.children.length > 0) return // Only leaf elements
+//
+//     const text = el.textContent?.trim() || ''
+//     // Look for just a number in a small element (might be the queue number)
+//     if (/^\d{1,3}$/.test(text)) {
+//       const parent = el.parentElement
+//       const parentText = parent?.textContent?.toLowerCase() || ''
+//       if (parentText.includes('queue') || parentText.includes('number')) {
+//         const position = parseInt(text)
+//         handleQueuePosition(position)
+//       }
+//     }
+//   })
+// }
 
-  // Try to find queue position pattern
-  const queuePatterns = [
-    /you are number\s*(\d+)\s*in queue/i,
-    /position[:\s]*(\d+)/i,
-    /queue[:\s]*#?(\d+)/i,
-    /number\s*(\d+)\s*in\s*(queue|line)/i
-  ]
+// Handle detected queue position - commented out for future reference
+// function handleQueuePosition(position) {
+//   if (position === lastQueuePosition) return // No change
+//
+//   console.log('MyVMK Genie: Queue position detected:', position)
+//   lastQueuePosition = position
+//
+//   // Update queue display if we have one
+//   updateQueueDisplay(position)
+//
+//   // Check if we should alert
+//   chrome.storage.local.get(['queueAlertThreshold', 'queueAlertsEnabled'], (result) => {
+//     const threshold = result.queueAlertThreshold || 5
+//     const enabled = result.queueAlertsEnabled !== false // Default to enabled
+//
+//     if (enabled && position <= threshold && position > 0) {
+//       // Alert the user!
+//       showQueueAlert(position)
+//     }
+//   })
+// }
 
-  for (const pattern of queuePatterns) {
-    const match = allText.match(pattern)
-    if (match && match[1]) {
-      const position = parseInt(match[1])
-      handleQueuePosition(position)
-      return
-    }
-  }
+// Show queue alert - commented out for future reference
+// function showQueueAlert(position) {
+//   // Visual notification
+//   showNotification(`🎫 Queue position: ${position} - Get ready!`, 'success')
+//
+//   // Play alert sound
+//   playQueueAlertSound()
+//
+//   // Flash the title
+//   flashTitle(`[${position}] Queue Alert!`)
+// }
 
-  // Also look for specific elements
-  document.querySelectorAll('*').forEach(el => {
-    if (el.children.length > 0) return // Only leaf elements
-
-    const text = el.textContent?.trim() || ''
-    // Look for just a number in a small element (might be the queue number)
-    if (/^\d{1,3}$/.test(text)) {
-      const parent = el.parentElement
-      const parentText = parent?.textContent?.toLowerCase() || ''
-      if (parentText.includes('queue') || parentText.includes('number')) {
-        const position = parseInt(text)
-        handleQueuePosition(position)
-      }
-    }
-  })
-}
-
-// Handle detected queue position
-function handleQueuePosition(position) {
-  if (position === lastQueuePosition) return // No change
-
-  console.log('MyVMK Genie: Queue position detected:', position)
-  lastQueuePosition = position
-
-  // Update queue display if we have one
-  updateQueueDisplay(position)
-
-  // Check if we should alert
-  chrome.storage.local.get(['queueAlertThreshold', 'queueAlertsEnabled'], (result) => {
-    const threshold = result.queueAlertThreshold || 5
-    const enabled = result.queueAlertsEnabled !== false // Default to enabled
-
-    if (enabled && position <= threshold && position > 0) {
-      // Alert the user!
-      showQueueAlert(position)
-    }
-  })
-}
-
-// Show queue alert
-function showQueueAlert(position) {
-  // Visual notification
-  showNotification(`🎫 Queue position: ${position} - Get ready!`, 'success')
-
-  // Play alert sound
-  playQueueAlertSound()
-
-  // Flash the title
-  flashTitle(`[${position}] Queue Alert!`)
-}
-
-// Play queue alert sound
-function playQueueAlertSound() {
-  try {
-    // Create a simple beep sound
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-
-    oscillator.frequency.value = 800
-    oscillator.type = 'sine'
-    gainNode.gain.value = 0.3
-
-    oscillator.start()
-    oscillator.stop(audioContext.currentTime + 0.2)
-
-    // Second beep
-    setTimeout(() => {
-      const osc2 = audioContext.createOscillator()
-      osc2.connect(gainNode)
-      osc2.frequency.value = 1000
-      osc2.type = 'sine'
-      osc2.start()
-      osc2.stop(audioContext.currentTime + 0.2)
-    }, 250)
-  } catch (e) {
-    console.log('MyVMK Genie: Could not play alert sound')
-  }
-}
+// Play queue alert sound - commented out for future reference
+// function playQueueAlertSound() {
+//   try {
+//     // Create a simple beep sound
+//     const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+//     const oscillator = audioContext.createOscillator()
+//     const gainNode = audioContext.createGain()
+//
+//     oscillator.connect(gainNode)
+//     gainNode.connect(audioContext.destination)
+//
+//     oscillator.frequency.value = 800
+//     oscillator.type = 'sine'
+//     gainNode.gain.value = 0.3
+//
+//     oscillator.start()
+//     oscillator.stop(audioContext.currentTime + 0.2)
+//
+//     // Second beep
+//     setTimeout(() => {
+//       const osc2 = audioContext.createOscillator()
+//       osc2.connect(gainNode)
+//       osc2.frequency.value = 1000
+//       osc2.type = 'sine'
+//       osc2.start()
+//       osc2.stop(audioContext.currentTime + 0.2)
+//     }, 250)
+//   } catch (e) {
+//     console.log('MyVMK Genie: Could not play alert sound')
+//   }
+// }
 
 // Flash the page title
 function flashTitle(alertText) {
@@ -828,14 +843,14 @@ function flashTitle(alertText) {
   }, 500)
 }
 
-// Update queue display in toolbar
-function updateQueueDisplay(position) {
-  const display = document.getElementById('vmkpal-queue-display')
-  if (display) {
-    display.textContent = `#${position}`
-    display.style.display = 'inline'
-  }
-}
+// Update queue display in toolbar - commented out for future reference
+// function updateQueueDisplay(position) {
+//   const display = document.getElementById('vmkpal-queue-display')
+//   if (display) {
+//     display.textContent = `#${position}`
+//     display.style.display = 'inline'
+//   }
+// }
 
 // Called when room changes
 function onRoomChange(oldRoom, newRoom) {
@@ -1277,11 +1292,15 @@ function updateRecordButton() {
   if (recordBtn) {
     if (isRecording) {
       recordBtn.innerHTML = '⏹️ Stop'
-      recordBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)'
+      recordBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+      recordBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)'
+      recordBtn.style.color = '#fca5a5'
       recordBtn.title = 'Stop Recording'
     } else {
       recordBtn.innerHTML = '🎥 Record'
-      recordBtn.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)'
+      recordBtn.style.background = 'rgba(255,255,255,0.05)'
+      recordBtn.style.borderColor = 'rgba(255,255,255,0.1)'
+      recordBtn.style.color = 'rgba(255,255,255,0.8)'
       recordBtn.title = 'Start Recording'
     }
   }
@@ -1735,11 +1754,21 @@ async function cropScreenshot(dataUrl, x, y, width, height) {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
+      // Calculate scale factor between image and viewport
+      const scaleX = img.naturalWidth / window.innerWidth
+      const scaleY = img.naturalHeight / window.innerHeight
+
+      // Scale coordinates to match actual image dimensions
+      const scaledX = Math.round(x * scaleX)
+      const scaledY = Math.round(y * scaleY)
+      const scaledWidth = Math.round(width * scaleX)
+      const scaledHeight = Math.round(height * scaleY)
+
       const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
+      canvas.width = scaledWidth
+      canvas.height = scaledHeight
       const ctx = canvas.getContext('2d')
-      ctx.drawImage(img, x, y, width, height, 0, 0, width, height)
+      ctx.drawImage(img, scaledX, scaledY, scaledWidth, scaledHeight, 0, 0, scaledWidth, scaledHeight)
       resolve(canvas.toDataURL('image/png'))
     }
     img.src = dataUrl
@@ -2044,22 +2073,34 @@ function createToolbar() {
   screenshotBtn.style.cssText = `
     flex: 1;
     padding: 12px;
-    border: none;
+    border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
-    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-    color: white;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.8);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: transform 0.2s;
+    transition: all 0.2s;
   `
-  screenshotBtn.onmouseover = () => screenshotBtn.style.transform = 'scale(1.02)'
-  screenshotBtn.onmouseout = () => screenshotBtn.style.transform = 'scale(1)'
+  screenshotBtn.onmouseover = () => {
+    screenshotBtn.style.background = 'rgba(255,255,255,0.1)'
+    screenshotBtn.style.borderColor = 'rgba(255,255,255,0.2)'
+    screenshotBtn.style.transform = 'scale(1.02)'
+  }
+  screenshotBtn.onmouseout = () => {
+    screenshotBtn.style.background = 'rgba(255,255,255,0.05)'
+    screenshotBtn.style.borderColor = 'rgba(255,255,255,0.1)'
+    screenshotBtn.style.transform = 'scale(1)'
+  }
   screenshotBtn.onclick = async () => {
     screenshotBtn.blur() // Prevent spacebar re-trigger
     try {
       showNotification('Capturing...', 'info')
       chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
+        if (chrome.runtime.lastError) {
+          showNotification('Extension error - refresh page', 'error')
+          return
+        }
         if (response && response.success) {
           showScreenshotModal(response.dataUrl)
         } else {
@@ -2077,17 +2118,25 @@ function createToolbar() {
   recordBtn.style.cssText = `
     flex: 1;
     padding: 12px;
-    border: none;
+    border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.8);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: transform 0.2s;
+    transition: all 0.2s;
   `
-  recordBtn.onmouseover = () => recordBtn.style.transform = 'scale(1.02)'
-  recordBtn.onmouseout = () => recordBtn.style.transform = 'scale(1)'
+  recordBtn.onmouseover = () => {
+    recordBtn.style.background = 'rgba(255,255,255,0.1)'
+    recordBtn.style.borderColor = 'rgba(255,255,255,0.2)'
+    recordBtn.style.transform = 'scale(1.02)'
+  }
+  recordBtn.onmouseout = () => {
+    recordBtn.style.background = 'rgba(255,255,255,0.05)'
+    recordBtn.style.borderColor = 'rgba(255,255,255,0.1)'
+    recordBtn.style.transform = 'scale(1)'
+  }
   recordBtn.onclick = () => {
     recordBtn.blur() // Prevent spacebar re-trigger
     if (isRecording) {
@@ -2646,13 +2695,20 @@ function renderFireworks() {
   // Clear canvas completely (transparent)
   fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
 
-  // Launch new rockets
-  if (now > nextLaunchTime) {
-    launchRocket()
-    // Random chance for double or triple launch
-    if (Math.random() > 0.6) launchRocket()
-    if (Math.random() > 0.8) launchRocket()
-    nextLaunchTime = now + LAUNCH_INTERVAL_MIN + Math.random() * (LAUNCH_INTERVAL_MAX - LAUNCH_INTERVAL_MIN)
+  // Launch new rockets (respects intensity)
+  if (now > nextLaunchTime && fireworksIntensity > 0) {
+    // Number of rockets based on intensity
+    const baseRockets = Math.ceil(fireworksIntensity)
+    for (let i = 0; i < baseRockets; i++) {
+      if (Math.random() < fireworksIntensity) launchRocket()
+    }
+    // Extra rockets at high intensity
+    if (fireworksIntensity > 1.5 && Math.random() > 0.5) launchRocket()
+    if (fireworksIntensity > 2 && Math.random() > 0.3) launchRocket()
+
+    // Faster launches at higher intensity
+    const intervalMultiplier = Math.max(0.3, 1 / fireworksIntensity)
+    nextLaunchTime = now + (LAUNCH_INTERVAL_MIN + Math.random() * (LAUNCH_INTERVAL_MAX - LAUNCH_INTERVAL_MIN)) * intervalMultiplier
   }
 
   // Update physics
@@ -2753,6 +2809,341 @@ function stopFireworks() {
   }
   rockets = []
   particles = []
+  fireworksIntensity = 1.0 // Reset intensity
+}
+
+// ============================================
+// SPOTLIGHT EFFECT
+// ============================================
+
+function startSpotlights() {
+  const bounds = getGameCanvasBounds()
+
+  if (!spotlightCanvas) {
+    spotlightCanvas = document.createElement('canvas')
+    spotlightCanvas.id = 'vmkpal-spotlight-canvas'
+    spotlightCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483643;
+      background: transparent;
+    `
+    spotlightCtx = spotlightCanvas.getContext('2d')
+    document.body.appendChild(spotlightCanvas)
+  }
+
+  spotlightCanvas.style.left = bounds.left + 'px'
+  spotlightCanvas.style.top = bounds.top + 'px'
+  spotlightCanvas.width = bounds.width
+  spotlightCanvas.height = bounds.height
+  spotlightCanvas.style.display = 'block'
+
+  // Create initial spotlights
+  spotlights = []
+  for (let i = 0; i < 5; i++) {
+    spotlights.push(createSpotlight(bounds.width, bounds.height))
+  }
+
+  isSpotlightsEnabled = true
+  renderSpotlights()
+}
+
+function createSpotlight(canvasWidth, canvasHeight) {
+  const colors = [
+    'rgba(255, 255, 255, 0.3)',
+    'rgba(200, 200, 255, 0.25)',
+    'rgba(255, 200, 200, 0.25)',
+    'rgba(200, 255, 200, 0.25)',
+    'rgba(255, 255, 200, 0.25)'
+  ]
+  return {
+    x: Math.random() * canvasWidth,
+    baseY: canvasHeight, // Spotlights originate from bottom
+    angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.8, // Pointing upward with variation
+    targetAngle: -Math.PI / 2 + (Math.random() - 0.5) * 0.8,
+    angleSpeed: 0.001 + Math.random() * 0.002,
+    width: 40 + Math.random() * 30, // Beam width at base
+    length: canvasHeight * 0.9,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    swayPhase: Math.random() * Math.PI * 2,
+    swaySpeed: 0.5 + Math.random() * 0.5
+  }
+}
+
+function updateSpotlights(dt) {
+  for (const spot of spotlights) {
+    // Sway the spotlight
+    spot.swayPhase += spot.swaySpeed * dt
+    spot.angle = spot.targetAngle + Math.sin(spot.swayPhase) * 0.3
+
+    // Occasionally change target angle
+    if (Math.random() < 0.005) {
+      spot.targetAngle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8
+    }
+  }
+}
+
+function renderSpotlights() {
+  if (!spotlightCtx || !isSpotlightsEnabled) return
+
+  const now = performance.now()
+  const dt = 1 / 60
+
+  spotlightCtx.clearRect(0, 0, spotlightCanvas.width, spotlightCanvas.height)
+
+  updateSpotlights(dt)
+
+  // Draw each spotlight beam
+  for (const spot of spotlights) {
+    const gradient = spotlightCtx.createRadialGradient(
+      spot.x, spot.baseY, 0,
+      spot.x, spot.baseY, spot.length
+    )
+    gradient.addColorStop(0, spot.color)
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+
+    spotlightCtx.save()
+    spotlightCtx.translate(spot.x, spot.baseY)
+    spotlightCtx.rotate(spot.angle + Math.PI / 2)
+
+    // Draw cone
+    spotlightCtx.beginPath()
+    spotlightCtx.moveTo(-spot.width / 2, 0)
+    spotlightCtx.lineTo(-spot.width * 2, -spot.length)
+    spotlightCtx.lineTo(spot.width * 2, -spot.length)
+    spotlightCtx.lineTo(spot.width / 2, 0)
+    spotlightCtx.closePath()
+
+    spotlightCtx.fillStyle = gradient
+    spotlightCtx.fill()
+
+    spotlightCtx.restore()
+  }
+
+  spotlightAnimationId = requestAnimationFrame(renderSpotlights)
+}
+
+function stopSpotlights() {
+  isSpotlightsEnabled = false
+  if (spotlightAnimationId) {
+    cancelAnimationFrame(spotlightAnimationId)
+    spotlightAnimationId = null
+  }
+  if (spotlightCanvas) {
+    spotlightCanvas.style.display = 'none'
+    spotlightCtx.clearRect(0, 0, spotlightCanvas.width, spotlightCanvas.height)
+  }
+  spotlights = []
+}
+
+// ============================================
+// HAPPILY EVER AFTER CHOREOGRAPHED SHOW
+// ============================================
+
+// Choreography timeline: [time in seconds, effect type, intensity/params]
+const HAPPILY_EVER_AFTER_CHOREOGRAPHY = [
+  // Opening - Spotlights only
+  { time: 0, action: 'spotlights', enabled: true },
+  { time: 0, action: 'fireworks', intensity: 0 },
+  { time: 0, action: 'night', enabled: true },
+
+  // "Magic is Here" intro - subtle spotlights
+  { time: 15, action: 'spotlights', count: 3 },
+
+  // First musical swell - spotlights dance
+  { time: 30, action: 'spotlights', count: 5 },
+
+  // Music builds - first fireworks
+  { time: 45, action: 'fireworks', intensity: 0.3 },
+
+  // "They can make you happy" - medium fireworks
+  { time: 60, action: 'fireworks', intensity: 0.6 },
+  { time: 60, action: 'spotlights', enabled: false },
+
+  // Quieter moment
+  { time: 90, action: 'fireworks', intensity: 0.3 },
+
+  // Builds again
+  { time: 120, action: 'fireworks', intensity: 0.8 },
+
+  // Big moment
+  { time: 150, action: 'fireworks', intensity: 1.2 },
+
+  // Moana section - ocean colors would be cool
+  { time: 180, action: 'fireworks', intensity: 0.7 },
+
+  // Builds to crescendo
+  { time: 210, action: 'fireworks', intensity: 1.0 },
+
+  // Big crescendo
+  { time: 240, action: 'fireworks', intensity: 1.5 },
+
+  // Quiet Frozen section
+  { time: 270, action: 'fireworks', intensity: 0.4 },
+  { time: 270, action: 'spotlights', enabled: true },
+  { time: 270, action: 'spotlights', count: 3 },
+
+  // Let it go builds
+  { time: 300, action: 'fireworks', intensity: 0.8 },
+  { time: 300, action: 'spotlights', enabled: false },
+
+  // Tangled section
+  { time: 330, action: 'fireworks', intensity: 0.6 },
+
+  // "I see the light" moment
+  { time: 360, action: 'fireworks', intensity: 0.9 },
+
+  // Brave section
+  { time: 400, action: 'fireworks', intensity: 1.0 },
+
+  // Big Hero 6 action
+  { time: 430, action: 'fireworks', intensity: 1.3 },
+
+  // Zootopia
+  { time: 460, action: 'fireworks', intensity: 1.1 },
+
+  // Building to finale
+  { time: 500, action: 'fireworks', intensity: 1.5 },
+
+  // Princess medley
+  { time: 540, action: 'fireworks', intensity: 1.2 },
+  { time: 540, action: 'spotlights', enabled: true },
+
+  // "Happily Ever After" theme returns
+  { time: 580, action: 'fireworks', intensity: 1.4 },
+
+  // Building to final climax
+  { time: 620, action: 'fireworks', intensity: 1.8 },
+  { time: 620, action: 'spotlights', count: 7 },
+
+  // THE BIG FINALE
+  { time: 660, action: 'fireworks', intensity: 2.5 },
+  { time: 660, action: 'spotlights', enabled: false },
+
+  // Absolute peak
+  { time: 680, action: 'fireworks', intensity: 3.0 },
+
+  // Final moments
+  { time: 700, action: 'fireworks', intensity: 2.0 },
+
+  // Gentle ending
+  { time: 720, action: 'fireworks', intensity: 0.5 },
+  { time: 720, action: 'spotlights', enabled: true },
+  { time: 720, action: 'spotlights', count: 3 },
+
+  // Fade out
+  { time: 750, action: 'fireworks', intensity: 0.2 },
+
+  // End
+  { time: 780, action: 'fireworks', intensity: 0 },
+  { time: 780, action: 'spotlights', enabled: false },
+  { time: 785, action: 'end' }
+]
+
+let happilyEverAfterYouTubeId = 'ypp4iuJUW2I'
+let showStartTime = 0
+let lastChoreographyIndex = -1
+
+function startHappilyEverAfterShow() {
+  console.log('MyVMK Genie: Starting Happily Ever After show!')
+
+  // Start night overlay
+  startNightOverlay(true)
+
+  // Initialize show timing
+  showStartTime = performance.now()
+  lastChoreographyIndex = -1
+  choreographyActive = true
+
+  // Start the choreography loop
+  choreographyInterval = setInterval(() => {
+    if (!choreographyActive) {
+      clearInterval(choreographyInterval)
+      return
+    }
+
+    const elapsedSeconds = (performance.now() - showStartTime) / 1000
+
+    // Process all choreography events up to current time
+    for (let i = lastChoreographyIndex + 1; i < HAPPILY_EVER_AFTER_CHOREOGRAPHY.length; i++) {
+      const event = HAPPILY_EVER_AFTER_CHOREOGRAPHY[i]
+      if (event.time <= elapsedSeconds) {
+        executeChoreographyEvent(event)
+        lastChoreographyIndex = i
+      } else {
+        break
+      }
+    }
+  }, 100) // Check every 100ms
+}
+
+function executeChoreographyEvent(event) {
+  console.log('MyVMK Genie: Choreography event:', event)
+
+  switch (event.action) {
+    case 'fireworks':
+      if (event.intensity > 0 && !isFireworksEnabled) {
+        isFireworksEnabled = true
+        startFireworks()
+      }
+      fireworksIntensity = event.intensity
+      if (event.intensity === 0 && isFireworksEnabled) {
+        isFireworksEnabled = false
+        stopFireworks()
+      }
+      break
+
+    case 'spotlights':
+      if (event.enabled === true && !isSpotlightsEnabled) {
+        startSpotlights()
+      } else if (event.enabled === false && isSpotlightsEnabled) {
+        stopSpotlights()
+      }
+      if (event.count !== undefined && isSpotlightsEnabled) {
+        // Adjust number of spotlights
+        const bounds = getGameCanvasBounds()
+        while (spotlights.length < event.count) {
+          spotlights.push(createSpotlight(bounds.width, bounds.height))
+        }
+        while (spotlights.length > event.count) {
+          spotlights.pop()
+        }
+      }
+      break
+
+    case 'night':
+      if (event.enabled) {
+        startNightOverlay(true)
+      } else {
+        stopNightOverlay()
+      }
+      break
+
+    case 'end':
+      stopHappilyEverAfterShow()
+      break
+  }
+}
+
+function stopHappilyEverAfterShow() {
+  console.log('MyVMK Genie: Stopping Happily Ever After show')
+  choreographyActive = false
+
+  if (choreographyInterval) {
+    clearInterval(choreographyInterval)
+    choreographyInterval = null
+  }
+
+  // Stop all effects
+  if (isFireworksEnabled) {
+    isFireworksEnabled = false
+    stopFireworks()
+  }
+  stopSpotlights()
+  stopNightOverlay()
+
+  fireworksIntensity = 1.0
+  lastChoreographyIndex = -1
 }
 
 // Snow Effect
@@ -3725,6 +4116,12 @@ function startEffect(effectName, eventMode = false) {
     case 'night':
       startNightOverlay(eventMode)
       break
+    case 'happilyEverAfter':
+      startHappilyEverAfterShow()
+      break
+    case 'spotlights':
+      startSpotlights()
+      break
   }
 }
 
@@ -3754,6 +4151,12 @@ function stopEffect(effectName) {
       break
     case 'night':
       stopNightOverlay()
+      break
+    case 'happilyEverAfter':
+      stopHappilyEverAfterShow()
+      break
+    case 'spotlights':
+      stopSpotlights()
       break
   }
 }
@@ -7460,9 +7863,10 @@ async function init() {
   setTimeout(() => {
     startRoomWatcher()
     startGenieEventSystem()
-    if (INTERNAL_MODE) {
-      startQueueMonitor()
-    }
+    // Queue monitoring commented out for future reference
+    // if (INTERNAL_MODE) {
+    //   startQueueMonitor()
+    // }
   }, 500)
 
   // Handle resize to update overlay positions to match game canvas
