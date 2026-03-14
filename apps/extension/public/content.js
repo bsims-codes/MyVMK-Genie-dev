@@ -4346,7 +4346,7 @@ function createSettingsPanel() {
   // Version info
   const versionInfo = document.createElement('div')
   versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
-  versionInfo.textContent = 'MyVMK Genie v1.1.7'
+  versionInfo.textContent = 'MyVMK Genie v1.1.8'
   div.appendChild(versionInfo)
 
   return div
@@ -4354,6 +4354,17 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '1.1.8',
+    date: '2025-03-14',
+    changes: [
+      'Genie Events now trigger all overlay effects correctly',
+      'YouTube player starts minimized during events',
+      'Added Night overlay to event effects',
+      'Multiple effects can be selected per event',
+      'Events are editable in admin page'
+    ]
+  },
   {
     version: '1.1.7',
     date: '2025-03-13',
