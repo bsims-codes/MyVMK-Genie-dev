@@ -286,7 +286,9 @@ const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
 let scheduledCommunityEvents = []  // Player events - audio only
 let activeGenieEvent = null
+let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
+let activeCommunityEventRoomId = null
 let genieEventCheckInterval = null
 
 // Room detection - tries multiple methods to find current room
@@ -3227,7 +3229,11 @@ function checkGenieEvents() {
 
     if (isTimeActive && isRoomMatch) {
       foundActiveGenieEvent = true
-      if (!activeGenieEvent || activeGenieEvent.id !== event.id) {
+      // Start event if: no active event, different event, OR same event but different room (joined mid-event)
+      const needsStart = !activeGenieEvent ||
+                         activeGenieEvent.id !== event.id ||
+                         activeGenieEventRoomId !== currentRoomId
+      if (needsStart) {
         startGenieEvent(event)
       }
       break
@@ -3247,7 +3253,11 @@ function checkGenieEvents() {
 
     if (isTimeActive && isRoomMatch) {
       foundActiveCommunityEvent = true
-      if (!activeCommunityEvent || activeCommunityEvent.id !== event.id) {
+      // Start event if: no active event, different event, OR same event but different room (joined mid-event)
+      const needsStart = !activeCommunityEvent ||
+                         activeCommunityEvent.id !== event.id ||
+                         activeCommunityEventRoomId !== currentRoomId
+      if (needsStart) {
         startCommunityEvent(event)
       }
       break
@@ -3342,10 +3352,22 @@ function stopNightOverlay() {
 }
 
 function startGenieEvent(event) {
-  if (activeGenieEvent && activeGenieEvent.id === event.id) return
+  // If same event already running in this room, skip
+  if (activeGenieEvent && activeGenieEvent.id === event.id && activeGenieEventRoomId === currentRoomId) {
+    return // Already running in this room
+  }
 
-  console.log('MyVMK Genie: Starting event:', event)
+  const isJoiningMidEvent = activeGenieEvent && activeGenieEvent.id === event.id
+
+  // Stop previous effects if switching events or rooms
+  if (activeGenieEvent) {
+    const prevEffects = activeGenieEvent.effects || (activeGenieEvent.effect ? [activeGenieEvent.effect] : [])
+    prevEffects.forEach(stopEffect)
+  }
+
+  console.log('MyVMK Genie: Starting event:', event, 'in room:', currentRoomId)
   activeGenieEvent = event
+  activeGenieEventRoomId = currentRoomId
 
   // Trigger effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
@@ -3359,7 +3381,7 @@ function startGenieEvent(event) {
   }
 
   // Show notification
-  showNotification(`🧞 ${event.title} starting!`, 'success')
+  showNotification(`🧞 ${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success')
 }
 
 function stopGenieEvent() {
@@ -3367,6 +3389,7 @@ function stopGenieEvent() {
 
   const event = activeGenieEvent
   activeGenieEvent = null
+  activeGenieEventRoomId = null
 
   // Stop effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
@@ -3378,9 +3401,15 @@ function stopGenieEvent() {
 
 // Community Events - audio only, no overlays
 function startCommunityEvent(event) {
-  if (activeCommunityEvent && activeCommunityEvent.id === event.id) return
+  // If same event already running in this room, skip
+  if (activeCommunityEvent && activeCommunityEvent.id === event.id && activeCommunityEventRoomId === currentRoomId) {
+    return
+  }
+
+  const isJoiningMidEvent = activeCommunityEvent && activeCommunityEvent.id === event.id
 
   activeCommunityEvent = event
+  activeCommunityEventRoomId = currentRoomId
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
   // Start minimized so it doesn't cover the game
@@ -3389,13 +3418,14 @@ function startCommunityEvent(event) {
   }
 
   // Show notification
-  showNotification(`🎵 ${event.title} starting!`, 'info')
+  showNotification(`🎵 ${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'info')
 }
 
 function stopCommunityEvent() {
   if (!activeCommunityEvent) return
 
   activeCommunityEvent = null
+  activeCommunityEventRoomId = null
 
   // Stop audio (restores game audio)
   stopAudio()
