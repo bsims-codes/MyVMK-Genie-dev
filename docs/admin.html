@@ -221,9 +221,8 @@
             <input type="number" id="genie-duration" value="5" min="1" max="60">
           </div>
           <div class="form-group">
-            <label>Effect</label>
-            <select id="genie-effect">
-              <option value="">None</option>
+            <label>Effects (hold Ctrl/Cmd to select multiple)</label>
+            <select id="genie-effect" multiple style="height: 120px;">
               <option value="fireworks">🎆 Fireworks</option>
               <option value="rain">🌧️ Rain</option>
               <option value="snow">❄️ Snow</option>
@@ -567,12 +566,19 @@
 
     // Effect display names
     const EFFECT_NAMES = {
-      fireworks: '🎆 Fireworks',
-      rain: '🌧️ Rain',
-      snow: '❄️ Snow',
-      money: '💵 Money',
-      emoji: '🎉 Emoji'
+      fireworks: '🎆',
+      rain: '🌧️',
+      snow: '❄️',
+      money: '💵',
+      emoji: '🎉'
     };
+
+    // Format effects for display
+    function formatEffects(event) {
+      const effects = event.effects || (event.effect ? [event.effect] : []);
+      if (effects.length === 0) return '';
+      return '• ' + effects.map(e => EFFECT_NAMES[e] || e).join(' ');
+    }
 
     // Render events
     function renderEvents() {
@@ -584,7 +590,7 @@
           <div class="event-item ${e.enabled === false ? 'disabled' : ''}">
             <div class="event-info">
               <h4>${e.title}</h4>
-              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 5} min • ${e.roomName || 'Any Room'} ${e.effect ? '• ' + (EFFECT_NAMES[e.effect] || e.effect) : ''}</p>
+              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 5} min • ${e.roomName || 'Any Room'} ${formatEffects(e)}</p>
               ${e.audioUrl ? '<p style="font-size: 11px; color: #8b5cf6;">🎵 Has audio</p>' : ''}
             </div>
             <div class="event-actions">
@@ -617,6 +623,21 @@
       }
     }
 
+    // Helper to get selected effects from multi-select
+    function getSelectedEffects() {
+      const select = document.getElementById('genie-effect');
+      return Array.from(select.selectedOptions).map(opt => opt.value);
+    }
+
+    // Helper to set selected effects in multi-select
+    function setSelectedEffects(effects) {
+      const select = document.getElementById('genie-effect');
+      const effectsArray = Array.isArray(effects) ? effects : (effects ? [effects] : []);
+      Array.from(select.options).forEach(opt => {
+        opt.selected = effectsArray.includes(opt.value);
+      });
+    }
+
     // Edit genie event - populate form
     function editGenieEvent(index) {
       const event = genieEvents[index];
@@ -627,7 +648,7 @@
       document.getElementById('genie-date').value = startDate.toISOString().split('T')[0];
       document.getElementById('genie-time').value = startDate.toTimeString().slice(0, 5);
       document.getElementById('genie-duration').value = event.durationMinutes || 5;
-      document.getElementById('genie-effect').value = event.effect || '';
+      setSelectedEffects(event.effects || event.effect); // Support both old and new format
       document.getElementById('genie-room').value = event.roomId || '';
       document.getElementById('genie-audio').value = event.audioUrl || '';
       document.getElementById('genie-enabled').checked = event.enabled !== false;
@@ -657,6 +678,7 @@
       const editIndex = parseInt(document.getElementById('genie-edit-index').value);
       const isEditing = editIndex >= 0;
 
+      const selectedEffects = getSelectedEffects();
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
         title: document.getElementById('genie-title').value,
@@ -665,7 +687,7 @@
         roomName: roomId ? ROOMS[roomId] : undefined,
         startTime: new Date(`${date}T${time}:00`).toISOString(),
         durationMinutes: parseInt(document.getElementById('genie-duration').value) || 5,
-        effect: document.getElementById('genie-effect').value || undefined,
+        effects: selectedEffects.length > 0 ? selectedEffects : undefined,
         audioUrl: document.getElementById('genie-audio').value || undefined,
         enabled: document.getElementById('genie-enabled').checked
       };

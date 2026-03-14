@@ -3182,26 +3182,33 @@ function checkTinkerbellRoom() {
 
 async function fetchGenieEvents() {
   try {
-    const response = await fetch(GENIE_EVENTS_URL, {
-      headers: { 'X-Access-Key': '$2a$10$placeholder' } // Public read access
-    })
-    if (!response.ok) return
+    console.log('MyVMK Genie: Fetching events from', GENIE_EVENTS_URL)
+    const response = await fetch(GENIE_EVENTS_URL)
+
+    if (!response.ok) {
+      console.log('MyVMK Genie: Fetch failed with status', response.status)
+      return
+    }
 
     const json = await response.json()
+    console.log('MyVMK Genie: Raw response', json)
+
     // JSONBin wraps data in 'record' property
     const data = json.record || json
 
     // Genie events (admin) - can trigger overlays + audio
     if (data && Array.isArray(data.genieEvents)) {
       scheduledGenieEvents = data.genieEvents.filter(e => e.enabled !== false)
+      console.log('MyVMK Genie: Loaded', scheduledGenieEvents.length, 'genie events')
     }
 
     // Community events (player) - audio only
     if (data && Array.isArray(data.communityEvents)) {
       scheduledCommunityEvents = data.communityEvents.filter(e => e.enabled !== false)
+      console.log('MyVMK Genie: Loaded', scheduledCommunityEvents.length, 'community events')
     }
   } catch (e) {
-    // Silently fail - events will just not update
+    console.error('MyVMK Genie: Error fetching events', e)
   }
 }
 
@@ -3249,29 +3256,36 @@ function checkGenieEvents() {
   }
 }
 
+// Helper to start a single effect
+function startEffect(effectName) {
+  switch (effectName) {
+    case 'fireworks': startFireworks(); break
+    case 'rain': startRainEffect(); break
+    case 'snow': startSnowEffect(); break
+    case 'money': startMoneyRain(); break
+    case 'emoji': startEmojiRain(); break
+  }
+}
+
+// Helper to stop a single effect
+function stopEffect(effectName) {
+  switch (effectName) {
+    case 'fireworks': stopFireworks(); break
+    case 'rain': stopRainEffect(); break
+    case 'snow': stopSnowEffect(); break
+    case 'money': stopMoneyRain(); break
+    case 'emoji': stopEmojiRain(); break
+  }
+}
+
 function startGenieEvent(event) {
   if (activeGenieEvent && activeGenieEvent.id === event.id) return
 
   activeGenieEvent = event
 
-  // Trigger the appropriate effect
-  switch (event.effect) {
-    case 'fireworks':
-      startFireworks()
-      break
-    case 'rain':
-      startRainEffect()
-      break
-    case 'snow':
-      startSnowEffect()
-      break
-    case 'money':
-      startMoneyRain()
-      break
-    case 'emoji':
-      startEmojiRain()
-      break
-  }
+  // Trigger effects - support both array (effects) and single (effect) for backwards compat
+  const effects = event.effects || (event.effect ? [event.effect] : [])
+  effects.forEach(startEffect)
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
   if (event.audioUrl) {
@@ -3288,24 +3302,9 @@ function stopGenieEvent() {
   const event = activeGenieEvent
   activeGenieEvent = null
 
-  // Stop the effect
-  switch (event.effect) {
-    case 'fireworks':
-      stopFireworks()
-      break
-    case 'rain':
-      stopRainEffect()
-      break
-    case 'snow':
-      stopSnowEffect()
-      break
-    case 'money':
-      stopMoneyRain()
-      break
-    case 'emoji':
-      stopEmojiRain()
-      break
-  }
+  // Stop effects - support both array (effects) and single (effect) for backwards compat
+  const effects = event.effects || (event.effect ? [event.effect] : [])
+  effects.forEach(stopEffect)
 
   // Stop audio (restores game audio)
   stopAudio()
