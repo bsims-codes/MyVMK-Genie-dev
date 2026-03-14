@@ -3319,8 +3319,9 @@ function startGenieEvent(event) {
   effects.forEach(startEffect)
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
+  // Start minimized so it doesn't cover the game
   if (event.audioUrl) {
-    playAudio(event.audioUrl)
+    playAudio(event.audioUrl, true)
   }
 
   // Show notification
@@ -3348,8 +3349,9 @@ function startCommunityEvent(event) {
   activeCommunityEvent = event
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
+  // Start minimized so it doesn't cover the game
   if (event.audioUrl) {
-    playAudio(event.audioUrl)
+    playAudio(event.audioUrl, true)
   }
 
   // Show notification
@@ -6171,7 +6173,7 @@ function unmuteGameAudio() {
   console.log('MyVMK Genie: Restored game audio')
 }
 
-function playAudio(url) {
+function playAudio(url, startMinimized = false) {
   stopAudio(false) // Don't unmute yet, we're about to play new audio
 
   // Mute game audio
@@ -6183,7 +6185,7 @@ function playAudio(url) {
   if (videoId || playlistId) {
     // YouTube - embed as iframe in PERSISTENT container (survives panel navigation)
     const container = ensurePersistentPlayerContainer()
-    isPlayerMinimized = false
+    isPlayerMinimized = startMinimized
 
     // Build the embed URL
     let embedUrl = 'https://www.youtube.com/embed/'
@@ -6201,20 +6203,20 @@ function playAudio(url) {
     const isPlaylist = !!playlistId
     const playerLabel = isPlaylist ? '🎵 Playlist' : '▶ Video'
 
-    // Apply saved size
-    container.style.width = playerSize.width + 'px'
+    // Apply saved size (or minimized width)
+    container.style.width = startMinimized ? '200px' : playerSize.width + 'px'
 
     container.innerHTML = `
       <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
-        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 4px 2px; cursor: move;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: ${startMinimized ? '0' : '8px'}; padding: 4px 2px; cursor: move;">
           <span style="color: #10b981; font-size: 12px; font-weight: 500;">${playerLabel}</span>
           <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
           <div style="margin-left: auto; display: flex; gap: 6px;">
-            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Minimize">─</button>
+            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="${startMinimized ? 'Expand' : 'Minimize'}">${startMinimized ? '□' : '─'}</button>
             <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Stop & Close">✕</button>
           </div>
         </div>
-        <div id="vmkpal-player-content">
+        <div id="vmkpal-player-content" style="display: ${startMinimized ? 'none' : 'block'};">
           <iframe
             id="vmkpal-youtube-player"
             width="100%"
@@ -6226,7 +6228,7 @@ function playAudio(url) {
             style="border-radius: 8px; display: block;"
           ></iframe>
         </div>
-        <div id="vmkpal-resize-handle" style="position: absolute; bottom: 4px; right: 4px; width: 16px; height: 16px; cursor: se-resize; opacity: 0.5;" title="Drag to resize">
+        <div id="vmkpal-resize-handle" style="position: absolute; bottom: 4px; right: 4px; width: 16px; height: 16px; cursor: se-resize; opacity: 0.5; display: ${startMinimized ? 'none' : 'block'};" title="Drag to resize">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="rgba(255,255,255,0.6)">
             <path d="M14 14H10V12H12V10H14V14ZM14 8H12V6H14V8ZM8 14H6V12H8V14Z"/>
           </svg>
