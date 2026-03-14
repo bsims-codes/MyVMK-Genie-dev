@@ -272,6 +272,8 @@ let tinkerbellElement = null
 let tinkerbellAnimationId = null
 let isTinkerbellActive = false
 let tinkerbellData = null
+let tinkerbellEventMode = false // When true, limit to top 70% of canvas
+let pixieDustParticles = [] // Pixie dust trail
 const FANTASYLAND_COURTYARD_ID = 99
 const TINKERBELL_IMAGE = 'Tinkerbelle_Only.gif'
 const TINKERBELL_GLOW_COLOR = '255, 215, 0' // Gold sparkle
@@ -3082,12 +3084,13 @@ function createTinkerbell() {
     filter: drop-shadow(0 0 5px rgba(${TINKERBELL_GLOW_COLOR}, 0.9))
             drop-shadow(0 0 10px rgba(${TINKERBELL_GLOW_COLOR}, 0.6))
             drop-shadow(0 0 15px rgba(${TINKERBELL_GLOW_COLOR}, 0.4));
-    transition: opacity 1s ease-in-out;
+    transition: opacity 1s ease-in-out, transform 0.3s ease;
   `
 
-  // Start near center of game area
+  // Start near center of game area (or upper area if event mode)
   const startX = bounds.left + bounds.width / 2
-  const startY = bounds.top + bounds.height / 2
+  const maxHeight = tinkerbellEventMode ? bounds.height * 0.7 : bounds.height
+  const startY = bounds.top + maxHeight / 2
   tink.style.left = startX + 'px'
   tink.style.top = startY + 'px'
 
@@ -3103,13 +3106,67 @@ function createTinkerbell() {
     phase: 0,
     speed: 3,
     lastTargetChange: performance.now(),
-    targetChangeInterval: 2000 + Math.random() * 2000 // Change target every 2-4 seconds
+    targetChangeInterval: 2000 + Math.random() * 2000, // Change target every 2-4 seconds
+    facingLeft: false,
+    lastDustSpawn: performance.now()
   }
 
   // Fade in
   requestAnimationFrame(() => {
     tink.style.opacity = '1'
   })
+}
+
+// Create a pixie dust particle
+function createPixieDust(x, y) {
+  const particle = document.createElement('div')
+  particle.className = 'vmkpal-pixie-dust'
+  particle.style.cssText = `
+    position: fixed;
+    width: 2px;
+    height: 2px;
+    background: rgb(${TINKERBELL_GLOW_COLOR});
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 2147483639;
+    left: ${x + Math.random() * 10 - 5}px;
+    top: ${y + Math.random() * 10 - 5}px;
+    opacity: 0.8;
+    box-shadow: 0 0 3px rgba(${TINKERBELL_GLOW_COLOR}, 0.8);
+  `
+  document.body.appendChild(particle)
+
+  // Animate falling and fading
+  const startTime = performance.now()
+  const duration = 800 + Math.random() * 400 // 0.8-1.2 seconds
+  const startY = parseFloat(particle.style.top)
+  const drift = (Math.random() - 0.5) * 20 // Random horizontal drift
+
+  function animateDust() {
+    const elapsed = performance.now() - startTime
+    const progress = elapsed / duration
+
+    if (progress >= 1) {
+      particle.remove()
+      return
+    }
+
+    // Fall down slowly with slight drift
+    particle.style.top = (startY + progress * 30) + 'px'
+    particle.style.left = (parseFloat(particle.style.left) + drift * 0.02) + 'px'
+    particle.style.opacity = 0.8 * (1 - progress)
+    particle.style.transform = `scale(${1 - progress * 0.5})`
+
+    requestAnimationFrame(animateDust)
+  }
+
+  requestAnimationFrame(animateDust)
+  pixieDustParticles.push(particle)
+
+  // Clean up old references
+  if (pixieDustParticles.length > 50) {
+    pixieDustParticles = pixieDustParticles.filter(p => document.body.contains(p))
+  }
 }
 
 function updateTinkerbell() {
@@ -3119,10 +3176,13 @@ function updateTinkerbell() {
   const now = performance.now()
   const data = tinkerbellData
 
+  // Calculate max Y based on event mode (70% for events, 100% for Fantasyland)
+  const maxHeight = tinkerbellEventMode ? bounds.height * 0.7 : bounds.height
+
   // Change target position periodically for wandering behavior
   if (now - data.lastTargetChange > data.targetChangeInterval) {
     data.targetX = bounds.left + 40 + Math.random() * (bounds.width - 80)
-    data.targetY = bounds.top + 40 + Math.random() * (bounds.height - 80)
+    data.targetY = bounds.top + 40 + Math.random() * (maxHeight - 80)
     data.targetChangeInterval = 3000 + Math.random() * 3000 // 3-6 seconds between targets
     data.lastTargetChange = now
   }
@@ -3137,19 +3197,35 @@ function updateTinkerbell() {
 
   // Keep within bounds
   data.x = Math.max(bounds.left + 20, Math.min(data.x, bounds.left + bounds.width - 60))
-  data.y = Math.max(bounds.top + 20, Math.min(data.y, bounds.top + bounds.height - 60))
+  data.y = Math.max(bounds.top + 20, Math.min(data.y, bounds.top + maxHeight - 60))
 
-  // Apply position (no flutter, just smooth gliding)
+  // Flip Tinkerbell based on movement direction
+  if (Math.abs(dx) > 1) { // Only flip if moving significantly
+    const shouldFaceLeft = dx < 0
+    if (shouldFaceLeft !== data.facingLeft) {
+      data.facingLeft = shouldFaceLeft
+      tinkerbellElement.style.transform = shouldFaceLeft ? 'scaleX(-1)' : 'scaleX(1)'
+    }
+  }
+
+  // Spawn pixie dust particles occasionally
+  if (now - data.lastDustSpawn > 100) { // Every 100ms
+    createPixieDust(data.x + 12, data.y + 15) // Center of Tinkerbell
+    data.lastDustSpawn = now
+  }
+
+  // Apply position
   tinkerbellElement.style.left = data.x + 'px'
   tinkerbellElement.style.top = data.y + 'px'
 
   tinkerbellAnimationId = requestAnimationFrame(updateTinkerbell)
 }
 
-function startTinkerbellEffect() {
+function startTinkerbellEffect(eventMode = false) {
   if (isTinkerbellActive) return
 
   isTinkerbellActive = true
+  tinkerbellEventMode = eventMode
   createTinkerbell()
   updateTinkerbell()
 }
@@ -3158,6 +3234,7 @@ function stopTinkerbellEffect() {
   if (!isTinkerbellActive) return
 
   isTinkerbellActive = false
+  tinkerbellEventMode = false
 
   if (tinkerbellAnimationId) {
     cancelAnimationFrame(tinkerbellAnimationId)
@@ -3174,6 +3251,12 @@ function stopTinkerbellEffect() {
       tinkerbellData = null
     }, 1000)
   }
+
+  // Clean up any remaining pixie dust
+  pixieDustParticles.forEach(p => {
+    if (p && p.parentNode) p.remove()
+  })
+  pixieDustParticles = []
 }
 
 function checkTinkerbellRoom() {
@@ -3602,8 +3685,8 @@ function startGenieEvent(event) {
 
   // Start Tinkerbell if included
   if (event.includeTinkerbell) {
-    console.log('MyVMK Genie: Starting Tinkerbell effect')
-    startTinkerbellEffect()
+    console.log('MyVMK Genie: Starting Tinkerbell effect (event mode)')
+    startTinkerbellEffect(true) // Event mode - limit to top 70% of canvas
   }
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
