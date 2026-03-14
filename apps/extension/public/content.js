@@ -297,6 +297,7 @@ let scheduledCommunityEvents = []  // Player events - audio only
 let activeGenieEvent = null
 let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
+let notifiedUpcomingEvents = new Set() // Track events we've already shown "starting shortly" for
 let activeCommunityEventRoomId = null
 let genieEventCheckInterval = null
 
@@ -3236,7 +3237,7 @@ function createButterfly() {
 
   butterfly.style.cssText = `
     position: fixed;
-    width: 32px;
+    width: 24px;
     height: auto;
     pointer-events: none;
     opacity: 0;
@@ -3492,6 +3493,32 @@ function checkGenieEvents() {
   }
   if (!foundActiveCommunityEvent && activeCommunityEvent) {
     stopCommunityEvent()
+  }
+
+  // Check for events starting in the next minute (show "starting shortly" notification)
+  const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000)
+  const allEvents = [...scheduledGenieEvents, ...scheduledCommunityEvents]
+
+  for (const event of allEvents) {
+    const startTime = new Date(event.startTime)
+    const timeUntilStart = startTime.getTime() - now.getTime()
+
+    // If event starts within the next minute and we haven't notified yet
+    if (timeUntilStart > 0 && timeUntilStart <= 60 * 1000 && !notifiedUpcomingEvents.has(event.id)) {
+      notifiedUpcomingEvents.add(event.id)
+
+      const message = event.roomName
+        ? `🧞 Event starting shortly in ${event.roomName}!`
+        : '🧞 Event starting shortly!'
+
+      showNotification(message, 'info')
+    }
+
+    // Clean up old notifications (events that have already ended)
+    const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
+    if (now > endTime) {
+      notifiedUpcomingEvents.delete(event.id)
+    }
   }
 }
 
