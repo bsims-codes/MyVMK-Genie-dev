@@ -3693,12 +3693,19 @@ function checkGenieEvents() {
 }
 
 // Helper to start a single effect
-function startEffect(effectName) {
-  console.log('MyVMK Genie: Starting effect:', effectName)
+function startEffect(effectName, eventMode = false) {
+  console.log('MyVMK Genie: Starting effect:', effectName, eventMode ? '(event mode)' : '')
   switch (effectName) {
     case 'fireworks':
       isFireworksEnabled = true
-      startFireworks()
+      if (eventMode) {
+        // Delay fireworks start for events
+        setTimeout(() => {
+          if (isFireworksEnabled) startFireworks()
+        }, 2500)
+      } else {
+        startFireworks()
+      }
       break
     case 'rain':
       isRainEnabled = true
@@ -3717,7 +3724,7 @@ function startEffect(effectName) {
       startEmojiRain()
       break
     case 'night':
-      startNightOverlay()
+      startNightOverlay(eventMode)
       break
   }
 }
@@ -3753,7 +3760,7 @@ function stopEffect(effectName) {
 }
 
 // Start night overlay (for events)
-function startNightOverlay() {
+function startNightOverlay(eventMode = false) {
   if (isNightOverlayEnabled) return // Already on
   isNightOverlayEnabled = true
   let overlay = document.getElementById('vmkpal-night-overlay')
@@ -3762,8 +3769,22 @@ function startNightOverlay() {
     overlay.id = 'vmkpal-night-overlay'
     document.body.appendChild(overlay)
   }
-  updateNightOverlayBounds()
-  overlay.style.display = 'block'
+
+  if (eventMode) {
+    // Event mode: fade in slowly with darker overlay
+    updateNightOverlayBounds(true) // Pass true for darker version
+    overlay.style.display = 'block'
+    overlay.style.opacity = '0'
+    overlay.style.transition = 'opacity 4s ease-in'
+    // Trigger reflow to ensure transition works
+    overlay.offsetHeight
+    overlay.style.opacity = '1'
+  } else {
+    updateNightOverlayBounds(false)
+    overlay.style.display = 'block'
+    overlay.style.transition = 'none'
+    overlay.style.opacity = '1'
+  }
 }
 
 // Stop night overlay (for events)
@@ -3799,7 +3820,7 @@ function startGenieEvent(event) {
   // Trigger effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
   console.log('MyVMK Genie: Effects to trigger:', effects)
-  effects.forEach(startEffect)
+  effects.forEach(effect => startEffect(effect, true)) // Pass true for event mode
 
   // Start Tinkerbell if included
   if (event.includeTinkerbell) {
@@ -3813,8 +3834,9 @@ function startGenieEvent(event) {
     playAudio(event.audioUrl, true)
   }
 
-  // Show notification
-  showNotification(`🧞 ${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success')
+  // Show notification with bee image
+  const beeIconUrl = chrome.runtime.getURL('bee-static.png')
+  showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success', 2000, true)
 }
 
 function stopGenieEvent() {
@@ -3855,8 +3877,9 @@ function startCommunityEvent(event) {
     playAudio(event.audioUrl, true)
   }
 
-  // Show notification
-  showNotification(`🎵 ${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'info')
+  // Show notification with bee image
+  const beeIconUrl = chrome.runtime.getURL('bee-static.png')
+  showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'info', 2000, true)
 }
 
 function stopCommunityEvent() {
@@ -3982,11 +4005,18 @@ function toggleNightOverlay() {
 }
 
 // Update night overlay to match game canvas bounds
-function updateNightOverlayBounds() {
+// If darker is true, use a more intense darkness for events
+function updateNightOverlayBounds(darker = false) {
   const overlay = document.getElementById('vmkpal-night-overlay')
   if (!overlay) return
 
   const bounds = getGameCanvasBounds()
+
+  // Event mode uses darker values
+  const opacity1 = darker ? 0.55 : 0.45
+  const opacity2 = darker ? 0.45 : 0.35
+  const opacity3 = darker ? 0.5 : 0.4
+
   overlay.style.cssText = `
     position: fixed;
     top: ${bounds.top}px;
@@ -3997,9 +4027,9 @@ function updateNightOverlayBounds() {
     z-index: 2147483630;
     background: linear-gradient(
       to bottom,
-      rgba(5, 10, 30, 0.45) 0%,
-      rgba(10, 15, 40, 0.35) 50%,
-      rgba(5, 10, 30, 0.4) 100%
+      rgba(5, 10, 30, ${opacity1}) 0%,
+      rgba(10, 15, 40, ${opacity2}) 50%,
+      rgba(5, 10, 30, ${opacity3}) 100%
     );
     mix-blend-mode: multiply;
   `
