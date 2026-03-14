@@ -3190,12 +3190,21 @@ function checkTinkerbellRoom() {
   }
 }
 
+// Track last used butterfly to alternate colors
+let lastButterflyImageIndex = -1
+
 // Butterfly Effect for Snow White Hide 'n Seek Forest
 function createButterfly() {
   const bounds = getGameCanvasBounds()
 
-  // Random butterfly image
-  const randomImage = BUTTERFLY_IMAGES[Math.floor(Math.random() * BUTTERFLY_IMAGES.length)]
+  // Pick a different butterfly than the last one
+  let imageIndex
+  do {
+    imageIndex = Math.floor(Math.random() * BUTTERFLY_IMAGES.length)
+  } while (imageIndex === lastButterflyImageIndex && BUTTERFLY_IMAGES.length > 1)
+  lastButterflyImageIndex = imageIndex
+
+  const randomImage = BUTTERFLY_IMAGES[imageIndex]
   const imageUrl = chrome.runtime.getURL(randomImage)
 
   // Create butterfly element
@@ -3247,10 +3256,10 @@ function createButterfly() {
     targetX: bounds.left + 50 + Math.random() * (bounds.width - 100),
     targetY: bounds.top + 50 + Math.random() * (bounds.height - 100),
     phase: Math.random() * Math.PI * 2,
-    speed: 1.5 + Math.random() * 1,
-    wobbleAmount: 2 + Math.random() * 2,
+    speed: 1 + Math.random() * 0.5,
+    wobbleAmount: 0.5 + Math.random() * 0.5, // Reduced wobble
     lastTargetChange: performance.now(),
-    targetChangeInterval: 3000 + Math.random() * 4000,
+    targetChangeInterval: 4000 + Math.random() * 5000, // Slower target changes
     lifespan: 15000 + Math.random() * 20000, // 15-35 seconds
     birthTime: performance.now(),
     fadeOutStarted: false
@@ -3300,16 +3309,17 @@ function updateButterflies() {
       data.lastTargetChange = now
     }
 
-    // Move toward target with wobble
+    // Move toward target with gentle wobble
     const dx = data.targetX - data.x
     const dy = data.targetY - data.y
 
-    data.phase += 0.08
+    data.phase += 0.03 // Slower wobble cycle
     const wobbleX = Math.sin(data.phase) * data.wobbleAmount
     const wobbleY = Math.cos(data.phase * 1.3) * data.wobbleAmount
 
-    data.x += dx * 0.012 + wobbleX * 0.3
-    data.y += dy * 0.012 + wobbleY * 0.3
+    // Slower movement (0.006 instead of 0.012) and less wobble influence (0.1 instead of 0.3)
+    data.x += dx * 0.006 + wobbleX * 0.1
+    data.y += dy * 0.006 + wobbleY * 0.1
 
     // Keep within bounds
     data.x = Math.max(bounds.left + 10, Math.min(data.x, bounds.left + bounds.width - 40))
