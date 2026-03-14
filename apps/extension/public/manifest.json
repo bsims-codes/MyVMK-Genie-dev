@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyVMK Genie",
-  "version": "1.0.0",
+  "version": "1.1.6",
   "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
   "permissions": [
     "storage",
@@ -38,8 +38,6 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.myvmk.com/*",
-        "https://myvmk.com/*",
         "https://www.myvmk.com/client/*",
         "https://myvmk.com/client/*"
       ],
@@ -49,8 +47,6 @@
     },
     {
       "matches": [
-        "https://www.myvmk.com/*",
-        "https://myvmk.com/*",
         "https://www.myvmk.com/client/*",
         "https://myvmk.com/client/*"
       ],
@@ -67,7 +63,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["raingif.gif", "myvmk-genie.png", "genie-background.png", "genie-host-events.png", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png"],
+      "resources": ["raingif.gif", "myvmk-genie.png", "myvmk-genie-lamp-logo-pink.png", "genie-background.png", "genie-background-smoky-pink.png", "genie-host-events.png", "genie-genie-events.png", "genie-community-events.png", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png", "Tinkerbelle_Only.gif"],
       "matches": ["https://www.myvmk.com/*", "https://myvmk.com/*"]
     }
   ]

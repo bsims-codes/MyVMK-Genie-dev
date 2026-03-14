@@ -130,6 +130,7 @@ const ROOM_MAP = {
   1102: "Jungle Cruise Photo Safari Game",
   1103: "Street Party Music Game",
   1104: "Haunted Mansion Lobby",
+  1105: "Haunted Mansion Game",
   1108: "Main Street Magic Shop",
   1109: "Magic Shop Checkers Room",
   1120: "Castle Fireworks Classic Lobby"

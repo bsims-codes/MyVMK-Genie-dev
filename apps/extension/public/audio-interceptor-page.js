@@ -1,8 +1,6 @@
 // MyVMK Genie - Audio Interceptor (runs in PAGE context)
 // This file is loaded directly as a web_accessible_resource
 
-console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
-
 (function() {
   'use strict';
 
@@ -20,10 +18,7 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
   const OriginalAudioContext = window.AudioContext || window.webkitAudioContext;
 
   if (OriginalAudioContext) {
-    console.log('MyVMK Genie: Wrapping AudioContext...');
-
     const AudioContextWrapper = function(...args) {
-      console.log('MyVMK Genie: NEW AudioContext created!');
       const ctx = new OriginalAudioContext(...args);
 
       // Create a MASTER gain node that ALL audio will route through
@@ -40,8 +35,6 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
         originalDestination: originalDestination
       });
       window.__vmkGenieAudio.masterGainNodes.push(masterGain);
-
-      console.log('MyVMK Genie: Intercepted AudioContext #' + window.__vmkGenieAudio.trackedContexts.length);
 
       // Override createGain to route through master
       const originalCreateGain = ctx.createGain.bind(ctx);
@@ -64,7 +57,6 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
         const origConnect = source.connect.bind(source);
         source.connect = function(dest, ...rest) {
           if (dest === originalDestination) {
-            console.log('MyVMK Genie: Routing BufferSource through master gain');
             return origConnect(masterGain, ...rest);
           }
           return origConnect(dest, ...rest);
@@ -103,8 +95,6 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
     if (window.webkitAudioContext) {
       window.webkitAudioContext = AudioContextWrapper;
     }
-
-    console.log('MyVMK Genie: AudioContext wrapped successfully');
   }
 
   // ==========================================
@@ -115,9 +105,8 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
     window.Audio = function(src) {
       const audio = new OriginalAudio(src);
       window.__vmkGenieAudio.trackedMediaElements.push(audio);
-      console.log('MyVMK Genie: Intercepted new Audio()', src);
 
-      // Broadcast the audio URL for room detection (use postMessage to cross isolated world boundary)
+      // Broadcast the audio URL for room detection
       if (src && src.length > 0) {
         window.__vmkGenieAudio.currentAudioUrl = src;
         window.postMessage({ type: 'vmkgenie-audio-detected', url: src }, '*');
@@ -140,7 +129,6 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
     const audioSrc = this.src || this.currentSrc;
     if (!window.__vmkGenieAudio.trackedMediaElements.includes(this)) {
       window.__vmkGenieAudio.trackedMediaElements.push(this);
-      console.log('MyVMK Genie: Intercepted .play()', audioSrc);
     }
 
     // Broadcast the audio URL to the content script for room detection (use postMessage to cross isolated world boundary)
@@ -157,7 +145,42 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
   };
 
   // ==========================================
-  // 4. MUTE/UNMUTE FUNCTIONS
+  // 4. INTERCEPT fetch() for audio files
+  // ==========================================
+  const originalFetch = window.fetch;
+  window.fetch = function(url, options) {
+    const urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : String(url));
+
+    // Broadcast audio file fetches for room detection
+    if (urlStr && urlStr.match(/\.(mp3|ogg|wav|webm|m4a|aac)(\?|$)/i)) {
+      window.postMessage({ type: 'vmkgenie-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect HM GAME stage data
+    if (urlStr && urlStr.includes('/hm_stage_data/')) {
+      window.postMessage({ type: 'vmkgenie-hm-game-entered' }, '*');
+    }
+
+    return originalFetch.apply(this, arguments);
+  };
+
+  // ==========================================
+  // 5. INTERCEPT XMLHttpRequest for audio files
+  // ==========================================
+  const originalXHROpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    const urlStr = String(url);
+
+    // Broadcast audio file XHR for room detection
+    if (urlStr && urlStr.match(/\.(mp3|ogg|wav|webm|m4a|aac)(\?|$)/i)) {
+      window.postMessage({ type: 'vmkgenie-audio-detected', url: urlStr }, '*');
+    }
+
+    return originalXHROpen.call(this, method, url, ...rest);
+  };
+
+  // ==========================================
+  // 6. MUTE/UNMUTE FUNCTIONS
   // ==========================================
   window.__vmkGenieAudio.mute = function() {
     window.__vmkGenieAudio.muted = true;
@@ -180,10 +203,6 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
     document.querySelectorAll('audio, video').forEach(el => {
       try { el.muted = true; el.volume = 0; } catch(e) {}
     });
-
-    console.log('MyVMK Genie: MUTED - gains:', window.__vmkGenieAudio.masterGainNodes.length,
-                'contexts:', window.__vmkGenieAudio.trackedContexts.length,
-                'media:', window.__vmkGenieAudio.trackedMediaElements.length);
   };
 
   window.__vmkGenieAudio.unmute = function() {
@@ -204,22 +223,14 @@ console.log('MyVMK Genie: Audio interceptor STARTING in page context...');
     document.querySelectorAll('audio, video').forEach(el => {
       try { el.muted = false; el.volume = 1; } catch(e) {}
     });
-
-    console.log('MyVMK Genie: UNMUTED - gains:', window.__vmkGenieAudio.masterGainNodes.length,
-                'contexts:', window.__vmkGenieAudio.trackedContexts.length,
-                'media:', window.__vmkGenieAudio.trackedMediaElements.length);
   };
 
   // Listen for mute/unmute commands from content script
   window.addEventListener('vmkgenie-mute', function() {
-    console.log('MyVMK Genie: Received mute command');
     window.__vmkGenieAudio.mute();
   });
 
   window.addEventListener('vmkgenie-unmute', function() {
-    console.log('MyVMK Genie: Received unmute command');
     window.__vmkGenieAudio.unmute();
   });
-
-  console.log('MyVMK Genie: Audio interceptor READY in page context!');
 })();

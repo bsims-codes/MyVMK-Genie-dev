@@ -9,7 +9,16 @@ chrome.commands.onCommand.addListener(async (command) => {
   console.log('Command received:', command)
 
   if (command === 'take-screenshot') {
-    takeScreenshot()
+    // Capture and send to content script to show dialog
+    try {
+      const dataUrl = await captureScreenshot()
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: 'SHOW_SCREENSHOT_DIALOG', dataUrl })
+      }
+    } catch (err) {
+      console.error('Screenshot failed:', err)
+    }
   }
 })
 
@@ -17,6 +26,20 @@ chrome.commands.onCommand.addListener(async (command) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TAKE_SCREENSHOT') {
     takeScreenshot()
+    sendResponse({ success: true })
+  }
+
+  if (message.type === 'CAPTURE_SCREENSHOT') {
+    captureScreenshot().then(dataUrl => {
+      sendResponse({ success: true, dataUrl })
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message })
+    })
+    return true // Keep channel open for async response
+  }
+
+  if (message.type === 'DOWNLOAD_SCREENSHOT') {
+    downloadScreenshot(message.dataUrl)
     sendResponse({ success: true })
   }
 
@@ -79,6 +102,33 @@ async function takeScreenshot() {
   } catch (err) {
     console.error('Screenshot failed:', err)
   }
+}
+
+// Capture screenshot and return data URL (for clipboard/download choice)
+async function captureScreenshot() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+
+  if (!tab) {
+    throw new Error('No active tab')
+  }
+
+  // Capture visible tab
+  const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' })
+  return dataUrl
+}
+
+// Download a screenshot from data URL
+function downloadScreenshot(dataUrl) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `myvmk-screenshot-${timestamp}.png`
+
+  chrome.downloads.download({
+    url: dataUrl,
+    filename: filename,
+    saveAs: false
+  })
+
+  console.log('Screenshot downloaded:', filename)
 }
 
 // Start recording the tab

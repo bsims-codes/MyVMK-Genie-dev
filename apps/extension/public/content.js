@@ -1,6 +1,9 @@
 // MyVMK Genie - Content Script
 // Injected into myvmk.com pages (including game client popup)
 
+// Set to false before publishing to Chrome Web Store
+const INTERNAL_MODE = false
+
 console.log('MyVMK Genie loaded on:', window.location.href)
 
 // ============================================
@@ -31,9 +34,21 @@ let audioRoomMappings = {} // Maps audio URL patterns to room IDs
 function findRoomByAudio(audioUrl) {
   if (!audioUrl) return null
 
+  // Special case: Haunted Mansion GAME (not lobby) - uses /sound/mansion/ path
+  if (audioUrl.includes('/sound/mansion/')) {
+    console.log('MyVMK Genie: Detected Haunted Mansion GAME audio')
+    isInHMGame = true
+    return { id: HAUNTED_MANSION_GAME_ID, land: 'New Orleans Square', isHMGame: true }
+  }
+
   // Extract folder name from URL (e.g., "vmk_snd_pirates_lobby_II" from room_sound/vmk_snd_pirates_lobby_II/file.webm)
   const folderMatch = audioUrl.match(/room_sound\/([^\/]+)\//)
   const currentFolder = folderMatch ? folderMatch[1] : null
+
+  // If we detect HM Lobby audio, we're no longer in the game
+  if (currentFolder === 'vmk_snd_haunted_game_lobby') {
+    isInHMGame = false
+  }
 
   // Check built-in AUDIO_ROOM_MAP first (most reliable)
   if (currentFolder && typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[currentFolder]) {
@@ -163,6 +178,9 @@ let selectedEmoji = '🎉'
 let isPositionLocked = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
+let isPinkTheme = false // Theme toggle: false = blue, true = pink
+let tickerShowWelcome = true // Alternates between welcome message and event
+let tickerIntervalId = null // Track ticker interval to prevent duplicates
 
 // Rain effect (canvas-based like The Swan game)
 let rainDrops = []
@@ -240,12 +258,34 @@ let activeGhosts = []
 let ghostSpawnInterval = null
 let ghostAnimationId = null
 let isGhostEffectActive = false
+let isInHMGame = false // Track if player is in HM game (not lobby)
 const HAUNTED_MANSION_LOBBY_ID = 1104
+const HAUNTED_MANSION_GAME_ID = 1105 // Virtual ID for HM game (detected via hm_stage_data)
 const GHOST_IMAGES = ['beadie-genie-1.png', 'beadie-genie-2.png']
 const GHOST_GLOW_COLOR = '118, 241, 243' // #76f1f3 in RGB
 const GHOST_MAX_COUNT = 1
 const GHOST_SPAWN_INTERVAL = 4000 // ms between spawns
 const GHOST_LIFETIME = 8000 // ms total lifetime
+
+// Tinkerbell effect for Fantasyland Courtyard
+let tinkerbellElement = null
+let tinkerbellAnimationId = null
+let isTinkerbellActive = false
+let tinkerbellData = null
+const FANTASYLAND_COURTYARD_ID = 99
+const TINKERBELL_IMAGE = 'Tinkerbelle_Only.gif'
+const TINKERBELL_GLOW_COLOR = '255, 215, 0' // Gold sparkle
+
+// Genie Events System - remote scheduled events
+const GENIE_EVENTS_URL = 'https://bsims-codes.github.io/MyVMK-Genie-dev/genie-events.json'
+const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
+let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
+let scheduledCommunityEvents = []  // Player events - audio only
+let activeGenieEvent = null
+let activeCommunityEvent = null
+let genieEventCheckInterval = null
+let genieEventAudio = null
+let communityEventAudio = null
 
 // Room detection - tries multiple methods to find current room
 function detectRoom() {
@@ -867,6 +907,18 @@ function monitorNetworkForRooms() {
   if (typeof PerformanceObserver !== 'undefined') {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
+        // Detect HM GAME by stage data JSON files
+        if (entry.name.includes('/hm_stage_data/')) {
+          isInHMGame = true
+          currentRoomId = HAUNTED_MANSION_GAME_ID
+          currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
+          currentLand = 'New Orleans Square'
+          updateRoomInfoDisplay()
+          checkGhostEffectRoom()
+          checkTinkerbellRoom()
+          checkGenieEvents()
+        }
+
         // Check if it's an NPC sound file request
         if (entry.name.includes('download.myvmk.com/sound/npcs/')) {
           const match = entry.name.match(/\/npcs\/([^\/]+)\//)
@@ -889,9 +941,9 @@ function monitorNetworkForRooms() {
           }
         }
 
-        // Check for room audio files (room_sound folder or sound/room folder)
+        // Check for room audio files (room_sound folder, sound/room folder, or sound/mansion for HM game)
         if (entry.name.includes('download.myvmk.com') &&
-            (entry.name.includes('/room_sound/') || entry.name.includes('/sound/room/'))) {
+            (entry.name.includes('/room_sound/') || entry.name.includes('/sound/room/') || entry.name.includes('/sound/mansion/'))) {
           detectedAudioUrl = entry.name
           console.log('MyVMK Genie: Detected room audio:', entry.name)
 
@@ -909,6 +961,9 @@ function monitorNetworkForRooms() {
             currentLand = matchedRoom.land
             console.log('MyVMK Genie: Auto-detected room from audio:', currentRoom, currentLand ? `(${currentLand})` : '')
             updateRoomInfoDisplay()
+            checkGhostEffectRoom() // Check if ghost effect should change
+            checkTinkerbellRoom()
+            checkGenieEvents()
           }
         }
 
@@ -1018,17 +1073,24 @@ function loadPhrases() {
   }
 }
 
-// Listen for keyboard shortcuts (Alt + 1-0 for phrases, Alt+C for captcha)
+// Detect Mac for keyboard shortcuts (Mac uses Ctrl, Windows/Linux uses Alt)
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+const modifierKey = isMac ? 'Ctrl' : 'Alt'
+
+// Listen for keyboard shortcuts (Alt/Ctrl + 1-0 for phrases, Alt/Ctrl+C for captcha)
 // Use capture phase to catch events before Canvas consumes them
 document.addEventListener('keydown', (e) => {
-  // Debug: log all Alt key combos
-  if (e.altKey) {
-    console.log('MyVMK Genie - Alt key pressed:', e.key)
+  // Check for the correct modifier key (Ctrl on Mac, Alt on Windows/Linux)
+  const modifierPressed = isMac ? e.ctrlKey : e.altKey
+
+  // Debug: log modifier key combos
+  if (modifierPressed) {
+    console.log(`MyVMK Genie - ${modifierKey} key pressed:`, e.key)
   }
 
-  if (!e.altKey) return
+  if (!modifierPressed) return
 
-  // Alt + C = Scan captcha
+  // Modifier + C = Scan captcha
   if (e.key.toLowerCase() === 'c') {
     e.preventDefault()
     e.stopPropagation()
@@ -1042,7 +1104,7 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
-  // Alt + 1-9 = slots 1-9, Alt + 0 = slot 10
+  // Modifier + 1-9 = slots 1-9, Modifier + 0 = slot 10
   const keyToSlot = {
     '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
     '6': 6, '7': 7, '8': 8, '9': 9, '0': 10
@@ -1084,6 +1146,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'RECORDING_ERROR') {
     showNotification('Recording failed: ' + message.error, 'error')
+    sendResponse({ success: true })
+  }
+
+  if (message.type === 'SHOW_SCREENSHOT_DIALOG') {
+    showScreenshotModal(message.dataUrl)
     sendResponse({ success: true })
   }
 })
@@ -1330,6 +1397,220 @@ function showNotification(text, type = 'info') {
   }, 2000)
 }
 
+// Show screenshot modal with clipboard/download options
+function showScreenshotModal(dataUrl, isRegionSelect = false) {
+  // Remove existing modal
+  const existing = document.getElementById('vmkpal-screenshot-modal')
+  if (existing) existing.remove()
+
+  const modal = document.createElement('div')
+  modal.id = 'vmkpal-screenshot-modal'
+  modal.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+    border-radius: 12px;
+    padding: 16px;
+    z-index: 2147483647;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 320px;
+  `
+
+  modal.innerHTML = `
+    <div style="color: white; font-weight: 600; margin-bottom: 12px; font-size: 14px;">Screenshot captured!</div>
+    <img src="${dataUrl}" style="width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.2);" />
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+      <button id="vmkpal-ss-clipboard" style="flex: 1; padding: 10px; border: none; border-radius: 8px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; font-weight: 500; cursor: pointer; font-size: 12px;">📋 Clipboard</button>
+      <button id="vmkpal-ss-download" style="flex: 1; padding: 10px; border: none; border-radius: 8px; background: linear-gradient(135deg, #10b981, #059669); color: white; font-weight: 500; cursor: pointer; font-size: 12px;">💾 Download</button>
+    </div>
+    ${!isRegionSelect ? '<button id="vmkpal-ss-region" style="width: 100%; padding: 8px; border: none; border-radius: 8px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); font-weight: 500; cursor: pointer; font-size: 11px;">✂️ Select Region</button>' : ''}
+  `
+
+  document.body.appendChild(modal)
+
+  // Clipboard button
+  document.getElementById('vmkpal-ss-clipboard').onclick = async () => {
+    try {
+      const response = await fetch(dataUrl)
+      const blob = await response.blob()
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob })
+      ])
+      showNotification('Copied to clipboard!', 'success')
+      modal.remove()
+    } catch (e) {
+      showNotification('Clipboard failed', 'error')
+    }
+  }
+
+  // Download button
+  document.getElementById('vmkpal-ss-download').onclick = () => {
+    chrome.runtime.sendMessage({ type: 'DOWNLOAD_SCREENSHOT', dataUrl })
+    showNotification('Screenshot saved!', 'success')
+    modal.remove()
+  }
+
+  // Region select button
+  const regionBtn = document.getElementById('vmkpal-ss-region')
+  if (regionBtn) {
+    regionBtn.onclick = () => {
+      modal.remove()
+      startRegionSelect(dataUrl)
+    }
+  }
+
+  // Click outside to close
+  const closeOnOutsideClick = (e) => {
+    if (!modal.contains(e.target)) {
+      modal.remove()
+      document.removeEventListener('click', closeOnOutsideClick)
+    }
+  }
+  setTimeout(() => document.addEventListener('click', closeOnOutsideClick), 100)
+}
+
+// Start region selection for screenshot
+function startRegionSelect(fullDataUrl) {
+  // Create overlay with the full screenshot as background
+  const overlay = document.createElement('div')
+  overlay.id = 'vmkpal-region-overlay'
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: url(${fullDataUrl}) no-repeat center center;
+    background-size: 100% 100%;
+    cursor: crosshair;
+    z-index: 2147483646;
+  `
+
+  // Dark overlay for unselected area
+  const darkOverlay = document.createElement('div')
+  darkOverlay.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    pointer-events: none;
+  `
+  overlay.appendChild(darkOverlay)
+
+  // Selection box
+  const selectionBox = document.createElement('div')
+  selectionBox.style.cssText = `
+    position: absolute;
+    border: 2px dashed #8b5cf6;
+    background: transparent;
+    display: none;
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+  `
+  overlay.appendChild(selectionBox)
+
+  // Instructions
+  const instructions = document.createElement('div')
+  instructions.style.cssText = `
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    pointer-events: none;
+  `
+  instructions.textContent = 'Click and drag to select region • ESC to cancel'
+  overlay.appendChild(instructions)
+
+  document.body.appendChild(overlay)
+
+  let startX, startY, isSelecting = false
+
+  overlay.onmousedown = (e) => {
+    startX = e.clientX
+    startY = e.clientY
+    isSelecting = true
+    selectionBox.style.display = 'block'
+    selectionBox.style.left = startX + 'px'
+    selectionBox.style.top = startY + 'px'
+    selectionBox.style.width = '0'
+    selectionBox.style.height = '0'
+    darkOverlay.style.display = 'none'
+  }
+
+  overlay.onmousemove = (e) => {
+    if (!isSelecting) return
+    const currentX = e.clientX
+    const currentY = e.clientY
+    const left = Math.min(startX, currentX)
+    const top = Math.min(startY, currentY)
+    const width = Math.abs(currentX - startX)
+    const height = Math.abs(currentY - startY)
+    selectionBox.style.left = left + 'px'
+    selectionBox.style.top = top + 'px'
+    selectionBox.style.width = width + 'px'
+    selectionBox.style.height = height + 'px'
+  }
+
+  overlay.onmouseup = (e) => {
+    if (!isSelecting) return
+    isSelecting = false
+    const currentX = e.clientX
+    const currentY = e.clientY
+    const left = Math.min(startX, currentX)
+    const top = Math.min(startY, currentY)
+    const width = Math.abs(currentX - startX)
+    const height = Math.abs(currentY - startY)
+
+    if (width < 10 || height < 10) {
+      overlay.remove()
+      showNotification('Selection too small', 'info')
+      return
+    }
+
+    // Crop the image
+    cropScreenshot(fullDataUrl, left, top, width, height).then(croppedDataUrl => {
+      overlay.remove()
+      showScreenshotModal(croppedDataUrl, true)
+    })
+  }
+
+  // ESC to cancel
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      overlay.remove()
+      document.removeEventListener('keydown', escHandler)
+    }
+  }
+  document.addEventListener('keydown', escHandler)
+}
+
+// Crop screenshot to selected region
+async function cropScreenshot(dataUrl, x, y, width, height) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, x, y, width, height, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.src = dataUrl
+  })
+}
+
 // Create floating toolbar (visible in game client popup)
 function createToolbar() {
   try {
@@ -1481,7 +1762,7 @@ function createToolbar() {
     width: 50px;
     height: 50px;
     border: none;
-    border-radius: 0;
+    border-radius: 12px;
     background: transparent;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
@@ -1568,7 +1849,7 @@ function createToolbar() {
     font-size: 12px;
     font-weight: 500;
     padding-left: 100%;
-    animation: vmkpal-scroll 12s linear infinite;
+    animation: vmkpal-scroll 25s linear infinite;
   `
   tickerText.textContent = 'Loading next event...'
 
@@ -1588,30 +1869,30 @@ function createToolbar() {
   tickerContainer.appendChild(tickerText)
   content.appendChild(tickerContainer)
 
-  // INTERNAL_FEATURE_START
-  // Room info box (shows current detected room)
-  const roomInfoBox = document.createElement('div')
-  roomInfoBox.id = 'vmkpal-room-info'
-  roomInfoBox.style.cssText = `
-    background: rgba(74, 222, 128, 0.1);
-    border: 1px solid rgba(74, 222, 128, 0.3);
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  `
-  roomInfoBox.innerHTML = `
-    <span style="font-size: 18px;">📍</span>
-    <div style="flex: 1; min-width: 0;">
-      <div style="color: rgba(255,255,255,0.5); font-size: 9px; text-transform: uppercase; margin-bottom: 2px;">Current Room</div>
-      <div id="vmkpal-room-name" style="color: #4ade80; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Detecting...</div>
-      <div id="vmkpal-room-land" style="color: rgba(255,255,255,0.5); font-size: 10px;"></div>
-    </div>
-  `
-  content.appendChild(roomInfoBox)
-  // INTERNAL_FEATURE_END
+  // Room info box - hidden from UI but detection runs in background
+  // if (INTERNAL_MODE) {
+  //   const roomInfoBox = document.createElement('div')
+  //   roomInfoBox.id = 'vmkpal-room-info'
+  //   roomInfoBox.style.cssText = `
+  //     background: rgba(74, 222, 128, 0.1);
+  //     border: 1px solid rgba(74, 222, 128, 0.3);
+  //     border-radius: 8px;
+  //     padding: 10px 12px;
+  //     margin-bottom: 12px;
+  //     display: flex;
+  //     align-items: center;
+  //     gap: 10px;
+  //   `
+  //   roomInfoBox.innerHTML = `
+  //     <span style="font-size: 18px;">📍</span>
+  //     <div style="flex: 1; min-width: 0;">
+  //       <div style="color: rgba(255,255,255,0.5); font-size: 9px; text-transform: uppercase; margin-bottom: 2px;">Current Room</div>
+  //       <div id="vmkpal-room-name" style="color: #4ade80; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Detecting...</div>
+  //       <div id="vmkpal-room-land" style="color: rgba(255,255,255,0.5); font-size: 10px;"></div>
+  //     </div>
+  //   `
+  //   content.appendChild(roomInfoBox)
+  // }
 
   // Quick actions row (Screenshot & Record)
   const quickActions = document.createElement('div')
@@ -1639,10 +1920,17 @@ function createToolbar() {
   `
   screenshotBtn.onmouseover = () => screenshotBtn.style.transform = 'scale(1.02)'
   screenshotBtn.onmouseout = () => screenshotBtn.style.transform = 'scale(1)'
-  screenshotBtn.onclick = () => {
+  screenshotBtn.onclick = async () => {
+    screenshotBtn.blur() // Prevent spacebar re-trigger
     try {
-      chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' })
-      showNotification('Screenshot saved!', 'success')
+      showNotification('Capturing...', 'info')
+      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
+        if (response && response.success) {
+          showScreenshotModal(response.dataUrl)
+        } else {
+          showNotification('Screenshot failed', 'error')
+        }
+      })
     } catch (e) {
       showNotification('Refresh page first', 'error')
     }
@@ -1666,6 +1954,7 @@ function createToolbar() {
   recordBtn.onmouseover = () => recordBtn.style.transform = 'scale(1.02)'
   recordBtn.onmouseout = () => recordBtn.style.transform = 'scale(1)'
   recordBtn.onclick = () => {
+    recordBtn.blur() // Prevent spacebar re-trigger
     if (isRecording) {
       stopRecording()
     } else {
@@ -1686,21 +1975,19 @@ function createToolbar() {
     margin-top: 8px;
   `
 
-  // featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
   // featureGrid.appendChild(createFeatureButton('👤', 'Accounts', createAccountsPanel))
   featureGrid.appendChild(createFeatureButton('💬', 'Phrases', createPhrasesPanel))
   featureGrid.appendChild(createFeatureButton('🎵', 'Audio', createAudioPanel))
   featureGrid.appendChild(createFeatureButton('📅', 'Events', createEventsPanel))
-  // INTERNAL_FEATURE_START
-  featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel))
-  // INTERNAL_FEATURE_END
+  // featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel)) // Hidden until feature is ready
   featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
-  // INTERNAL_FEATURE_START
-  featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
-  // INTERNAL_FEATURE_END
+  if (INTERNAL_MODE) {
+    featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
+    featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
+  }
   featureGrid.appendChild(createFeatureButton('⚙️', 'Settings', createSettingsPanel))
-  featureGrid.appendChild(createToggleButton('🔒', 'Lock Position', togglePositionLock, () => isPositionLocked))
+  featureGrid.appendChild(createToggleButton({enabled: '🔒', disabled: '🔓'}, 'Lock Position', togglePositionLock, () => isPositionLocked))
 
   content.appendChild(featureGrid)
 
@@ -1768,6 +2055,11 @@ function togglePanel() {
     // Update icon state for small icon mode
     updateIconState()
 
+    // When closing, blur any focused element to prevent spacebar from triggering buttons
+    if (!isOpening) {
+      document.activeElement?.blur()
+    }
+
     if (isOpening) {
       // Update room info display
       updateRoomInfoDisplay()
@@ -1804,10 +2096,18 @@ function togglePanel() {
 }
 
 // Create a toggle button for the grid (for features like rain overlay)
+// icon can be a string (static) or object {enabled: '🔒', disabled: '🔓'} for dynamic icons
 function createToggleButton(icon, label, toggleFn, isEnabledFn) {
   const btn = document.createElement('button')
 
-  const updateStyle = () => {
+  const getIcon = () => {
+    if (typeof icon === 'object' && icon.enabled && icon.disabled) {
+      return isEnabledFn() ? icon.enabled : icon.disabled
+    }
+    return icon
+  }
+
+  const updateButton = () => {
     const enabled = isEnabledFn()
     btn.style.cssText = `
       display: flex;
@@ -1822,14 +2122,14 @@ function createToggleButton(icon, label, toggleFn, isEnabledFn) {
       cursor: pointer;
       transition: all 0.2s;
     `
+    btn.innerHTML = `
+      <span style="font-size: 20px;">${getIcon()}</span>
+      <span style="color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 500;">${label}</span>
+    `
   }
 
-  updateStyle()
+  updateButton()
 
-  btn.innerHTML = `
-    <span style="font-size: 20px;">${icon}</span>
-    <span style="color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 500;">${label}</span>
-  `
   btn.onmouseover = () => {
     btn.style.transform = 'scale(1.05)'
   }
@@ -1838,7 +2138,9 @@ function createToggleButton(icon, label, toggleFn, isEnabledFn) {
   }
   btn.onclick = () => {
     toggleFn()
-    updateStyle()
+    updateButton()
+    // Blur to prevent spacebar from re-triggering
+    btn.blur()
   }
   return btn
 }
@@ -2729,15 +3031,314 @@ function stopGhostEffect() {
 
 // Check if ghost effect should be active based on current room
 function checkGhostEffectRoom() {
-  if (currentRoomId === HAUNTED_MANSION_LOBBY_ID) {
+  // Show ghost only in HM Lobby
+  if (currentRoomId === HAUNTED_MANSION_LOBBY_ID && !isInHMGame) {
     if (!isGhostEffectActive) {
       startGhostEffect()
     }
-  } else {
-    if (isGhostEffectActive) {
-      stopGhostEffect()
+    return
+  }
+
+  // No ghost in HM Game or anywhere else
+  if (isGhostEffectActive) {
+    stopGhostEffect()
+  }
+}
+
+// Tinkerbell Effect for Fantasyland Courtyard
+function createTinkerbell() {
+  if (tinkerbellElement) return // Already exists
+
+  const bounds = getGameCanvasBounds()
+  const imageUrl = chrome.runtime.getURL(TINKERBELL_IMAGE)
+
+  // Create Tinkerbell element
+  const tink = document.createElement('img')
+  tink.src = imageUrl
+  tink.className = 'vmkpal-tinkerbell'
+  tink.style.cssText = `
+    position: fixed;
+    width: 24px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483640;
+    filter: drop-shadow(0 0 5px rgba(${TINKERBELL_GLOW_COLOR}, 0.9))
+            drop-shadow(0 0 10px rgba(${TINKERBELL_GLOW_COLOR}, 0.6))
+            drop-shadow(0 0 15px rgba(${TINKERBELL_GLOW_COLOR}, 0.4));
+    transition: opacity 1s ease-in-out;
+  `
+
+  // Start near center of game area
+  const startX = bounds.left + bounds.width / 2
+  const startY = bounds.top + bounds.height / 2
+  tink.style.left = startX + 'px'
+  tink.style.top = startY + 'px'
+
+  document.body.appendChild(tink)
+  tinkerbellElement = tink
+
+  // Tinkerbell movement data - more erratic pixie-like movement
+  tinkerbellData = {
+    x: startX,
+    y: startY,
+    targetX: startX,
+    targetY: startY,
+    phase: 0,
+    speed: 3,
+    lastTargetChange: performance.now(),
+    targetChangeInterval: 2000 + Math.random() * 2000 // Change target every 2-4 seconds
+  }
+
+  // Fade in
+  requestAnimationFrame(() => {
+    tink.style.opacity = '1'
+  })
+}
+
+function updateTinkerbell() {
+  if (!isTinkerbellActive || !tinkerbellElement || !tinkerbellData) return
+
+  const bounds = getGameCanvasBounds()
+  const now = performance.now()
+  const data = tinkerbellData
+
+  // Change target position periodically for wandering behavior
+  if (now - data.lastTargetChange > data.targetChangeInterval) {
+    data.targetX = bounds.left + 40 + Math.random() * (bounds.width - 80)
+    data.targetY = bounds.top + 40 + Math.random() * (bounds.height - 80)
+    data.targetChangeInterval = 3000 + Math.random() * 3000 // 3-6 seconds between targets
+    data.lastTargetChange = now
+  }
+
+  // Smooth easing toward target (no sudden movements)
+  const dx = data.targetX - data.x
+  const dy = data.targetY - data.y
+
+  // Gentle easing - move 1% of remaining distance each frame
+  data.x += dx * 0.015
+  data.y += dy * 0.015
+
+  // Keep within bounds
+  data.x = Math.max(bounds.left + 20, Math.min(data.x, bounds.left + bounds.width - 60))
+  data.y = Math.max(bounds.top + 20, Math.min(data.y, bounds.top + bounds.height - 60))
+
+  // Apply position (no flutter, just smooth gliding)
+  tinkerbellElement.style.left = data.x + 'px'
+  tinkerbellElement.style.top = data.y + 'px'
+
+  tinkerbellAnimationId = requestAnimationFrame(updateTinkerbell)
+}
+
+function startTinkerbellEffect() {
+  if (isTinkerbellActive) return
+
+  isTinkerbellActive = true
+  createTinkerbell()
+  updateTinkerbell()
+}
+
+function stopTinkerbellEffect() {
+  if (!isTinkerbellActive) return
+
+  isTinkerbellActive = false
+
+  if (tinkerbellAnimationId) {
+    cancelAnimationFrame(tinkerbellAnimationId)
+    tinkerbellAnimationId = null
+  }
+
+  if (tinkerbellElement) {
+    tinkerbellElement.style.opacity = '0'
+    setTimeout(() => {
+      if (tinkerbellElement) {
+        tinkerbellElement.remove()
+        tinkerbellElement = null
+      }
+      tinkerbellData = null
+    }, 1000)
+  }
+}
+
+function checkTinkerbellRoom() {
+  // Show Tinkerbell only in Fantasyland Courtyard
+  if (currentRoomId === FANTASYLAND_COURTYARD_ID) {
+    if (!isTinkerbellActive) {
+      startTinkerbellEffect()
+    }
+    return
+  }
+
+  // Remove Tinkerbell in any other room
+  if (isTinkerbellActive) {
+    stopTinkerbellEffect()
+  }
+}
+
+// ============================================
+// GENIE EVENTS SYSTEM
+// Fetch and trigger remote scheduled events
+// ============================================
+
+async function fetchGenieEvents() {
+  try {
+    const response = await fetch(GENIE_EVENTS_URL + '?t=' + Date.now(), { cache: 'no-store' })
+    if (!response.ok) return
+
+    const data = await response.json()
+
+    // Genie events (admin) - can trigger overlays + audio
+    if (data && Array.isArray(data.genieEvents)) {
+      scheduledGenieEvents = data.genieEvents.filter(e => e.enabled !== false)
+    }
+
+    // Community events (player) - audio only
+    if (data && Array.isArray(data.communityEvents)) {
+      scheduledCommunityEvents = data.communityEvents.filter(e => e.enabled !== false)
+    }
+  } catch (e) {
+    // Silently fail - events will just not update
+  }
+}
+
+function checkGenieEvents() {
+  const now = new Date()
+
+  // Check Genie events (admin - overlays + audio)
+  let foundActiveGenieEvent = false
+  for (const event of scheduledGenieEvents) {
+    const startTime = new Date(event.startTime)
+    const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
+    const isTimeActive = now >= startTime && now <= endTime
+    const isRoomMatch = !event.roomId || currentRoomId === event.roomId
+
+    if (isTimeActive && isRoomMatch) {
+      foundActiveGenieEvent = true
+      if (!activeGenieEvent || activeGenieEvent.id !== event.id) {
+        startGenieEvent(event)
+      }
+      break
     }
   }
+  if (!foundActiveGenieEvent && activeGenieEvent) {
+    stopGenieEvent()
+  }
+
+  // Check Community events (player - audio only)
+  let foundActiveCommunityEvent = false
+  for (const event of scheduledCommunityEvents) {
+    const startTime = new Date(event.startTime)
+    const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
+    const isTimeActive = now >= startTime && now <= endTime
+    const isRoomMatch = !event.roomId || currentRoomId === event.roomId
+
+    if (isTimeActive && isRoomMatch) {
+      foundActiveCommunityEvent = true
+      if (!activeCommunityEvent || activeCommunityEvent.id !== event.id) {
+        startCommunityEvent(event)
+      }
+      break
+    }
+  }
+  if (!foundActiveCommunityEvent && activeCommunityEvent) {
+    stopCommunityEvent()
+  }
+}
+
+function startGenieEvent(event) {
+  if (activeGenieEvent && activeGenieEvent.id === event.id) return
+
+  activeGenieEvent = event
+
+  // Trigger the appropriate effect
+  if (event.effect === 'fireworks') {
+    startFireworks()
+  }
+
+  // Play audio if specified
+  if (event.audioUrl) {
+    try {
+      genieEventAudio = new Audio(event.audioUrl)
+      genieEventAudio.volume = 0.7
+      genieEventAudio.play().catch(() => {})
+    } catch (e) {}
+  }
+
+  // Show notification
+  showNotification(`${event.title} starting!`, 'success')
+}
+
+function stopGenieEvent() {
+  if (!activeGenieEvent) return
+
+  const event = activeGenieEvent
+  activeGenieEvent = null
+
+  // Stop the effect
+  if (event.effect === 'fireworks') {
+    stopFireworks()
+  }
+
+  // Stop audio
+  if (genieEventAudio) {
+    genieEventAudio.pause()
+    genieEventAudio = null
+  }
+}
+
+// Community Events - audio only, no overlays
+function startCommunityEvent(event) {
+  if (activeCommunityEvent && activeCommunityEvent.id === event.id) return
+
+  activeCommunityEvent = event
+
+  // Play audio if specified (audio only - no overlay effects)
+  if (event.audioUrl) {
+    try {
+      communityEventAudio = new Audio(event.audioUrl)
+      communityEventAudio.volume = 0.7
+      communityEventAudio.play().catch(() => {})
+    } catch (e) {}
+  }
+
+  // Show notification
+  showNotification(`${event.title} starting!`, 'info')
+}
+
+function stopCommunityEvent() {
+  if (!activeCommunityEvent) return
+
+  activeCommunityEvent = null
+
+  // Stop audio
+  if (communityEventAudio) {
+    communityEventAudio.pause()
+    communityEventAudio = null
+  }
+}
+
+function startGenieEventSystem() {
+  // Fetch events immediately
+  fetchGenieEvents()
+
+  // Then fetch periodically
+  setInterval(fetchGenieEvents, GENIE_EVENTS_FETCH_INTERVAL)
+
+  // Check for active events every 10 seconds
+  genieEventCheckInterval = setInterval(checkGenieEvents, 10000)
+}
+
+// Get scheduled Genie events for calendar display
+function getScheduledGenieEvents() {
+  return scheduledGenieEvents.map(event => ({
+    id: event.id,
+    title: event.title,
+    description: event.description || '',
+    roomName: event.roomName || 'TBD',
+    startTime: new Date(event.startTime),
+    durationMinutes: event.durationMinutes || 5,
+    type: 'genie'
+  }))
 }
 
 // Toggle position lock
@@ -3451,6 +4052,20 @@ function createSettingsPanel() {
   )
   div.appendChild(smallIconToggle.element)
 
+  // Pink Theme Toggle
+  const pinkThemeToggle = createSettingToggle(
+    '💖',
+    'Pink Theme',
+    'Switch to pink color theme',
+    () => isPinkTheme,
+    () => {
+      isPinkTheme = !isPinkTheme
+      chrome.storage.local.set({ isPinkTheme })
+      applyTheme()
+    }
+  )
+  div.appendChild(pinkThemeToggle.element)
+
   // Background Color Section
   const bgSection = document.createElement('div')
   bgSection.style.cssText = `
@@ -3576,16 +4191,228 @@ function createSettingsPanel() {
   div.appendChild(bgSection)
 
   // Load saved settings to update UI
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme'], (result) => {
     if (result.isSmallIconEnabled !== undefined) {
       isSmallIconEnabled = result.isSmallIconEnabled
       smallIconToggle.updateState()
+    }
+    if (result.isPinkTheme !== undefined) {
+      isPinkTheme = result.isPinkTheme
+      pinkThemeToggle.updateState()
     }
     if (result.customBackgroundColor) {
       customBackgroundColor = result.customBackgroundColor
       colorInput.value = customBackgroundColor
       updateColorPreview()
     }
+  })
+
+  // Changelog Button
+  const changelogBtn = document.createElement('button')
+  changelogBtn.innerHTML = '📋 Change Log'
+  changelogBtn.style.cssText = `
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.8);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 8px;
+  `
+  changelogBtn.onmouseenter = () => changelogBtn.style.background = 'rgba(255,255,255,0.1)'
+  changelogBtn.onmouseleave = () => changelogBtn.style.background = 'rgba(255,255,255,0.05)'
+  changelogBtn.onclick = () => openFeaturePanel('📋', 'Change Log', createChangelogPanel)
+  div.appendChild(changelogBtn)
+
+  // Version info
+  const versionInfo = document.createElement('div')
+  versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
+  versionInfo.textContent = 'MyVMK Genie v1.1.6'
+  div.appendChild(versionInfo)
+
+  return div
+}
+
+// Changelog data
+const CHANGELOG = [
+  {
+    version: '1.1.6',
+    date: '2025-03-13',
+    changes: [
+      'Added Tinkerbell effect in Fantasyland Courtyard',
+      'Improved Haunted Mansion game detection',
+      'Ghost (Beadie) now only appears in HM Lobby'
+    ]
+  },
+  {
+    version: '1.1.5',
+    date: '2025-03-13',
+    changes: [
+      'Added Pink Theme toggle in Settings',
+      'Theme changes logo, background, and panel colors',
+      'Fixed floating icon corner transparency'
+    ]
+  },
+  {
+    version: '1.1.4',
+    date: '2025-03-13',
+    changes: [
+      'Change Log now opens within extension panel',
+      'Better vertical alignment for ticker logos',
+      'Extension only loads on game client pages'
+    ]
+  },
+  {
+    version: '1.1.3',
+    date: '2025-03-13',
+    changes: [
+      'Added welcome message that alternates with event ticker',
+      'Lock Position button shows locked/unlocked icons',
+      'Ticker content swaps only when off-screen'
+    ]
+  },
+  {
+    version: '1.1.2',
+    date: '2025-03-13',
+    changes: [
+      'Narrowed host permissions to MyVMK domains only'
+    ]
+  },
+  {
+    version: '1.1.1',
+    date: '2025-03-13',
+    changes: [
+      'Optimized initial load time',
+      'Removed unnecessary cache clearing',
+      'Deferred non-critical initialization',
+      'Debug logging only in internal mode'
+    ]
+  },
+  {
+    version: '1.1.0',
+    date: '2025-03-13',
+    changes: [
+      'Alt+S now shows clipboard/download dialog',
+      'Added region select for screenshots',
+      'Click and drag to capture specific area'
+    ]
+  },
+  {
+    version: '1.0.9',
+    date: '2025-03-13',
+    changes: [
+      'Slowed down event ticker scroll speed'
+    ]
+  },
+  {
+    version: '1.0.8',
+    date: '2025-03-13',
+    changes: [
+      'Fixed spacebar re-triggering buttons',
+      'All buttons now blur after click'
+    ]
+  },
+  {
+    version: '1.0.7',
+    date: '2025-03-13',
+    changes: [
+      'Right-click paste now works in Audio URL field',
+      'Screenshot modal with clipboard/download options',
+      'Preview image before saving'
+    ]
+  },
+  {
+    version: '1.0.6',
+    date: '2025-03-13',
+    changes: [
+      'Sticky back button header in sub-menus',
+      'No more scrolling up to find back button'
+    ]
+  },
+  {
+    version: '1.0.5',
+    date: '2025-03-13',
+    changes: [
+      'Mac keyboard support (Ctrl+# instead of Alt+#)',
+      'Auto-detects Mac vs Windows/Linux',
+      'UI shows correct shortcut per platform'
+    ]
+  },
+  {
+    version: '1.0.4',
+    date: '2025-03-13',
+    changes: [
+      'Moved Save Phrases button to top',
+      'Smaller, more compact save button'
+    ]
+  },
+  {
+    version: '1.0.3',
+    date: '2025-03-13',
+    changes: [
+      'Added INTERNAL_MODE for dev features',
+      'Queue, Room Audio, Current Room hidden in production'
+    ]
+  }
+]
+
+// Create changelog panel for inline display
+function createChangelogPanel() {
+  const div = document.createElement('div')
+  div.style.cssText = 'padding-top: 8px;'
+
+  CHANGELOG.forEach((release, index) => {
+    const item = document.createElement('div')
+    item.style.cssText = 'margin-bottom: 12px;'
+
+    const header = document.createElement('div')
+    header.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    `
+    header.innerHTML = `
+      <div>
+        <span style="color: #8b5cf6; font-weight: 600; font-size: 13px;">v${release.version}</span>
+        <span style="color: rgba(255,255,255,0.4); font-size: 11px; margin-left: 8px;">${release.date}</span>
+      </div>
+      <span class="arrow" style="color: rgba(255,255,255,0.4); font-size: 12px;">${index === 0 ? '▲' : '▼'}</span>
+    `
+
+    const content = document.createElement('div')
+    content.style.cssText = `
+      display: ${index === 0 ? 'block' : 'none'};
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 0 0 8px 8px;
+      margin-top: -4px;
+    `
+    content.innerHTML = `
+      <ul style="margin: 0; padding-left: 16px; color: rgba(255,255,255,0.7); font-size: 11px; line-height: 1.6;">
+        ${release.changes.map(c => `<li>${c}</li>`).join('')}
+      </ul>
+    `
+
+    header.onmouseenter = () => header.style.background = 'rgba(255,255,255,0.12)'
+    header.onmouseleave = () => header.style.background = 'rgba(255,255,255,0.08)'
+    header.onclick = () => {
+      const isVisible = content.style.display === 'block'
+      content.style.display = isVisible ? 'none' : 'block'
+      header.querySelector('.arrow').textContent = isVisible ? '▼' : '▲'
+    }
+
+    item.appendChild(header)
+    item.appendChild(content)
+    div.appendChild(item)
   })
 
   return div
@@ -3648,7 +4475,6 @@ function createSettingToggle(icon, label, description, isEnabledFn, toggleFn) {
   return { element: row, updateState: updateToggle }
 }
 
-// INTERNAL_FEATURE_START
 // Audio Learning Panel - Map room audio to room IDs
 function createAudioLearningPanel() {
   const div = document.createElement('div')
@@ -3993,7 +4819,6 @@ function createAudioLearningPanel() {
 
   return div
 }
-// INTERNAL_FEATURE_END
 
 // Apply icon size based on setting
 function applyIconSize() {
@@ -4005,6 +4830,7 @@ function applyIconSize() {
 
   const panel = document.getElementById('vmkpal-panel')
   const isMenuOpen = panel && panel.style.display !== 'none'
+  const colors = getThemeColors()
 
   if (isSmallIconEnabled) {
     // Small icon - use questcover icons with open/closed states
@@ -4016,16 +4842,17 @@ function applyIconSize() {
     img.style.height = '28px'
     menuBtn.style.width = '32px'
     menuBtn.style.height = '32px'
-    menuBtn.style.boxShadow = '0 0 10px 3px rgba(139, 92, 246, 0.5), 0 0 20px 6px rgba(139, 92, 246, 0.3)'
+    menuBtn.style.boxShadow = isPinkTheme
+      ? '0 0 10px 3px rgba(219, 39, 119, 0.5), 0 0 20px 6px rgba(219, 39, 119, 0.3)'
+      : '0 0 10px 3px rgba(139, 92, 246, 0.5), 0 0 20px 6px rgba(139, 92, 246, 0.3)'
   } else {
-    // Large icon - use main genie icon (no open/closed state)
-    const largeIconUrl = chrome.runtime.getURL('myvmk-genie.png')
-    img.src = largeIconUrl
+    // Large icon - use theme-appropriate genie icon
+    img.src = colors.logo
     img.style.width = '50px'
     img.style.height = '50px'
     menuBtn.style.width = '50px'
     menuBtn.style.height = '50px'
-    menuBtn.style.boxShadow = '0 0 15px 5px rgba(139, 92, 246, 0.5), 0 0 30px 10px rgba(139, 92, 246, 0.3)'
+    menuBtn.style.boxShadow = colors.glow
   }
 }
 
@@ -4033,6 +4860,76 @@ function applyIconSize() {
 function updateIconState() {
   if (isSmallIconEnabled) {
     applyIconSize()
+  }
+}
+
+// Get current theme colors
+function getThemeColors() {
+  if (isPinkTheme) {
+    return {
+      gradient: 'linear-gradient(135deg, #4b1437, #78284f)',
+      gradientRgba: 'linear-gradient(135deg, rgba(75, 20, 55, 0.98), rgba(120, 40, 80, 0.98))',
+      glow: '0 0 15px 5px rgba(219, 39, 119, 0.5), 0 0 30px 10px rgba(219, 39, 119, 0.3)',
+      bgImage: chrome.runtime.getURL('genie-background-smoky-pink.png'),
+      logo: chrome.runtime.getURL('myvmk-genie-lamp-logo-pink.png'),
+      bgGradient: 'linear-gradient(135deg, #4b1437 0%, #78284f 50%, #4b1437 100%)'
+    }
+  }
+  return {
+    gradient: 'linear-gradient(135deg, #1e1b4b, #312e81)',
+    gradientRgba: 'linear-gradient(135deg, rgba(30, 27, 75, 0.98), rgba(49, 46, 129, 0.98))',
+    glow: '0 0 15px 5px rgba(139, 92, 246, 0.5), 0 0 30px 10px rgba(139, 92, 246, 0.3)',
+    bgImage: chrome.runtime.getURL('genie-background.png'),
+    logo: chrome.runtime.getURL('myvmk-genie.png'),
+    bgGradient: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)'
+  }
+}
+
+// Apply theme (blue or pink)
+function applyTheme() {
+  const colors = getThemeColors()
+  const panel = document.getElementById('vmkpal-panel')
+  const menuBtn = document.querySelector('#vmkpal-container button')
+  const featureView = document.getElementById('vmkpal-feature-view')
+  const panelHeader = document.getElementById('vmkpal-panel-header')
+  const featureHeader = document.getElementById('vmkpal-feature-header')
+
+  // Update panel background
+  if (panel) {
+    panel.style.background = colors.gradient
+  }
+
+  // Update feature view background
+  if (featureView) {
+    featureView.style.background = colors.gradient
+  }
+
+  // Update feature header (sticky header in sub-panels)
+  if (featureHeader) {
+    featureHeader.style.background = colors.gradientRgba
+  }
+
+  // Update panel header icon
+  if (panelHeader) {
+    const headerImg = panelHeader.querySelector('img')
+    if (headerImg) {
+      headerImg.src = colors.logo
+    }
+  }
+
+  // Update floating icon via applyIconSize (handles both small and large modes)
+  applyIconSize()
+
+  // Update page background (if no custom color set)
+  const existingStyle = document.getElementById('vmkpal-border-fill')
+  if (existingStyle && !customBackgroundColor) {
+    existingStyle.textContent = existingStyle.textContent.replace(
+      /html, body \{[^}]+\}/,
+      `html, body {
+        background: url('${colors.bgImage}') center center / cover no-repeat fixed,
+                    ${colors.bgGradient} !important;
+      }`
+    )
   }
 }
 
@@ -4063,10 +4960,14 @@ function applyBackgroundColor() {
 
 // Load settings on startup
 function loadSettings() {
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme'], (result) => {
     if (result.isSmallIconEnabled) {
       isSmallIconEnabled = result.isSmallIconEnabled
       setTimeout(applyIconSize, 100)
+    }
+    if (result.isPinkTheme) {
+      isPinkTheme = result.isPinkTheme
+      setTimeout(applyTheme, 100)
     }
     if (result.customBackgroundColor) {
       customBackgroundColor = result.customBackgroundColor
@@ -4108,6 +5009,8 @@ function createFeatureButton(icon, label, contentFn) {
   btn.onclick = () => {
     // Open a modal/panel with the content
     openFeaturePanel(icon, label, contentFn)
+    // Blur to prevent spacebar from re-triggering
+    btn.blur()
   }
   return btn
 }
@@ -4126,15 +5029,26 @@ function openFeaturePanel(icon, title, contentFn) {
   // Clear and populate feature view
   featureView.innerHTML = ''
 
-  // Header with back button
+  // Header with back button (sticky at top)
+  const colors = getThemeColors()
   const header = document.createElement('div')
+  header.id = 'vmkpal-feature-header'
   header.style.cssText = `
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
-    padding-bottom: 12px;
+    padding: 12px 0;
     border-bottom: 1px solid rgba(255,255,255,0.1);
+    position: sticky;
+    top: 0;
+    background: ${colors.gradientRgba};
+    z-index: 10;
+    margin-top: -12px;
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
   `
 
   const backBtn = document.createElement('button')
@@ -4570,7 +5484,7 @@ function createQueueAlertsPanel() {
 
   const captchaDesc = document.createElement('p')
   captchaDesc.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 10px; margin-bottom: 8px;'
-  captchaDesc.innerHTML = 'Scan and auto-copy captcha codes to clipboard<br><span style="color: #6ee7b7;">Shortcut: Alt+C</span>'
+  captchaDesc.innerHTML = `Scan and auto-copy captcha codes to clipboard<br><span style="color: #6ee7b7;">Shortcut: ${modifierKey}+C</span>`
   captchaSection.appendChild(captchaDesc)
 
   const captchaScanBtn = document.createElement('button')
@@ -4723,6 +5637,40 @@ function createPhrasesPanel() {
   // Store references to input fields for saving
   const inputFields = []
 
+  // Save button at top
+  const saveBtn = document.createElement('button')
+  saveBtn.textContent = '💾 Save Phrases'
+  saveBtn.style.cssText = `
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: none;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+  `
+  saveBtn.addEventListener('click', () => {
+    const newPhrases = {}
+    inputFields.forEach((input) => {
+      const slot = parseInt(input.dataset.slot)
+      const value = input.value.trim()
+      if (value) {
+        newPhrases[slot] = value
+      }
+    })
+
+    // Save to storage
+    chrome.storage.local.set({ phrases: newPhrases }, () => {
+      // Update local cache
+      phrasesCache = newPhrases
+      showNotification('Phrases saved!', 'success')
+    })
+  })
+  div.appendChild(saveBtn)
+
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
   keys.forEach((key, i) => {
     const slot = i + 1
@@ -4758,7 +5706,7 @@ function createPhrasesPanel() {
     const input = document.createElement('input')
     input.type = 'text'
     input.value = phrase
-    input.placeholder = `Alt+${key} phrase...`
+    input.placeholder = `${modifierKey}+${key} phrase...`
     input.dataset.slot = slot
     input.style.cssText = `
       flex: 1;
@@ -4803,43 +5751,9 @@ function createPhrasesPanel() {
     inputFields.push(input)
   })
 
-  // Save button
-  const saveBtn = document.createElement('button')
-  saveBtn.textContent = '💾 Save Phrases'
-  saveBtn.style.cssText = `
-    width: 100%;
-    margin-top: 12px;
-    padding: 10px;
-    border-radius: 6px;
-    border: none;
-    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-    color: white;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-  `
-  saveBtn.addEventListener('click', () => {
-    const newPhrases = {}
-    inputFields.forEach((input) => {
-      const slot = parseInt(input.dataset.slot)
-      const value = input.value.trim()
-      if (value) {
-        newPhrases[slot] = value
-      }
-    })
-
-    // Save to storage
-    chrome.storage.local.set({ phrases: newPhrases }, () => {
-      // Update local cache
-      phrasesCache = newPhrases
-      showNotification('Phrases saved!', 'success')
-    })
-  })
-  div.appendChild(saveBtn)
-
   // Help text
   const helpText = document.createElement('p')
-  helpText.textContent = 'Press Alt+1 through Alt+0 to send these phrases in chat'
+  helpText.textContent = `Press ${modifierKey}+1 through ${modifierKey}+0 to send these phrases in chat`
   helpText.style.cssText = 'color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px; text-align: center;'
   div.appendChild(helpText)
 
@@ -4891,9 +5805,10 @@ function createAudioPanel() {
     urlInput.style.background = 'rgba(255,255,255,0.1)'
   })
 
-  // Prevent event propagation to fix input issues
+  // Prevent event propagation to fix input issues (but allow context menu for right-click paste)
   urlInput.addEventListener('mousedown', (e) => e.stopPropagation())
   urlInput.addEventListener('click', (e) => e.stopPropagation())
+  urlInput.addEventListener('contextmenu', (e) => e.stopPropagation()) // Allow right-click menu
   urlInput.addEventListener('keydown', (e) => {
     e.stopPropagation()
     // Ensure Ctrl+V works by not preventing default
@@ -5312,10 +6227,27 @@ function createEventsPanel() {
     if (eventsToShow.length === 0) {
       div.innerHTML = `<p style="color: rgba(255,255,255,0.5); font-size: 12px; text-align: center; padding: 12px;">No upcoming events</p>`
     } else {
-      // Events list
+      // Icons for different event types
       const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
+      const genieIconUrl = chrome.runtime.getURL('genie-genie-events.png')
+      const communityIconUrl = chrome.runtime.getURL('genie-community-events.png')
+
       eventsToShow.forEach(event => {
-        const color = '#f59e0b' // Official events color
+        // Different colors and icons by event type
+        let color, iconUrl, iconTitle
+        if (event.type === 'genie') {
+          color = '#ec4899' // Pink for Genie events
+          iconUrl = genieIconUrl
+          iconTitle = 'Genie Event'
+        } else if (event.type === 'community') {
+          color = '#10b981' // Green for Community events
+          iconUrl = communityIconUrl
+          iconTitle = 'Community Event'
+        } else {
+          color = '#f59e0b' // Orange for Host events
+          iconUrl = hostIconUrl
+          iconTitle = 'Host Event'
+        }
 
         const row = document.createElement('div')
         row.style.cssText = `
@@ -5333,7 +6265,7 @@ function createEventsPanel() {
             <div style="color: white; font-size: 12px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(event.title)}</div>
             <div style="color: rgba(255,255,255,0.5); font-size: 10px;">${event.dateStr} • ${event.timeStr}${event.location ? ' • ' + escapeHtml(event.location) : ''}</div>
           </div>
-          <img src="${hostIconUrl}" alt="Official" title="Official Event" style="width: 24px; height: 24px; object-fit: contain;">
+          <img src="${iconUrl}" alt="${iconTitle}" title="${iconTitle}" style="width: 24px; height: 24px; object-fit: contain;">
         `
         div.appendChild(row)
       })
@@ -5387,23 +6319,71 @@ async function loadTodaysEvents() {
     // Filter to upcoming events only
     events.forEach(event => {
       if (event.timestamp > now) {
+        event.type = 'host' // Mark as host event
         allUpcomingEvents.push(event)
       }
     })
-
-    // Sort by timestamp
-    allUpcomingEvents.sort((a, b) => a.timestamp - b.timestamp)
-
-    console.log('MyVMK Genie: Found', allUpcomingEvents.length, 'upcoming events')
-    if (allUpcomingEvents.length > 0) {
-      console.log('MyVMK Genie: Next event:', allUpcomingEvents[0].title, 'at', new Date(allUpcomingEvents[0].timestamp).toString())
-    }
   } catch (err) {
     console.error('MyVMK Genie: Failed to fetch ICS:', err)
   }
 
+  // Also include scheduled Genie events (admin)
+  scheduledGenieEvents.forEach(event => {
+    const startTime = new Date(event.startTime).getTime()
+    if (startTime > now) {
+      allUpcomingEvents.push({
+        title: event.title,
+        timestamp: startTime,
+        location: event.roomName || '',
+        dateStr: formatDateStr(new Date(event.startTime)),
+        timeStr: formatTimeStr(new Date(event.startTime)),
+        type: 'genie'
+      })
+    }
+  })
+
+  // Also include scheduled Community events (player)
+  scheduledCommunityEvents.forEach(event => {
+    const startTime = new Date(event.startTime).getTime()
+    if (startTime > now) {
+      allUpcomingEvents.push({
+        title: event.title,
+        timestamp: startTime,
+        location: event.roomName || '',
+        dateStr: formatDateStr(new Date(event.startTime)),
+        timeStr: formatTimeStr(new Date(event.startTime)),
+        type: 'community',
+        submittedBy: event.submittedBy
+      })
+    }
+  })
+
+  // Sort by timestamp
+  allUpcomingEvents.sort((a, b) => a.timestamp - b.timestamp)
+
+  console.log('MyVMK Genie: Found', allUpcomingEvents.length, 'upcoming events')
+  if (allUpcomingEvents.length > 0) {
+    console.log('MyVMK Genie: Next event:', allUpcomingEvents[0].title, 'at', new Date(allUpcomingEvents[0].timestamp).toString())
+  }
+
   const nextEvent = allUpcomingEvents[0] || null
   return { todayEvents: [], nextEvent, allUpcomingEvents }
+}
+
+// Format date string for Genie events
+function formatDateStr(date) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`
+}
+
+// Format time string for Genie events
+function formatTimeStr(date) {
+  let hours = date.getHours()
+  const minutes = date.getMinutes().toString().padStart(2, '0')
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  hours = hours % 12 || 12
+  return `${hours}:${minutes} ${ampm} ET`
 }
 
 // Simple ICS parser - returns array of {title, timestamp, location, dateStr, timeStr}
@@ -5532,50 +6512,80 @@ function updateRoomInfoDisplay() {
     }
   }
 
-  // Check for room-specific effects (like Haunted Mansion ghosts)
+  // Check for room-specific effects (like Haunted Mansion ghosts, Tinkerbell)
   checkGhostEffectRoom()
+  checkTinkerbellRoom()
+  checkGenieEvents()
 }
 
-// Update the event ticker with next event countdown
-async function updateEventTicker() {
+// Render the current ticker content without toggling state
+async function renderTickerContent() {
   const tickerText = document.getElementById('vmkpal-ticker-text')
   if (!tickerText) return
 
   const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
+  const genieLogoUrl = chrome.runtime.getURL('genie-genie-events.png')
+  const communityIconUrl = chrome.runtime.getURL('genie-community-events.png')
 
   try {
     const { nextEvent } = await loadTodaysEvents()
 
-    if (nextEvent) {
+    if (tickerShowWelcome) {
+      // Show welcome message with genie logo
+      const welcomeHtml = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie by bsims!   •   `
+      tickerText.innerHTML = welcomeHtml + welcomeHtml
+    } else if (nextEvent) {
       const eventDate = new Date(nextEvent.timestamp)
       const countdown = getCountdown(eventDate)
       const eventName = nextEvent.title
       const timeStr = nextEvent.timeStr || 'TBD'
-      const isHostEvent = nextEvent.source === 'official'
 
-      console.log('MyVMK Genie Ticker - Event:', eventName, 'at', eventDate.toString())
+      // Different icons by event type
+      let iconUrl
+      if (nextEvent.type === 'genie') {
+        iconUrl = genieLogoUrl
+      } else if (nextEvent.type === 'community') {
+        iconUrl = communityIconUrl
+      } else {
+        iconUrl = hostIconUrl // Host events
+      }
 
-      // Build ticker content with icon for host events
-      const iconHtml = isHostEvent
-        ? `<img src="${hostIconUrl}" style="width: 22px; height: 22px; vertical-align: middle; margin-right: 6px;">`
-        : '⏰ '
-
+      const iconHtml = `<img src="${iconUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">`
       const eventHtml = `${iconHtml}${countdown} until ${eventName} (${timeStr})   •   `
       tickerText.innerHTML = eventHtml + eventHtml
     } else {
-      tickerText.innerHTML = '📅 No upcoming events scheduled   •   📅 No upcoming events scheduled   •   '
+      // No events - show welcome message instead of "no events"
+      const welcomeHtml = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie by bsims!   •   `
+      tickerText.innerHTML = welcomeHtml + welcomeHtml
     }
   } catch (err) {
     console.error('Failed to update ticker:', err)
     tickerText.innerHTML = '📅 Check events calendar for updates   •   '
   }
+}
 
-  // Update every minute
-  setTimeout(updateEventTicker, 60000)
+// Start the event ticker - sets up animation-based content swapping
+function updateEventTicker() {
+  const tickerText = document.getElementById('vmkpal-ticker-text')
+  if (!tickerText) return
+
+  // If already set up, don't add another listener
+  if (tickerIntervalId) return
+
+  // Initial render
+  renderTickerContent()
+
+  // Mark as initialized
+  tickerIntervalId = true
+
+  // Swap content only when animation loops (text is off-screen)
+  tickerText.addEventListener('animationiteration', () => {
+    tickerShowWelcome = !tickerShowWelcome
+    renderTickerContent()
+  })
 }
 
 
-// INTERNAL_FEATURE_START
 // LFG Panel
 function createLfgPanel() {
   const div = document.createElement('div')
@@ -5586,7 +6596,6 @@ function createLfgPanel() {
   `
   return div
 }
-// INTERNAL_FEATURE_END
 
 // Fill black borders with themed background and twinkling stars
 function fillBorderBackground() {
@@ -5688,66 +6697,61 @@ function createTwinklingStars() {
 async function init() {
   console.log('MyVMK Genie initializing...')
 
+  // Critical: Create toolbar first for fast UI appearance
+  loadPhrases()
+  createToolbar()
+
   // Fill black borders with themed background
   fillBorderBackground()
 
-  // Force clear ICS cache to ensure fresh parsing with timezone fix
-  await chrome.storage.local.remove(['cachedIcsEvents', 'icsLastFetch', 'icsCacheVersion'])
-  console.log('MyVMK Genie: Cleared ICS cache')
-
-  // Restore overlay states and audio mappings
+  // Restore overlay states and audio mappings (non-blocking)
   chrome.storage.local.get(['rainEnabled', 'starsOverlayEnabled', 'nightOverlayEnabled', 'moneyRainEnabled', 'fireworksEnabled', 'snowEnabled', 'emojiRainEnabled', 'selectedEmoji', 'positionLocked', 'audioRoomMappings'], (result) => {
     if (result.audioRoomMappings) {
       audioRoomMappings = result.audioRoomMappings
-      console.log('MyVMK Genie: Loaded', Object.keys(audioRoomMappings).length, 'audio-room mappings')
     }
     if (result.selectedEmoji) {
       selectedEmoji = result.selectedEmoji
     }
-    if (result.rainEnabled) {
-      isRainEnabled = false // Set to false so toggle will enable it
-      toggleRainOverlay()
-    }
-    if (result.starsOverlayEnabled) {
-      isStarsOverlayEnabled = false // Set to false so toggle will enable it
-      toggleStarsOverlay()
-    }
-    if (result.nightOverlayEnabled) {
-      isNightOverlayEnabled = false // Set to false so toggle will enable it
-      toggleNightOverlay()
-    }
-    if (result.moneyRainEnabled) {
-      isMoneyRainEnabled = false // Set to false so toggle will enable it
-      toggleMoneyRain()
-    }
-    if (result.fireworksEnabled) {
-      isFireworksEnabled = false // Set to false so toggle will enable it
-      toggleFireworks()
-    }
-    if (result.snowEnabled) {
-      isSnowEnabled = false // Set to false so toggle will enable it
-      toggleSnowOverlay()
-    }
-    if (result.emojiRainEnabled) {
-      isEmojiRainEnabled = false // Set to false so toggle will enable it
-      toggleEmojiRain()
-    }
     if (result.positionLocked) {
       isPositionLocked = true
     }
+    // Defer overlay restoration to avoid blocking
+    setTimeout(() => {
+      if (result.rainEnabled) {
+        isRainEnabled = false
+        toggleRainOverlay()
+      }
+      if (result.starsOverlayEnabled) {
+        isStarsOverlayEnabled = false
+        toggleStarsOverlay()
+      }
+      if (result.nightOverlayEnabled) {
+        isNightOverlayEnabled = false
+        toggleNightOverlay()
+      }
+      if (result.moneyRainEnabled) {
+        isMoneyRainEnabled = false
+        toggleMoneyRain()
+      }
+      if (result.fireworksEnabled) {
+        isFireworksEnabled = false
+        toggleFireworks()
+      }
+      if (result.snowEnabled) {
+        isSnowEnabled = false
+        toggleSnowOverlay()
+      }
+      if (result.emojiRainEnabled) {
+        isEmojiRainEnabled = false
+        toggleEmojiRain()
+      }
+    }, 100)
   })
 
   // Listen for audio detection events from page context via postMessage (crosses isolated world boundary)
   window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'vmkgenie-audio-detected' && event.data.url) {
       detectedAudioUrl = event.data.url
-      console.log('MyVMK Genie: Detected audio URL:', detectedAudioUrl)
-
-      // Extract folder name for room matching (e.g., "vmk_snd_pirates_lobby_II" from the URL)
-      const folderMatch = detectedAudioUrl.match(/room_sound\/([^\/]+)\//)
-      if (folderMatch) {
-        console.log('MyVMK Genie: Audio folder:', folderMatch[1])
-      }
 
       // Check if this audio matches a known room
       const matchedRoom = findRoomByAudio(detectedAudioUrl)
@@ -5755,30 +6759,56 @@ async function init() {
         currentRoomId = matchedRoom.id
         currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
         currentLand = matchedRoom.land
-        console.log('MyVMK Genie: Auto-detected room from audio:', currentRoom, currentLand ? `(${currentLand})` : '')
         updateRoomInfoDisplay()
+        checkGhostEffectRoom()
+        checkTinkerbellRoom()
+        checkGenieEvents()
       }
+    }
+
+    // Detect HM LOBBY audio playing (HML-*) - resets game state
+    if (event.data && event.data.type === 'vmkgenie-hm-lobby-audio') {
+      isInHMGame = false
+      currentRoomId = HAUNTED_MANSION_LOBBY_ID
+      currentRoom = ROOM_MAP[HAUNTED_MANSION_LOBBY_ID] || 'Haunted Mansion Lobby'
+      currentLand = 'New Orleans Square'
+      updateRoomInfoDisplay()
+      checkGhostEffectRoom()
+      checkTinkerbellRoom()
+      checkGenieEvents()
+    }
+
+    // Detect HM GAME entered via stage data fetch
+    if (event.data && event.data.type === 'vmkgenie-hm-game-entered') {
+      isInHMGame = true
+      currentRoomId = HAUNTED_MANSION_GAME_ID
+      currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
+      currentLand = 'New Orleans Square'
+      updateRoomInfoDisplay()
+      checkGhostEffectRoom()
+      checkTinkerbellRoom()
+      checkGenieEvents()
     }
   })
 
-  loadPhrases()
-  createToolbar()
-  startRoomWatcher()
-  startQueueMonitor()
+  // Defer non-critical initialization
+  setTimeout(() => {
+    startRoomWatcher()
+    startGenieEventSystem()
+    if (INTERNAL_MODE) {
+      startQueueMonitor()
+    }
+  }, 500)
 
   // Handle resize to update overlay positions to match game canvas
   window.addEventListener('resize', () => {
     updateOverlayBounds()
   })
 
-  // Run debug after page settles to see what data is available
-  setTimeout(() => {
-    console.log('MyVMK Genie: Running page analysis...')
-    runDebug()
-  }, 3000)
-
-  // Reload phrases periodically
-  setInterval(loadPhrases, 30000)
+  // Debug only in internal mode
+  if (INTERNAL_MODE) {
+    setTimeout(() => runDebug(), 3000)
+  }
 }
 
 // Wait for page to load

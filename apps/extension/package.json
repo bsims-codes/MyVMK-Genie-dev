@@ -4,9 +4,8 @@
   "description": "MyVMK Genie Chrome Extension",
   "private": true,
   "scripts": {
-    "dev": "node scripts/build.js dev",
-    "watch": "node scripts/watch.js",
-    "release": "node scripts/publish.js",
+    "dev": "node scripts/build.js",
+    "build": "node scripts/build.js release",
     "package": "node scripts/package.js"
   },
   "devDependencies": {
