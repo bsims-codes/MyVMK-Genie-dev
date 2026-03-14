@@ -276,6 +276,15 @@ const FANTASYLAND_COURTYARD_ID = 99
 const TINKERBELL_IMAGE = 'Tinkerbelle_Only.gif'
 const TINKERBELL_GLOW_COLOR = '255, 215, 0' // Gold sparkle
 
+// Butterfly Effect for Snow White Forest
+const SNOW_WHITE_FOREST_ID = 37
+const BUTTERFLY_IMAGES = ['Butterfly1.gif', 'Butterfly2.gif', 'Butterfly3.gif']
+let butterflyElements = []
+let butterflyData = []
+let isButterflyActive = false
+let butterflyAnimationId = null
+let butterflySpawnTimer = null
+
 // Genie Events System - remote scheduled events via JSONBin.io
 // >>> EDIT THESE TWO VALUES <<<
 const GENIE_EVENTS_BIN_ID = '69b4de67aa77b81da9e28bfe'
@@ -920,6 +929,7 @@ function monitorNetworkForRooms() {
           updateRoomInfoDisplay()
           checkGhostEffectRoom()
           checkTinkerbellRoom()
+          checkButterflyRoom()
           checkGenieEvents()
         }
 
@@ -967,6 +977,7 @@ function monitorNetworkForRooms() {
             updateRoomInfoDisplay()
             checkGhostEffectRoom() // Check if ghost effect should change
             checkTinkerbellRoom()
+          checkButterflyRoom()
             checkGenieEvents()
           }
         }
@@ -3176,6 +3187,212 @@ function checkTinkerbellRoom() {
   // Remove Tinkerbell in any other room
   if (isTinkerbellActive) {
     stopTinkerbellEffect()
+  }
+}
+
+// Butterfly Effect for Snow White Hide 'n Seek Forest
+function createButterfly() {
+  const bounds = getGameCanvasBounds()
+
+  // Random butterfly image
+  const randomImage = BUTTERFLY_IMAGES[Math.floor(Math.random() * BUTTERFLY_IMAGES.length)]
+  const imageUrl = chrome.runtime.getURL(randomImage)
+
+  // Create butterfly element
+  const butterfly = document.createElement('img')
+  butterfly.src = imageUrl
+  butterfly.className = 'vmkpal-butterfly'
+
+  // Random starting position (from edges)
+  const side = Math.floor(Math.random() * 4)
+  let startX, startY
+  switch (side) {
+    case 0: // Top
+      startX = bounds.left + Math.random() * bounds.width
+      startY = bounds.top - 30
+      break
+    case 1: // Right
+      startX = bounds.left + bounds.width + 30
+      startY = bounds.top + Math.random() * bounds.height
+      break
+    case 2: // Bottom
+      startX = bounds.left + Math.random() * bounds.width
+      startY = bounds.top + bounds.height + 30
+      break
+    case 3: // Left
+      startX = bounds.left - 30
+      startY = bounds.top + Math.random() * bounds.height
+      break
+  }
+
+  butterfly.style.cssText = `
+    position: fixed;
+    width: 32px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483640;
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5));
+    transition: opacity 1.5s ease-in-out;
+    left: ${startX}px;
+    top: ${startY}px;
+  `
+
+  document.body.appendChild(butterfly)
+
+  const data = {
+    element: butterfly,
+    x: startX,
+    y: startY,
+    targetX: bounds.left + 50 + Math.random() * (bounds.width - 100),
+    targetY: bounds.top + 50 + Math.random() * (bounds.height - 100),
+    phase: Math.random() * Math.PI * 2,
+    speed: 1.5 + Math.random() * 1,
+    wobbleAmount: 2 + Math.random() * 2,
+    lastTargetChange: performance.now(),
+    targetChangeInterval: 3000 + Math.random() * 4000,
+    lifespan: 15000 + Math.random() * 20000, // 15-35 seconds
+    birthTime: performance.now(),
+    fadeOutStarted: false
+  }
+
+  butterflyElements.push(butterfly)
+  butterflyData.push(data)
+
+  // Fade in
+  requestAnimationFrame(() => {
+    butterfly.style.opacity = '1'
+  })
+}
+
+function updateButterflies() {
+  if (!isButterflyActive) return
+
+  const bounds = getGameCanvasBounds()
+  const now = performance.now()
+
+  for (let i = butterflyData.length - 1; i >= 0; i--) {
+    const data = butterflyData[i]
+    const butterfly = data.element
+
+    // Check if butterfly should start fading out
+    if (!data.fadeOutStarted && now - data.birthTime > data.lifespan) {
+      data.fadeOutStarted = true
+      butterfly.style.opacity = '0'
+
+      // Remove after fade out
+      setTimeout(() => {
+        const idx = butterflyElements.indexOf(butterfly)
+        if (idx > -1) {
+          butterflyElements.splice(idx, 1)
+          butterflyData.splice(idx, 1)
+        }
+        butterfly.remove()
+      }, 1500)
+      continue
+    }
+
+    // Change target position periodically
+    if (now - data.lastTargetChange > data.targetChangeInterval) {
+      data.targetX = bounds.left + 50 + Math.random() * (bounds.width - 100)
+      data.targetY = bounds.top + 50 + Math.random() * (bounds.height - 100)
+      data.targetChangeInterval = 3000 + Math.random() * 4000
+      data.lastTargetChange = now
+    }
+
+    // Move toward target with wobble
+    const dx = data.targetX - data.x
+    const dy = data.targetY - data.y
+
+    data.phase += 0.08
+    const wobbleX = Math.sin(data.phase) * data.wobbleAmount
+    const wobbleY = Math.cos(data.phase * 1.3) * data.wobbleAmount
+
+    data.x += dx * 0.012 + wobbleX * 0.3
+    data.y += dy * 0.012 + wobbleY * 0.3
+
+    // Keep within bounds
+    data.x = Math.max(bounds.left + 10, Math.min(data.x, bounds.left + bounds.width - 40))
+    data.y = Math.max(bounds.top + 10, Math.min(data.y, bounds.top + bounds.height - 40))
+
+    // Apply position
+    butterfly.style.left = data.x + 'px'
+    butterfly.style.top = data.y + 'px'
+  }
+
+  butterflyAnimationId = requestAnimationFrame(updateButterflies)
+}
+
+function spawnButterflyPeriodically() {
+  if (!isButterflyActive) return
+
+  // Only spawn if we have less than 2 butterflies
+  if (butterflyElements.length < 2) {
+    createButterfly()
+  }
+
+  // Schedule next spawn check (5-12 seconds)
+  butterflySpawnTimer = setTimeout(spawnButterflyPeriodically, 5000 + Math.random() * 7000)
+}
+
+function startButterflyEffect() {
+  if (isButterflyActive) return
+
+  isButterflyActive = true
+
+  // Start with 1 butterfly
+  createButterfly()
+
+  // Maybe add a second one after a short delay
+  setTimeout(() => {
+    if (isButterflyActive && butterflyElements.length < 2 && Math.random() > 0.5) {
+      createButterfly()
+    }
+  }, 2000)
+
+  updateButterflies()
+  spawnButterflyPeriodically()
+}
+
+function stopButterflyEffect() {
+  if (!isButterflyActive) return
+
+  isButterflyActive = false
+
+  if (butterflyAnimationId) {
+    cancelAnimationFrame(butterflyAnimationId)
+    butterflyAnimationId = null
+  }
+
+  if (butterflySpawnTimer) {
+    clearTimeout(butterflySpawnTimer)
+    butterflySpawnTimer = null
+  }
+
+  // Fade out all butterflies
+  butterflyElements.forEach(butterfly => {
+    butterfly.style.opacity = '0'
+  })
+
+  setTimeout(() => {
+    butterflyElements.forEach(butterfly => butterfly.remove())
+    butterflyElements = []
+    butterflyData = []
+  }, 1500)
+}
+
+function checkButterflyRoom() {
+  // Show butterflies only in Snow White Forest
+  if (currentRoomId === SNOW_WHITE_FOREST_ID) {
+    if (!isButterflyActive) {
+      startButterflyEffect()
+    }
+    return
+  }
+
+  // Remove butterflies in any other room
+  if (isButterflyActive) {
+    stopButterflyEffect()
   }
 }
 
@@ -6681,6 +6898,7 @@ function updateRoomInfoDisplay() {
   // Check for room-specific effects (like Haunted Mansion ghosts, Tinkerbell)
   checkGhostEffectRoom()
   checkTinkerbellRoom()
+          checkButterflyRoom()
   checkGenieEvents()
 }
 
@@ -6928,6 +7146,7 @@ async function init() {
         updateRoomInfoDisplay()
         checkGhostEffectRoom()
         checkTinkerbellRoom()
+          checkButterflyRoom()
         checkGenieEvents()
       }
     }
@@ -6941,6 +7160,7 @@ async function init() {
       updateRoomInfoDisplay()
       checkGhostEffectRoom()
       checkTinkerbellRoom()
+          checkButterflyRoom()
       checkGenieEvents()
     }
 
@@ -6953,6 +7173,7 @@ async function init() {
       updateRoomInfoDisplay()
       checkGhostEffectRoom()
       checkTinkerbellRoom()
+          checkButterflyRoom()
       checkGenieEvents()
     }
   })

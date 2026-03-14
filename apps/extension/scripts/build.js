@@ -57,7 +57,10 @@ const staticFiles = [
   'beadie-genie-1.png',
   'beadie-genie-2.png',
   'raingif.gif',
-  'Tinkerbelle_Only.gif'
+  'Tinkerbelle_Only.gif',
+  'Butterfly1.gif',
+  'Butterfly2.gif',
+  'Butterfly3.gif'
 ];
 
 // Process JavaScript files
