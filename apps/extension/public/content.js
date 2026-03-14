@@ -1364,7 +1364,8 @@ function sendPhraseToChat(phrase) {
 }
 
 // Show notification overlay
-function showNotification(text, type = 'info', duration = 2000) {
+// If isHtml is true, content is treated as HTML, otherwise as text
+function showNotification(text, type = 'info', duration = 2000, isHtml = false) {
   // Remove existing notification
   const existing = document.getElementById('vmkpal-notification')
   if (existing) existing.remove()
@@ -1383,11 +1384,18 @@ function showNotification(text, type = 'info', duration = 2000) {
     z-index: 2147483647;
     animation: vmkpal-slide-in 0.3s ease;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
     ${type === 'success' ? 'background: linear-gradient(135deg, #10b981, #059669); color: white;' :
       type === 'error' ? 'background: linear-gradient(135deg, #ef4444, #dc2626); color: white;' :
       'background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;'}
   `
-  notification.textContent = text
+  if (isHtml) {
+    notification.innerHTML = text
+  } else {
+    notification.textContent = text
+  }
 
   // Add animation keyframes if not present
   if (!document.getElementById('vmkpal-styles')) {
@@ -3559,11 +3567,12 @@ function checkGenieEvents() {
     if (timeUntilStart > 0 && timeUntilStart <= 60 * 1000 && !notifiedUpcomingEvents.has(event.id)) {
       notifiedUpcomingEvents.add(event.id)
 
+      const beeIconUrl = chrome.runtime.getURL('bee-static.png')
       const message = event.roomName
-        ? `🧞 Event starting shortly in ${event.roomName}!`
-        : '🧞 Event starting shortly!'
+        ? `<img src="${beeIconUrl}" style="width: 20px; height: 20px;">Event starting shortly in ${event.roomName}!`
+        : `<img src="${beeIconUrl}" style="width: 20px; height: 20px;">Event starting shortly!`
 
-      showNotification(message, 'info', 8000)
+      showNotification(message, 'info', 8000, true)
     }
 
     // Clean up old notifications (events that have already ended)
