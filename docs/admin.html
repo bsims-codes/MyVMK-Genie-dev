@@ -5,183 +5,512 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MyVMK Genie - Event Admin</title>
   <style>
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      color: white;
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+      color: #e2e8f0;
       min-height: 100vh;
-      margin: 0;
+      padding-bottom: 80px;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.15));
+      border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+      padding: 20px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+    }
+    .header h1 {
+      font-size: 24px;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 5px;
+    }
+    .header-subtitle {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
       padding: 20px;
     }
-    .container { max-width: 900px; margin: 0 auto; }
-    h1 { text-align: center; color: #ec4899; margin-bottom: 30px; }
-    h2 { color: #8b5cf6; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 30px; }
 
-    .config-banner {
-      background: rgba(239, 68, 68, 0.2);
-      border: 1px solid #ef4444;
-      border-radius: 8px;
-      padding: 15px;
-      margin-bottom: 20px;
+    /* Connection Card */
+    .connection-card {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 24px;
+      transition: all 0.3s ease;
     }
-    .config-banner.connected {
-      background: rgba(16, 185, 129, 0.2);
-      border-color: #10b981;
+    .connection-card.connected {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+      border-color: rgba(16, 185, 129, 0.3);
     }
-    .config-banner input {
-      margin-top: 10px;
+    .connection-card h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+    .connection-card.connected h3 { color: #10b981; }
+    .connection-card:not(.connected) h3 { color: #ef4444; }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
     }
 
+    /* Tabs */
     .tabs {
       display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+      background: rgba(0,0,0,0.2);
+      padding: 6px;
+      border-radius: 12px;
     }
     .tab {
-      padding: 10px 20px;
-      background: rgba(255,255,255,0.1);
+      flex: 1;
+      padding: 12px 20px;
+      background: transparent;
       border: none;
       border-radius: 8px;
-      color: white;
+      color: rgba(255,255,255,0.6);
       cursor: pointer;
       font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s ease;
     }
-    .tab.active { background: #8b5cf6; }
+    .tab:hover { color: white; background: rgba(255,255,255,0.05); }
+    .tab.active {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+      box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+    }
     .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
-    .form-group { margin-bottom: 15px; }
+    /* Cards */
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: white;
+    }
+    .card-subtitle {
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 4px;
+    }
+
+    /* Form Styles */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .form-grid.full { grid-template-columns: 1fr; }
+    .form-group { margin-bottom: 16px; }
+    .form-group.span-2 { grid-column: span 2; }
+
     label {
       display: block;
-      margin-bottom: 5px;
-      color: rgba(255,255,255,0.8);
-      font-size: 14px;
+      margin-bottom: 6px;
+      color: rgba(255,255,255,0.7);
+      font-size: 13px;
+      font-weight: 500;
     }
+
     input, select, textarea {
       width: 100%;
-      padding: 10px;
-      border: 1px solid #333;
-      border-radius: 6px;
-      background: rgba(255,255,255,0.1);
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.3);
       color: white;
       font-size: 14px;
+      transition: all 0.2s ease;
     }
     input:focus, select:focus, textarea:focus {
       outline: none;
       border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
     }
-    select option { background: #1a1a2e; }
+    input::placeholder { color: rgba(255,255,255,0.3); }
+    select { cursor: pointer; }
+    select option { background: #1a1a2e; padding: 10px; }
 
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
+    /* Checkbox styling */
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .checkbox-label {
+      font-size: 14px;
+      color: white;
+    }
+    .checkbox-hint {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      margin-left: auto;
     }
 
+    /* Buttons */
     button {
       padding: 12px 24px;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       cursor: pointer;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
+      transition: all 0.2s ease;
     }
-    .btn-primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
-    .btn-secondary { background: rgba(255,255,255,0.1); color: white; }
-    .btn-danger { background: #ef4444; color: white; }
-    .btn-success { background: #10b981; color: white; }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
 
-    .event-list {
-      background: rgba(255,255,255,0.05);
-      border-radius: 8px;
-      padding: 15px;
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+      box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4); }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+
+    .btn-success {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+
+    .btn-edit {
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    .btn-edit:hover { background: rgba(99, 102, 241, 0.3); }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
       margin-top: 20px;
     }
+
+    /* Event List */
+    .event-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .event-list-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+    }
+    .event-count {
+      background: rgba(139, 92, 246, 0.2);
+      color: #a78bfa;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
     .event-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px;
-      background: rgba(255,255,255,0.05);
-      border-radius: 6px;
-      margin-bottom: 8px;
-      border-left: 3px solid #ec4899;
+      padding: 16px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+      margin-bottom: 10px;
+      border-left: 4px solid #ec4899;
+      transition: all 0.2s ease;
     }
+    .event-item:hover { background: rgba(0,0,0,0.3); }
     .event-item.community { border-left-color: #10b981; }
-    .event-item.disabled { opacity: 0.5; }
-    .event-info h4 { margin: 0 0 5px 0; font-size: 14px; }
-    .event-info p { margin: 0; font-size: 12px; color: rgba(255,255,255,0.6); }
-    .event-actions { display: flex; gap: 8px; }
-    .event-actions button { padding: 6px 12px; font-size: 12px; }
+    .event-item.disabled { opacity: 0.4; }
+    .event-item.past { border-left-color: #6b7280; }
 
+    .event-info { flex: 1; }
+    .event-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .event-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .event-badge.upcoming {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+    }
+    .event-badge.past {
+      background: rgba(107, 114, 128, 0.2);
+      color: #9ca3af;
+    }
+    .event-meta {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .event-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .event-effects {
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    .event-audio {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #8b5cf6;
+      background: rgba(139, 92, 246, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .event-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .event-actions button {
+      padding: 8px 14px;
+      font-size: 12px;
+    }
+
+    .no-events {
+      text-align: center;
+      padding: 40px;
+      color: rgba(255,255,255,0.4);
+    }
+    .no-events-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    /* Status Bar */
     .status-bar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: #1a1a2e;
-      border-top: 1px solid #333;
-      padding: 10px 20px;
+      background: rgba(15, 15, 26, 0.95);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding: 16px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      backdrop-filter: blur(10px);
+      z-index: 100;
     }
-    .status-text { font-size: 13px; color: rgba(255,255,255,0.7); }
+    .status-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-text {
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+    }
     .status-text.error { color: #ef4444; }
     .status-text.success { color: #10b981; }
-
-    .room-select { max-height: 200px; }
-
-    .instructions {
-      background: rgba(139, 92, 246, 0.2);
-      border: 1px solid #8b5cf6;
-      border-radius: 8px;
-      padding: 15px;
-      margin-bottom: 20px;
-      font-size: 13px;
+    .unsaved-indicator {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.1);
+      padding: 6px 12px;
+      border-radius: 20px;
     }
-    .instructions ol { margin: 10px 0 0 0; padding-left: 20px; }
-    .instructions li { margin-bottom: 5px; }
-    .instructions code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+    .unsaved-indicator.show { display: flex; }
 
-    body { padding-bottom: 70px; }
+    /* Instructions */
+    .instructions {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05));
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .instructions summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: #a78bfa;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .instructions summary::-webkit-details-marker { display: none; }
+    .instructions[open] summary { margin-bottom: 12px; }
+    .instructions ol {
+      margin: 0;
+      padding-left: 20px;
+      color: rgba(255,255,255,0.7);
+    }
+    .instructions li { margin-bottom: 6px; }
+    .instructions code {
+      background: rgba(0,0,0,0.3);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #ec4899;
+    }
+    .instructions a { color: #8b5cf6; }
+
+    /* Connection form */
+    .connection-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .connection-form input {
+      margin: 0;
+    }
+
+    /* Settings */
+    .settings-section {
+      margin-bottom: 30px;
+    }
+    .settings-section h3 {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.span-2 { grid-column: span 1; }
+      .connection-form { grid-template-columns: 1fr; }
+      .event-item { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .event-actions { width: 100%; justify-content: flex-end; }
+      .tabs { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
+  <div class="header">
+    <h1>MyVMK Genie</h1>
+    <div class="header-subtitle">Event Administration Panel</div>
+  </div>
+
   <div class="container">
-    <h1>MyVMK Genie - Event Admin</h1>
-
-    <!-- Config Banner -->
-    <div id="config-banner" class="config-banner">
-      <strong>Setup Required</strong>
-      <p style="margin: 10px 0; font-size: 13px;">Enter your JSONBin.io credentials to enable live event scheduling.</p>
-      <div class="row">
-        <div class="form-group" style="margin: 0;">
-          <input type="text" id="bin-id" placeholder="Bin ID (e.g., 67890abc...)">
-        </div>
-        <div class="form-group" style="margin: 0;">
-          <input type="password" id="api-key" placeholder="API Key (Master Key)">
-        </div>
-      </div>
-      <button class="btn-primary" onclick="saveConfig()" style="margin-top: 10px;">Connect</button>
-      <p style="margin: 10px 0 0 0; font-size: 11px; color: rgba(255,255,255,0.5);">
-        Get these from <a href="https://jsonbin.io" target="_blank" style="color: #8b5cf6;">jsonbin.io</a> (free account)
+    <!-- Connection Card -->
+    <div id="config-banner" class="connection-card">
+      <h3><span class="status-dot"></span> Not Connected</h3>
+      <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 16px;">
+        Connect to JSONBin.io to enable live event scheduling
       </p>
+      <div class="connection-form">
+        <div>
+          <label>Bin ID</label>
+          <input type="text" id="bin-id" placeholder="e.g., 67890abc...">
+        </div>
+        <div>
+          <label>Master Key</label>
+          <input type="password" id="api-key" placeholder="$2a$10$...">
+        </div>
+        <button class="btn-primary" onclick="saveConfig()">Connect</button>
+      </div>
     </div>
 
-    <div class="instructions">
-      <strong>First-time setup:</strong>
+    <!-- Instructions -->
+    <details class="instructions">
+      <summary>First-time setup instructions</summary>
       <ol>
-        <li>Go to <a href="https://jsonbin.io" target="_blank" style="color: #8b5cf6;">jsonbin.io</a> and create a free account</li>
-        <li>Click "Create a Bin" and paste this: <code>{"version":1,"genieEvents":[],"communityEvents":[]}</code></li>
-        <li>Copy the Bin ID from the URL (after /b/)</li>
-        <li>Go to API Keys, copy your Master Key</li>
-        <li>Paste both above and click Connect</li>
+        <li>Go to <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> and create a free account</li>
+        <li>Click "Create a Bin" and paste: <code>{"version":1,"genieEvents":[],"communityEvents":[]}</code></li>
+        <li>Copy the Bin ID from the URL (the part after /b/)</li>
+        <li>Go to API Keys section and copy your Master Key</li>
+        <li>Paste both values above and click Connect</li>
       </ol>
-    </div>
+    </details>
 
+    <!-- Tabs -->
     <div class="tabs">
       <button class="tab active" onclick="showTab('genie')">Genie Events</button>
       <button class="tab" onclick="showTab('community')">Community Events</button>
@@ -190,176 +519,230 @@
 
     <!-- Genie Events Tab -->
     <div id="tab-genie" class="tab-content active">
-      <h2>Add Genie Event</h2>
-      <p style="color: rgba(255,255,255,0.6); font-size: 13px;">Genie events can trigger overlays (fireworks) and play audio.</p>
-
-      <form id="genie-form">
-        <div class="form-group">
-          <label>Event Title *</label>
-          <input type="text" id="genie-title" required placeholder="e.g., Fireworks Spectacular">
-        </div>
-
-        <div class="form-group">
-          <label>Description</label>
-          <input type="text" id="genie-desc" placeholder="e.g., A magical fireworks display!">
-        </div>
-
-        <div class="row">
-          <div class="form-group">
-            <label>Date *</label>
-            <input type="date" id="genie-date" required>
-          </div>
-          <div class="form-group">
-            <label>Time (ET) *</label>
-            <input type="time" id="genie-time" required>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Create Genie Event</div>
+            <div class="card-subtitle">Events with visual effects and audio</div>
           </div>
         </div>
 
-        <div class="row">
-          <div class="form-group">
-            <label>Duration (minutes)</label>
-            <input type="number" id="genie-duration" value="5" min="1" max="60">
+        <form id="genie-form">
+          <div class="form-grid">
+            <div class="form-group span-2">
+              <label>Event Title *</label>
+              <input type="text" id="genie-title" required placeholder="e.g., Fireworks Spectacular">
+            </div>
+
+            <div class="form-group span-2">
+              <label>Description</label>
+              <input type="text" id="genie-desc" placeholder="e.g., A magical fireworks display!">
+            </div>
+
+            <div class="form-group">
+              <label>Date *</label>
+              <input type="date" id="genie-date" required>
+            </div>
+            <div class="form-group">
+              <label>Time (ET) *</label>
+              <input type="time" id="genie-time" required>
+            </div>
+
+            <div class="form-group">
+              <label>Duration (minutes)</label>
+              <input type="number" id="genie-duration" value="5" min="1" max="60">
+            </div>
+            <div class="form-group">
+              <label>Room Location</label>
+              <select id="genie-room">
+                <option value="">Any Room (global event)</option>
+              </select>
+            </div>
+
+            <div class="form-group span-2">
+              <label>Visual Effects (Ctrl/Cmd + click for multiple)</label>
+              <select id="genie-effect" multiple style="height: 120px;">
+                <option value="fireworks">Fireworks</option>
+                <option value="rain">Rain</option>
+                <option value="snow">Snow</option>
+                <option value="money">Money Rain</option>
+                <option value="emoji">Emoji Rain</option>
+                <option value="night">Night Mode</option>
+              </select>
+            </div>
+
+            <div class="form-group span-2">
+              <label>Audio URL (YouTube or direct link)</label>
+              <input type="url" id="genie-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-group">
+                <input type="checkbox" id="genie-tinkerbell">
+                <span class="checkbox-label">Include Tinkerbell</span>
+                <span class="checkbox-hint">Flies around during event</span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-group">
+                <input type="checkbox" id="genie-enabled" checked>
+                <span class="checkbox-label">Event Enabled</span>
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Effects (hold Ctrl/Cmd to select multiple)</label>
-            <select id="genie-effect" multiple style="height: 140px;">
-              <option value="fireworks">🎆 Fireworks</option>
-              <option value="rain">🌧️ Rain</option>
-              <option value="snow">❄️ Snow</option>
-              <option value="money">💵 Money Rain</option>
-              <option value="emoji">🎉 Emoji Rain</option>
-              <option value="night">🌙 Night</option>
-            </select>
+
+          <input type="hidden" id="genie-edit-index" value="-1">
+          <div class="btn-group">
+            <button type="submit" class="btn-primary" id="genie-submit-btn">Add Event</button>
+            <button type="button" class="btn-secondary" id="genie-cancel-btn" onclick="cancelGenieEdit()" style="display: none;">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="event-list-header">
+          <div class="event-list-title">Scheduled Events</div>
+          <div class="event-count" id="genie-count">0 events</div>
+        </div>
+        <div id="genie-events-list">
+          <div class="no-events">
+            <div class="no-events-icon">📅</div>
+            <div>No events scheduled yet</div>
           </div>
         </div>
-
-        <div class="form-group">
-          <label>Room</label>
-          <select id="genie-room">
-            <option value="">Any Room (no restriction)</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Audio URL (YouTube link or direct audio URL)</label>
-          <input type="url" id="genie-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
-        </div>
-
-        <div class="form-group">
-          <label><input type="checkbox" id="genie-tinkerbell"> Include Tinkerbell</label>
-          <span style="font-size: 11px; color: rgba(255,255,255,0.5); margin-left: 5px;">Tinkerbell will fly around during the event</span>
-        </div>
-
-        <div class="form-group">
-          <label><input type="checkbox" id="genie-enabled" checked> Enabled</label>
-        </div>
-
-        <input type="hidden" id="genie-edit-index" value="-1">
-        <button type="submit" class="btn-primary" id="genie-submit-btn">Add Genie Event</button>
-        <button type="button" class="btn-secondary" id="genie-cancel-btn" onclick="cancelGenieEdit()" style="display: none; margin-left: 10px;">Cancel</button>
-      </form>
-
-      <div class="event-list">
-        <h3>Scheduled Genie Events</h3>
-        <div id="genie-events-list"><p style="color: rgba(255,255,255,0.5);">No events yet</p></div>
       </div>
     </div>
 
     <!-- Community Events Tab -->
     <div id="tab-community" class="tab-content">
-      <h2>Add Community Event</h2>
-      <p style="color: rgba(255,255,255,0.6); font-size: 13px;">Community events can play audio only (no overlay effects).</p>
-
-      <form id="community-form">
-        <div class="form-group">
-          <label>Event Title *</label>
-          <input type="text" id="community-title" required placeholder="e.g., Dance Party">
-        </div>
-
-        <div class="form-group">
-          <label>Description</label>
-          <input type="text" id="community-desc" placeholder="e.g., Join us for music and fun!">
-        </div>
-
-        <div class="form-group">
-          <label>Submitted By</label>
-          <input type="text" id="community-submitter" placeholder="Player name">
-        </div>
-
-        <div class="row">
-          <div class="form-group">
-            <label>Date *</label>
-            <input type="date" id="community-date" required>
-          </div>
-          <div class="form-group">
-            <label>Time (ET) *</label>
-            <input type="time" id="community-time" required>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Create Community Event</div>
+            <div class="card-subtitle">Audio-only events for player gatherings</div>
           </div>
         </div>
 
-        <div class="row">
-          <div class="form-group">
-            <label>Duration (minutes)</label>
-            <input type="number" id="community-duration" value="30" min="1" max="120">
+        <form id="community-form">
+          <div class="form-grid">
+            <div class="form-group span-2">
+              <label>Event Title *</label>
+              <input type="text" id="community-title" required placeholder="e.g., Dance Party">
+            </div>
+
+            <div class="form-group span-2">
+              <label>Description</label>
+              <input type="text" id="community-desc" placeholder="e.g., Join us for music and fun!">
+            </div>
+
+            <div class="form-group span-2">
+              <label>Submitted By</label>
+              <input type="text" id="community-submitter" placeholder="Player name">
+            </div>
+
+            <div class="form-group">
+              <label>Date *</label>
+              <input type="date" id="community-date" required>
+            </div>
+            <div class="form-group">
+              <label>Time (ET) *</label>
+              <input type="time" id="community-time" required>
+            </div>
+
+            <div class="form-group">
+              <label>Duration (minutes)</label>
+              <input type="number" id="community-duration" value="30" min="1" max="120">
+            </div>
+            <div class="form-group">
+              <label>Room Location</label>
+              <select id="community-room">
+                <option value="">Any Room</option>
+              </select>
+            </div>
+
+            <div class="form-group span-2">
+              <label>Audio URL (YouTube or direct link)</label>
+              <input type="url" id="community-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
+            </div>
+
+            <div class="form-group span-2">
+              <label class="checkbox-group">
+                <input type="checkbox" id="community-enabled" checked>
+                <span class="checkbox-label">Event Enabled</span>
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Room</label>
-            <select id="community-room">
-              <option value="">Any Room</option>
-            </select>
+
+          <input type="hidden" id="community-edit-index" value="-1">
+          <div class="btn-group">
+            <button type="submit" class="btn-primary" id="community-submit-btn">Add Event</button>
+            <button type="button" class="btn-secondary" id="community-cancel-btn" onclick="cancelCommunityEdit()" style="display: none;">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="event-list-header">
+          <div class="event-list-title">Scheduled Events</div>
+          <div class="event-count" id="community-count">0 events</div>
+        </div>
+        <div id="community-events-list">
+          <div class="no-events">
+            <div class="no-events-icon">🎵</div>
+            <div>No community events scheduled yet</div>
           </div>
         </div>
-
-        <div class="form-group">
-          <label>Audio URL (YouTube link or direct audio URL)</label>
-          <input type="url" id="community-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
-        </div>
-
-        <div class="form-group">
-          <label><input type="checkbox" id="community-enabled" checked> Enabled</label>
-        </div>
-
-        <input type="hidden" id="community-edit-index" value="-1">
-        <button type="submit" class="btn-primary" id="community-submit-btn">Add Community Event</button>
-        <button type="button" class="btn-secondary" id="community-cancel-btn" onclick="cancelCommunityEdit()" style="display: none; margin-left: 10px;">Cancel</button>
-      </form>
-
-      <div class="event-list">
-        <h3>Scheduled Community Events</h3>
-        <div id="community-events-list"><p style="color: rgba(255,255,255,0.5);">No events yet</p></div>
       </div>
     </div>
 
     <!-- Settings Tab -->
     <div id="tab-settings" class="tab-content">
-      <h2>Settings</h2>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">JSONBin Configuration</div>
+        </div>
 
-      <div class="form-group">
-        <label>JSONBin Bin ID</label>
-        <input type="text" id="settings-bin-id" placeholder="Your Bin ID">
-      </div>
+        <div class="settings-section">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Bin ID</label>
+              <input type="text" id="settings-bin-id" placeholder="Your Bin ID">
+            </div>
+            <div class="form-group">
+              <label>Master Key</label>
+              <input type="password" id="settings-api-key" placeholder="Your API Key">
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn-primary" onclick="saveSettingsConfig()">Save Settings</button>
+            <button class="btn-secondary" onclick="testConnection()">Test Connection</button>
+          </div>
+        </div>
 
-      <div class="form-group">
-        <label>JSONBin API Key (Master Key)</label>
-        <input type="password" id="settings-api-key" placeholder="Your API Key">
-      </div>
-
-      <button class="btn-primary" onclick="saveSettingsConfig()">Save Settings</button>
-      <button class="btn-secondary" onclick="testConnection()" style="margin-left: 10px;">Test Connection</button>
-
-      <div style="margin-top: 30px;">
-        <h3>Extension URL</h3>
-        <p style="font-size: 13px; color: rgba(255,255,255,0.6);">Update this URL in your extension's content.js:</p>
-        <code id="extension-url" style="display: block; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; word-break: break-all;">
-          Not configured yet
-        </code>
+        <div class="settings-section" style="margin-top: 30px;">
+          <h3>Extension API Endpoint</h3>
+          <p style="font-size: 13px; color: rgba(255,255,255,0.5); margin-bottom: 10px;">
+            Use this URL in your extension's content.js:
+          </p>
+          <code id="extension-url" style="display: block; background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; word-break: break-all; font-size: 12px; color: #10b981;">
+            Not configured yet
+          </code>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="status-bar">
-    <span id="status-text" class="status-text">Not connected</span>
-    <button class="btn-success" onclick="publishEvents()" id="publish-btn" disabled>Publish Events</button>
+    <div class="status-info">
+      <span id="status-text" class="status-text">Not connected</span>
+      <div id="unsaved-indicator" class="unsaved-indicator">
+        <span>●</span> Unsaved changes
+      </div>
+    </div>
+    <button class="btn-success" onclick="publishEvents()" id="publish-btn" disabled>
+      Publish Events
+    </button>
   </div>
 
   <script>
@@ -386,6 +769,11 @@
       300: "Pixar Pier Entrance", 1104: "Haunted Mansion Lobby", 1105: "Haunted Mansion Game"
     };
 
+    // Effect icons
+    const EFFECT_ICONS = {
+      fireworks: '🎆', rain: '🌧️', snow: '❄️', money: '💵', emoji: '🎉', night: '🌙'
+    };
+
     // State
     let binId = localStorage.getItem('jsonbin_id') || '';
     let apiKey = localStorage.getItem('jsonbin_key') || '';
@@ -396,7 +784,6 @@
     // Initialize
     function init() {
       initRoomSelects();
-
       if (binId && apiKey) {
         document.getElementById('bin-id').value = binId;
         document.getElementById('api-key').value = apiKey;
@@ -415,7 +802,7 @@
         sortedRooms.forEach(([roomId, name]) => {
           const option = document.createElement('option');
           option.value = roomId;
-          option.textContent = `${name} (${roomId})`;
+          option.textContent = name;
           select.appendChild(option);
         });
       });
@@ -434,6 +821,10 @@
       el.className = 'status-text ' + type;
     }
 
+    function updateUnsavedIndicator() {
+      document.getElementById('unsaved-indicator').classList.toggle('show', hasUnsavedChanges);
+    }
+
     function updateExtensionUrl() {
       const url = binId ? `https://api.jsonbin.io/v3/b/${binId}/latest` : 'Not configured yet';
       document.getElementById('extension-url').textContent = url;
@@ -443,64 +834,53 @@
     function saveConfig() {
       binId = document.getElementById('bin-id').value.trim();
       apiKey = document.getElementById('api-key').value.trim();
-
       if (!binId || !apiKey) {
         alert('Please enter both Bin ID and API Key');
         return;
       }
-
       localStorage.setItem('jsonbin_id', binId);
       localStorage.setItem('jsonbin_key', apiKey);
-
       document.getElementById('settings-bin-id').value = binId;
       document.getElementById('settings-api-key').value = apiKey;
       updateExtensionUrl();
-
       connectAndLoad();
     }
 
     function saveSettingsConfig() {
       binId = document.getElementById('settings-bin-id').value.trim();
       apiKey = document.getElementById('settings-api-key').value.trim();
-
       localStorage.setItem('jsonbin_id', binId);
       localStorage.setItem('jsonbin_key', apiKey);
-
       document.getElementById('bin-id').value = binId;
       document.getElementById('api-key').value = apiKey;
       updateExtensionUrl();
-
       alert('Settings saved!');
       connectAndLoad();
     }
 
     async function connectAndLoad() {
       setStatus('Connecting...');
-
       try {
         const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
           headers: { 'X-Master-Key': apiKey }
         });
-
         if (!response.ok) throw new Error('Failed to connect');
-
         const data = await response.json();
         const record = data.record;
-
         genieEvents = record.genieEvents || [];
         communityEvents = record.communityEvents || [];
-
         renderEvents();
 
-        document.getElementById('config-banner').classList.add('connected');
-        document.getElementById('config-banner').innerHTML = `
-          <strong style="color: #10b981;">✓ Connected to JSONBin</strong>
-          <p style="margin: 5px 0 0 0; font-size: 12px;">Events will be published live when you click "Publish Events"</p>
+        const banner = document.getElementById('config-banner');
+        banner.classList.add('connected');
+        banner.innerHTML = `
+          <h3><span class="status-dot"></span> Connected</h3>
+          <p style="color: rgba(255,255,255,0.5); font-size: 13px;">
+            Events sync live when you click "Publish Events"
+          </p>
         `;
-
         document.getElementById('publish-btn').disabled = false;
-        setStatus('Connected - ' + genieEvents.length + ' genie events, ' + communityEvents.length + ' community events', 'success');
-
+        setStatus(`Connected • ${genieEvents.length} genie, ${communityEvents.length} community events`, 'success');
       } catch (err) {
         setStatus('Connection failed: ' + err.message, 'error');
         document.getElementById('publish-btn').disabled = true;
@@ -510,54 +890,38 @@
     async function testConnection() {
       const testBinId = document.getElementById('settings-bin-id').value.trim();
       const testApiKey = document.getElementById('settings-api-key').value.trim();
-
       try {
         const response = await fetch(`https://api.jsonbin.io/v3/b/${testBinId}/latest`, {
           headers: { 'X-Master-Key': testApiKey }
         });
-
-        if (response.ok) {
-          alert('Connection successful!');
-        } else {
-          alert('Connection failed: ' + response.status);
-        }
+        alert(response.ok ? 'Connection successful!' : 'Connection failed: ' + response.status);
       } catch (err) {
         alert('Connection failed: ' + err.message);
       }
     }
 
-    // Publish events
     async function publishEvents() {
       setStatus('Publishing...');
-
       const data = {
         version: 1,
         lastUpdated: new Date().toISOString(),
-        genieEvents: genieEvents,
-        communityEvents: communityEvents
+        genieEvents, communityEvents
       };
-
       try {
         const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Master-Key': apiKey
-          },
+          headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey },
           body: JSON.stringify(data)
         });
-
         if (!response.ok) throw new Error('Failed to publish');
-
         hasUnsavedChanges = false;
-        setStatus('Published successfully! Events are now live.', 'success');
-
+        updateUnsavedIndicator();
+        setStatus('Published successfully!', 'success');
       } catch (err) {
         setStatus('Publish failed: ' + err.message, 'error');
       }
     }
 
-    // Format date for display
     function formatDateTime(isoString) {
       const date = new Date(isoString);
       return date.toLocaleString('en-US', {
@@ -570,120 +934,139 @@
       return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // Effect display names
-    const EFFECT_NAMES = {
-      fireworks: '🎆',
-      rain: '🌧️',
-      snow: '❄️',
-      money: '💵',
-      emoji: '🎉',
-      night: '🌙',
-      tinkerbell: '🧚'
-    };
-
-    // Format effects for display
     function formatEffects(event) {
       const effects = event.effects || (event.effect ? [event.effect] : []);
-      let display = effects.map(e => EFFECT_NAMES[e] || e);
-      if (event.includeTinkerbell) {
-        display.push(EFFECT_NAMES.tinkerbell);
-      }
-      if (display.length === 0) return '';
-      return '• ' + display.join(' ');
+      let icons = effects.map(e => EFFECT_ICONS[e] || e);
+      if (event.includeTinkerbell) icons.push('🧚');
+      return icons.join(' ');
     }
 
-    // Render events
+    function isEventPast(event) {
+      const endTime = new Date(event.startTime).getTime() + (event.durationMinutes || 5) * 60 * 1000;
+      return Date.now() > endTime;
+    }
+
+    // Sort events: newest (by startTime) first
+    function sortEventsByDate(events) {
+      return [...events].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+    }
+
     function renderEvents() {
+      const now = Date.now();
+
+      // Genie events
       const genieList = document.getElementById('genie-events-list');
+      document.getElementById('genie-count').textContent = `${genieEvents.length} event${genieEvents.length !== 1 ? 's' : ''}`;
+
       if (genieEvents.length === 0) {
-        genieList.innerHTML = '<p style="color: rgba(255,255,255,0.5);">No events yet</p>';
+        genieList.innerHTML = `<div class="no-events"><div class="no-events-icon">📅</div><div>No events scheduled yet</div></div>`;
       } else {
-        genieList.innerHTML = genieEvents.map((e, i) => `
-          <div class="event-item ${e.enabled === false ? 'disabled' : ''}">
-            <div class="event-info">
-              <h4>${e.title}</h4>
-              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 5} min • ${e.roomName || 'Any Room'} ${formatEffects(e)}</p>
-              ${e.audioUrl ? '<p style="font-size: 11px; color: #8b5cf6;">🎵 Has audio</p>' : ''}
+        const sorted = sortEventsByDate(genieEvents);
+        genieList.innerHTML = sorted.map((e, sortedIndex) => {
+          const originalIndex = genieEvents.indexOf(e);
+          const past = isEventPast(e);
+          const effects = formatEffects(e);
+          return `
+            <div class="event-item ${e.enabled === false ? 'disabled' : ''} ${past ? 'past' : ''}">
+              <div class="event-info">
+                <div class="event-title">
+                  ${e.title}
+                  <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
+                </div>
+                <div class="event-meta">
+                  <span>📅 ${formatDateTime(e.startTime)}</span>
+                  <span>⏱ ${e.durationMinutes || 5} min</span>
+                  <span>📍 ${e.roomName || 'Any Room'}</span>
+                </div>
+                ${effects ? `<div class="event-effects">${effects}</div>` : ''}
+                ${e.audioUrl ? '<div class="event-audio">🎵 Audio attached</div>' : ''}
+              </div>
+              <div class="event-actions">
+                <button class="btn-edit" onclick="editGenieEvent(${originalIndex})">Edit</button>
+                <button class="btn-secondary" onclick="toggleEvent('genie', ${originalIndex})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
+                <button class="btn-danger" onclick="deleteEvent('genie', ${originalIndex})">Delete</button>
+              </div>
             </div>
-            <div class="event-actions">
-              <button class="btn-primary" onclick="editGenieEvent(${i})" style="background: #6366f1;">Edit</button>
-              <button class="btn-secondary" onclick="toggleEvent('genie', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
-              <button class="btn-danger" onclick="deleteEvent('genie', ${i})">Delete</button>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
 
+      // Community events
       const communityList = document.getElementById('community-events-list');
+      document.getElementById('community-count').textContent = `${communityEvents.length} event${communityEvents.length !== 1 ? 's' : ''}`;
+
       if (communityEvents.length === 0) {
-        communityList.innerHTML = '<p style="color: rgba(255,255,255,0.5);">No events yet</p>';
+        communityList.innerHTML = `<div class="no-events"><div class="no-events-icon">🎵</div><div>No community events scheduled yet</div></div>`;
       } else {
-        communityList.innerHTML = communityEvents.map((e, i) => `
-          <div class="event-item community ${e.enabled === false ? 'disabled' : ''}">
-            <div class="event-info">
-              <h4>${e.title}</h4>
-              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 30} min • ${e.roomName || 'Any Room'} ${e.submittedBy ? '• by ' + e.submittedBy : ''}</p>
-              ${e.audioUrl ? '<p style="font-size: 11px; color: #10b981;">🎵 Has audio</p>' : ''}
+        const sorted = sortEventsByDate(communityEvents);
+        communityList.innerHTML = sorted.map((e, sortedIndex) => {
+          const originalIndex = communityEvents.indexOf(e);
+          const past = isEventPast(e);
+          return `
+            <div class="event-item community ${e.enabled === false ? 'disabled' : ''} ${past ? 'past' : ''}">
+              <div class="event-info">
+                <div class="event-title">
+                  ${e.title}
+                  <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
+                </div>
+                <div class="event-meta">
+                  <span>📅 ${formatDateTime(e.startTime)}</span>
+                  <span>⏱ ${e.durationMinutes || 30} min</span>
+                  <span>📍 ${e.roomName || 'Any Room'}</span>
+                  ${e.submittedBy ? `<span>👤 ${e.submittedBy}</span>` : ''}
+                </div>
+                ${e.audioUrl ? '<div class="event-audio">🎵 Audio attached</div>' : ''}
+              </div>
+              <div class="event-actions">
+                <button class="btn-edit" onclick="editCommunityEvent(${originalIndex})">Edit</button>
+                <button class="btn-secondary" onclick="toggleEvent('community', ${originalIndex})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
+                <button class="btn-danger" onclick="deleteEvent('community', ${originalIndex})">Delete</button>
+              </div>
             </div>
-            <div class="event-actions">
-              <button class="btn-primary" onclick="editCommunityEvent(${i})" style="background: #6366f1;">Edit</button>
-              <button class="btn-secondary" onclick="toggleEvent('community', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
-              <button class="btn-danger" onclick="deleteEvent('community', ${i})">Delete</button>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
     }
 
-    // Helper to get selected effects from multi-select
     function getSelectedEffects() {
       const select = document.getElementById('genie-effect');
       return Array.from(select.selectedOptions).map(opt => opt.value);
     }
 
-    // Helper to set selected effects in multi-select
     function setSelectedEffects(effects) {
       const select = document.getElementById('genie-effect');
-      const effectsArray = Array.isArray(effects) ? effects : (effects ? [effects] : []);
-      Array.from(select.options).forEach(opt => {
-        opt.selected = effectsArray.includes(opt.value);
-      });
+      const arr = Array.isArray(effects) ? effects : (effects ? [effects] : []);
+      Array.from(select.options).forEach(opt => opt.selected = arr.includes(opt.value));
     }
 
-    // Edit genie event - populate form
     function editGenieEvent(index) {
       const event = genieEvents[index];
       const startDate = new Date(event.startTime);
-
       document.getElementById('genie-title').value = event.title || '';
       document.getElementById('genie-desc').value = event.description || '';
       document.getElementById('genie-date').value = startDate.toISOString().split('T')[0];
       document.getElementById('genie-time').value = startDate.toTimeString().slice(0, 5);
       document.getElementById('genie-duration').value = event.durationMinutes || 5;
-      setSelectedEffects(event.effects || event.effect); // Support both old and new format
+      setSelectedEffects(event.effects || event.effect);
       document.getElementById('genie-room').value = event.roomId || '';
       document.getElementById('genie-audio').value = event.audioUrl || '';
       document.getElementById('genie-tinkerbell').checked = event.includeTinkerbell === true;
       document.getElementById('genie-enabled').checked = event.enabled !== false;
-
       document.getElementById('genie-edit-index').value = index;
       document.getElementById('genie-submit-btn').textContent = 'Update Event';
       document.getElementById('genie-cancel-btn').style.display = 'inline-block';
-
-      // Scroll to form
       document.getElementById('genie-form').scrollIntoView({ behavior: 'smooth' });
     }
 
     function cancelGenieEdit() {
       document.getElementById('genie-form').reset();
       document.getElementById('genie-edit-index').value = -1;
-      document.getElementById('genie-submit-btn').textContent = 'Add Genie Event';
+      document.getElementById('genie-submit-btn').textContent = 'Add Event';
       document.getElementById('genie-cancel-btn').style.display = 'none';
       document.getElementById('genie-tinkerbell').checked = false;
       document.getElementById('genie-enabled').checked = true;
     }
 
-    // Add/update genie event
     document.getElementById('genie-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('genie-date').value;
@@ -691,9 +1074,9 @@
       const roomId = document.getElementById('genie-room').value;
       const editIndex = parseInt(document.getElementById('genie-edit-index').value);
       const isEditing = editIndex >= 0;
-
       const selectedEffects = getSelectedEffects();
       const includeTinkerbell = document.getElementById('genie-tinkerbell').checked;
+
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
         title: document.getElementById('genie-title').value,
@@ -707,7 +1090,6 @@
         audioUrl: document.getElementById('genie-audio').value || undefined,
         enabled: document.getElementById('genie-enabled').checked
       };
-
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 
       if (isEditing) {
@@ -717,17 +1099,15 @@
         genieEvents.push(event);
         setStatus('Event added - click Publish to go live', 'success');
       }
-
       renderEvents();
       hasUnsavedChanges = true;
-      cancelGenieEdit(); // Reset form
+      updateUnsavedIndicator();
+      cancelGenieEdit();
     });
 
-    // Edit community event - populate form
     function editCommunityEvent(index) {
       const event = communityEvents[index];
       const startDate = new Date(event.startTime);
-
       document.getElementById('community-title').value = event.title || '';
       document.getElementById('community-desc').value = event.description || '';
       document.getElementById('community-submitter').value = event.submittedBy || '';
@@ -737,24 +1117,20 @@
       document.getElementById('community-room').value = event.roomId || '';
       document.getElementById('community-audio').value = event.audioUrl || '';
       document.getElementById('community-enabled').checked = event.enabled !== false;
-
       document.getElementById('community-edit-index').value = index;
       document.getElementById('community-submit-btn').textContent = 'Update Event';
       document.getElementById('community-cancel-btn').style.display = 'inline-block';
-
-      // Scroll to form
       document.getElementById('community-form').scrollIntoView({ behavior: 'smooth' });
     }
 
     function cancelCommunityEdit() {
       document.getElementById('community-form').reset();
       document.getElementById('community-edit-index').value = -1;
-      document.getElementById('community-submit-btn').textContent = 'Add Community Event';
+      document.getElementById('community-submit-btn').textContent = 'Add Event';
       document.getElementById('community-cancel-btn').style.display = 'none';
       document.getElementById('community-enabled').checked = true;
     }
 
-    // Add/update community event
     document.getElementById('community-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('community-date').value;
@@ -775,7 +1151,6 @@
         submittedBy: document.getElementById('community-submitter').value || undefined,
         enabled: document.getElementById('community-enabled').checked
       };
-
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 
       if (isEditing) {
@@ -785,17 +1160,18 @@
         communityEvents.push(event);
         setStatus('Event added - click Publish to go live', 'success');
       }
-
       renderEvents();
       hasUnsavedChanges = true;
-      cancelCommunityEdit(); // Reset form
+      updateUnsavedIndicator();
+      cancelCommunityEdit();
     });
 
     function toggleEvent(type, index) {
       const events = type === 'genie' ? genieEvents : communityEvents;
-      events[index].enabled = events[index].enabled === false ? true : false;
+      events[index].enabled = events[index].enabled === false;
       renderEvents();
       hasUnsavedChanges = true;
+      updateUnsavedIndicator();
       setStatus('Event updated - click Publish to go live', 'success');
     }
 
@@ -805,10 +1181,10 @@
       events.splice(index, 1);
       renderEvents();
       hasUnsavedChanges = true;
+      updateUnsavedIndicator();
       setStatus('Event deleted - click Publish to go live', 'success');
     }
 
-    // Warn before leaving with unsaved changes
     window.addEventListener('beforeunload', (e) => {
       if (hasUnsavedChanges) {
         e.preventDefault();

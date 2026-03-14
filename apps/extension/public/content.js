@@ -1469,7 +1469,6 @@ function showBeeBanner(text) {
     width: 40px;
     height: auto;
     flex-shrink: 0;
-    transform: scaleX(-1);
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
   `
 
