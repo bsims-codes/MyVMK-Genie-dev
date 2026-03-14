@@ -6616,11 +6616,19 @@ function createEventsPanel() {
       const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
       const genieIconUrl = chrome.runtime.getURL('genie-genie-events.png')
       const communityIconUrl = chrome.runtime.getURL('genie-community-events.png')
+      const doubleCreditsIconUrl = chrome.runtime.getURL('genie-double-credits.png')
 
       eventsToShow.forEach(event => {
+        // Check if this is a Double Credits event
+        const isDoubleCredits = event.title && event.title.toLowerCase().includes('double credits')
+
         // Different colors and icons by event type
         let color, iconUrl, iconTitle
-        if (event.type === 'genie') {
+        if (isDoubleCredits) {
+          color = '#fbbf24' // Gold for Double Credits
+          iconUrl = doubleCreditsIconUrl
+          iconTitle = 'Double Credits'
+        } else if (event.type === 'genie') {
           color = '#ec4899' // Pink for Genie events
           iconUrl = genieIconUrl
           iconTitle = 'Genie Event'
@@ -6912,6 +6920,7 @@ async function renderTickerContent() {
   const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
   const genieLogoUrl = chrome.runtime.getURL('genie-genie-events.png')
   const communityIconUrl = chrome.runtime.getURL('genie-community-events.png')
+  const doubleCreditsIconUrl = chrome.runtime.getURL('genie-double-credits.png')
 
   try {
     const { nextEvent } = await loadTodaysEvents()
@@ -6926,9 +6935,14 @@ async function renderTickerContent() {
       const eventName = nextEvent.title
       const timeStr = nextEvent.timeStr || 'TBD'
 
+      // Check if this is a Double Credits event
+      const isDoubleCredits = nextEvent.title && nextEvent.title.toLowerCase().includes('double credits')
+
       // Different icons by event type
       let iconUrl
-      if (nextEvent.type === 'genie') {
+      if (isDoubleCredits) {
+        iconUrl = doubleCreditsIconUrl
+      } else if (nextEvent.type === 'genie') {
         iconUrl = genieLogoUrl
       } else if (nextEvent.type === 'community') {
         iconUrl = communityIconUrl
