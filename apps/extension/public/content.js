@@ -277,8 +277,10 @@ const TINKERBELL_IMAGE = 'Tinkerbelle_Only.gif'
 const TINKERBELL_GLOW_COLOR = '255, 215, 0' // Gold sparkle
 
 // Genie Events System - remote scheduled events via JSONBin.io
-// To configure: Replace YOUR_BIN_ID_HERE with your actual JSONBin bin ID
-const GENIE_EVENTS_BIN_ID = '67d343388960c979a5797de1' // JSONBin bin ID
+// >>> EDIT THESE TWO VALUES <<<
+const GENIE_EVENTS_BIN_ID = '69b4de67aa77b81da9e28bfe'
+const GENIE_EVENTS_MASTER_KEY = '$2a$10$86vN99ryuRY169Nhm96soeWQs01a0ACySyD0B6ysbxgE/f2rXu3Z2'
+// >>> END EDIT <<<
 const GENIE_EVENTS_URL = `https://api.jsonbin.io/v3/b/${GENIE_EVENTS_BIN_ID}/latest`
 const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
@@ -3258,33 +3260,62 @@ function checkGenieEvents() {
 
 // Helper to start a single effect
 function startEffect(effectName) {
+  console.log('MyVMK Genie: Starting effect:', effectName)
   switch (effectName) {
     case 'fireworks': startFireworks(); break
     case 'rain': startRainEffect(); break
     case 'snow': startSnowEffect(); break
     case 'money': startMoneyRain(); break
     case 'emoji': startEmojiRain(); break
+    case 'night': startNightOverlay(); break
   }
 }
 
 // Helper to stop a single effect
 function stopEffect(effectName) {
+  console.log('MyVMK Genie: Stopping effect:', effectName)
   switch (effectName) {
     case 'fireworks': stopFireworks(); break
     case 'rain': stopRainEffect(); break
     case 'snow': stopSnowEffect(); break
     case 'money': stopMoneyRain(); break
     case 'emoji': stopEmojiRain(); break
+    case 'night': stopNightOverlay(); break
+  }
+}
+
+// Start night overlay (for events)
+function startNightOverlay() {
+  if (isNightOverlayEnabled) return // Already on
+  isNightOverlayEnabled = true
+  let overlay = document.getElementById('vmkpal-night-overlay')
+  if (!overlay) {
+    overlay = document.createElement('div')
+    overlay.id = 'vmkpal-night-overlay'
+    document.body.appendChild(overlay)
+  }
+  updateNightOverlayBounds()
+  overlay.style.display = 'block'
+}
+
+// Stop night overlay (for events)
+function stopNightOverlay() {
+  isNightOverlayEnabled = false
+  const overlay = document.getElementById('vmkpal-night-overlay')
+  if (overlay) {
+    overlay.style.display = 'none'
   }
 }
 
 function startGenieEvent(event) {
   if (activeGenieEvent && activeGenieEvent.id === event.id) return
 
+  console.log('MyVMK Genie: Starting event:', event)
   activeGenieEvent = event
 
   // Trigger effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
+  console.log('MyVMK Genie: Effects to trigger:', effects)
   effects.forEach(startEffect)
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
