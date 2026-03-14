@@ -6307,6 +6307,14 @@ function getYouTubePlaylistId(url) {
   return null
 }
 
+// Extract YouTube start time from URL (returns seconds or null)
+function getYouTubeStartTime(url) {
+  // Match t= or start= parameter (in seconds)
+  const match = url.match(/[?&](?:t|start)=(\d+)/)
+  if (match) return parseInt(match[1])
+  return null
+}
+
 // Audio player
 let audioPlayer = null
 let youtubeIframe = null
@@ -6493,6 +6501,7 @@ function playAudio(url, startMinimized = false) {
 
   const videoId = getYouTubeVideoId(url)
   const playlistId = getYouTubePlaylistId(url)
+  const startTime = getYouTubeStartTime(url)
 
   if (videoId || playlistId) {
     // YouTube - embed as iframe in PERSISTENT container (survives panel navigation)
@@ -6510,6 +6519,11 @@ function playAudio(url, startMinimized = false) {
     } else {
       // Single video - loop it
       embedUrl += `${videoId}?autoplay=1&loop=1&playlist=${videoId}`
+    }
+
+    // Add start time if specified in original URL
+    if (startTime) {
+      embedUrl += `&start=${startTime}`
     }
 
     const isPlaylist = !!playlistId
