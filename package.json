@@ -10,8 +10,7 @@
     "lint": "pnpm --filter web lint",
 
     "ext:dev": "pnpm --filter myvmk-genie-extension dev",
-    "ext:watch": "pnpm --filter myvmk-genie-extension watch",
-    "ext:release": "pnpm --filter myvmk-genie-extension release",
+    "ext:build": "pnpm --filter myvmk-genie-extension build",
     "ext:package": "pnpm --filter myvmk-genie-extension package"
   },
   "keywords": ["myvmk", "companion", "gaming"],

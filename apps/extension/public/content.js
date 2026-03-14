@@ -246,6 +246,7 @@ let spotlightCtx = null
 let spotlightAnimationId = null
 let spotlights = []
 let isSpotlightsEnabled = false
+let lastSpotlightTime = 0
 
 // Snow effect
 let snowflakes = []
@@ -2838,47 +2839,100 @@ function startSpotlights() {
   spotlightCanvas.height = bounds.height
   spotlightCanvas.style.display = 'block'
 
-  // Create initial spotlights
+  // Create initial spotlights - 3 on left, 3 on right, synced within groups
   spotlights = []
-  for (let i = 0; i < 5; i++) {
-    spotlights.push(createSpotlight(bounds.width, bounds.height))
+  const centerX = bounds.width / 2
+  const leftGroupPhase = Math.random() * Math.PI * 2
+  const rightGroupPhase = Math.random() * Math.PI * 2
+  const leftSweepCenter = -Math.PI / 2 - 0.15 // Pointing slightly left
+  const rightSweepCenter = -Math.PI / 2 + 0.15 // Pointing slightly right
+
+  // Left group - 3 spotlights
+  for (let i = 0; i < 3; i++) {
+    const x = centerX * 0.15 + (i * centerX * 0.25) // Spread across left side
+    spotlights.push(createSpotlightAt(x, bounds.width, bounds.height, 'left', leftGroupPhase, leftSweepCenter))
+  }
+
+  // Right group - 3 spotlights
+  for (let i = 0; i < 3; i++) {
+    const x = centerX + centerX * 0.35 + (i * centerX * 0.25) // Spread across right side
+    spotlights.push(createSpotlightAt(x, bounds.width, bounds.height, 'right', rightGroupPhase, rightSweepCenter))
   }
 
   isSpotlightsEnabled = true
+  lastSpotlightTime = 0 // Reset timing for smooth start
   renderSpotlights()
 }
 
 function createSpotlight(canvasWidth, canvasHeight) {
+  return createSpotlightAt(Math.random() * canvasWidth, canvasWidth, canvasHeight, null, null, null)
+}
+
+function createSpotlightAt(x, canvasWidth, canvasHeight, group = null, sharedPhase = null, sharedCenter = null) {
   const colors = [
-    'rgba(255, 255, 255, 0.3)',
-    'rgba(200, 200, 255, 0.25)',
-    'rgba(255, 200, 200, 0.25)',
-    'rgba(200, 255, 200, 0.25)',
-    'rgba(255, 255, 200, 0.25)'
+    [255, 255, 255], // white
+    [200, 200, 255], // blue-white
+    [255, 200, 200], // pink-white
+    [200, 255, 200], // green-white
+    [255, 255, 200]  // yellow-white
   ]
+  const startAngle = sharedCenter !== null ? sharedCenter : -Math.PI / 2 + (Math.random() - 0.5) * 0.3
+  const phase = sharedPhase !== null ? sharedPhase : Math.random() * Math.PI * 2
   return {
-    x: Math.random() * canvasWidth,
-    baseY: canvasHeight, // Spotlights originate from bottom
-    angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.8, // Pointing upward with variation
-    targetAngle: -Math.PI / 2 + (Math.random() - 0.5) * 0.8,
-    angleSpeed: 0.001 + Math.random() * 0.002,
-    width: 40 + Math.random() * 30, // Beam width at base
-    length: canvasHeight * 0.9,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    swayPhase: Math.random() * Math.PI * 2,
-    swaySpeed: 0.5 + Math.random() * 0.5
+    x: x,
+    baseY: canvasHeight,
+    angle: startAngle,
+    width: 25 + Math.random() * 15,
+    length: canvasHeight * 0.85,
+    colorRGB: colors[Math.floor(Math.random() * colors.length)],
+    baseOpacity: 0.35,
+    opacity: 1.0, // Current opacity multiplier (0-1)
+    targetOpacity: 1.0, // Target opacity for fading
+    group: group, // 'left', 'right', or null for independent
+    // Faster movement for more dynamic effect
+    sweepSpeed: 0.15 + Math.random() * 0.08, // Faster sweep
+    sweepRange: 0.25 + Math.random() * 0.15, // Good range
+    sweepCenter: startAngle,
+    sweepPhase: phase
   }
 }
 
 function updateSpotlights(dt) {
-  for (const spot of spotlights) {
-    // Sway the spotlight
-    spot.swayPhase += spot.swaySpeed * dt
-    spot.angle = spot.targetAngle + Math.sin(spot.swayPhase) * 0.3
+  // Track group phases to keep groups synced
+  let leftPhase = null
+  let rightPhase = null
 
-    // Occasionally change target angle
-    if (Math.random() < 0.005) {
-      spot.targetAngle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8
+  for (const spot of spotlights) {
+    // For grouped spotlights, sync to group phase
+    if (spot.group === 'left') {
+      if (leftPhase === null) {
+        spot.sweepPhase += spot.sweepSpeed * dt
+        leftPhase = spot.sweepPhase
+      } else {
+        spot.sweepPhase = leftPhase
+      }
+    } else if (spot.group === 'right') {
+      if (rightPhase === null) {
+        spot.sweepPhase += spot.sweepSpeed * dt
+        rightPhase = spot.sweepPhase
+      } else {
+        spot.sweepPhase = rightPhase
+      }
+    } else {
+      // Independent spotlight
+      spot.sweepPhase += spot.sweepSpeed * dt
+    }
+
+    // Calculate angle from phase
+    const sineValue = Math.sin(spot.sweepPhase)
+    spot.angle = spot.sweepCenter + sineValue * spot.sweepRange
+
+    // Smoothly fade opacity toward target
+    const opacitySpeed = 0.5 // How fast to fade (per second)
+    if (spot.opacity < spot.targetOpacity) {
+      spot.opacity = Math.min(spot.targetOpacity, spot.opacity + opacitySpeed * dt)
+    } else if (spot.opacity > spot.targetOpacity) {
+      spot.opacity = Math.max(spot.targetOpacity, spot.opacity - opacitySpeed * dt)
     }
   }
 }
@@ -2887,7 +2941,8 @@ function renderSpotlights() {
   if (!spotlightCtx || !isSpotlightsEnabled) return
 
   const now = performance.now()
-  const dt = 1 / 60
+  const dt = lastSpotlightTime ? (now - lastSpotlightTime) / 1000 : 1 / 60
+  lastSpotlightTime = now
 
   spotlightCtx.clearRect(0, 0, spotlightCanvas.width, spotlightCanvas.height)
 
@@ -2895,26 +2950,43 @@ function renderSpotlights() {
 
   // Draw each spotlight beam
   for (const spot of spotlights) {
-    const gradient = spotlightCtx.createRadialGradient(
-      spot.x, spot.baseY, 0,
-      spot.x, spot.baseY, spot.length
-    )
-    gradient.addColorStop(0, spot.color)
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    // Skip if fully transparent
+    if (spot.opacity <= 0.01) continue
 
     spotlightCtx.save()
     spotlightCtx.translate(spot.x, spot.baseY)
     spotlightCtx.rotate(spot.angle + Math.PI / 2)
 
-    // Draw cone
+    // Calculate opacity-adjusted colors
+    const [r, g, b] = spot.colorRGB
+    const baseAlpha = spot.baseOpacity * spot.opacity
+    const midAlpha = baseAlpha * 0.4
+    const glowAlpha = 0.25 * spot.opacity
+
+    // Create gradient along the beam
+    const gradient = spotlightCtx.createLinearGradient(0, 0, 0, -spot.length)
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${baseAlpha})`)
+    gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${midAlpha})`)
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+
+    // Draw cone beam (narrower)
     spotlightCtx.beginPath()
-    spotlightCtx.moveTo(-spot.width / 2, 0)
-    spotlightCtx.lineTo(-spot.width * 2, -spot.length)
-    spotlightCtx.lineTo(spot.width * 2, -spot.length)
-    spotlightCtx.lineTo(spot.width / 2, 0)
+    spotlightCtx.moveTo(-spot.width / 3, 0)
+    spotlightCtx.lineTo(-spot.width * 1.5, -spot.length)
+    spotlightCtx.lineTo(spot.width * 1.5, -spot.length)
+    spotlightCtx.lineTo(spot.width / 3, 0)
     spotlightCtx.closePath()
 
     spotlightCtx.fillStyle = gradient
+    spotlightCtx.fill()
+
+    // Add a subtle glow at the base
+    const glowGradient = spotlightCtx.createRadialGradient(0, 0, 0, 0, 0, spot.width * 1.5)
+    glowGradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha})`)
+    glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    spotlightCtx.beginPath()
+    spotlightCtx.arc(0, 0, spot.width * 1.5, 0, Math.PI * 2)
+    spotlightCtx.fillStyle = glowGradient
     spotlightCtx.fill()
 
     spotlightCtx.restore()
@@ -2940,104 +3012,110 @@ function stopSpotlights() {
 // HAPPILY EVER AFTER CHOREOGRAPHED SHOW
 // ============================================
 
-// Choreography timeline: [time in seconds, effect type, intensity/params]
+// Choreography timeline synced to: https://www.youtube.com/watch?v=ypp4iuJUW2I
+// Timestamps in seconds from video start (no offset)
+// Spotlights: 6 total (3 left, 3 right) - they fade dim/bright, never disappear
 const HAPPILY_EVER_AFTER_CHOREOGRAPHY = [
-  // Opening - Spotlights only
-  { time: 0, action: 'spotlights', enabled: true },
+  // === OPENING (0:00-0:45) - Night fades in, then spotlights ===
   { time: 0, action: 'fireworks', intensity: 0 },
   { time: 0, action: 'night', enabled: true },
+  { time: 15, action: 'spotlights', enabled: true }, // Spotlights fade in at 15 seconds
 
-  // "Magic is Here" intro - subtle spotlights
-  { time: 15, action: 'spotlights', count: 3 },
-
-  // First musical swell - spotlights dance
-  { time: 30, action: 'spotlights', count: 5 },
-
-  // Music builds - first fireworks
+  // === FIRST FIREWORKS (0:45) - Music builds ===
   { time: 45, action: 'fireworks', intensity: 0.3 },
 
-  // "They can make you happy" - medium fireworks
-  { time: 60, action: 'fireworks', intensity: 0.6 },
-  { time: 60, action: 'spotlights', enabled: false },
+  // === "HAPPILY EVER AFTER" THEME (1:30-2:30) ===
+  { time: 90, action: 'fireworks', intensity: 0.5 },
+  { time: 90, action: 'spotlights', enabled: false }, // Fade dim
+  { time: 110, action: 'fireworks', intensity: 0.7 },
+  { time: 130, action: 'fireworks', intensity: 0.9 },
+  { time: 150, action: 'fireworks', intensity: 1.1 },
 
-  // Quieter moment
-  { time: 90, action: 'fireworks', intensity: 0.3 },
-
-  // Builds again
-  { time: 120, action: 'fireworks', intensity: 0.8 },
-
-  // Big moment
-  { time: 150, action: 'fireworks', intensity: 1.2 },
-
-  // Moana section - ocean colors would be cool
-  { time: 180, action: 'fireworks', intensity: 0.7 },
-
-  // Builds to crescendo
+  // === PINOCCHIO / EARLY DISNEY (2:30-4:00) ===
+  { time: 170, action: 'fireworks', intensity: 0.6 },
+  { time: 190, action: 'fireworks', intensity: 0.8 },
   { time: 210, action: 'fireworks', intensity: 1.0 },
+  { time: 230, action: 'fireworks', intensity: 1.2 },
 
-  // Big crescendo
-  { time: 240, action: 'fireworks', intensity: 1.5 },
+  // === MOANA SECTION (4:00-5:30) - "How Far I'll Go" ===
+  { time: 250, action: 'fireworks', intensity: 0.7 },
+  { time: 270, action: 'fireworks', intensity: 0.9 },
+  { time: 290, action: 'fireworks', intensity: 1.1 },
+  { time: 310, action: 'fireworks', intensity: 1.3 },
+  { time: 330, action: 'fireworks', intensity: 1.5 },
 
-  // Quiet Frozen section
-  { time: 270, action: 'fireworks', intensity: 0.4 },
-  { time: 270, action: 'spotlights', enabled: true },
-  { time: 270, action: 'spotlights', count: 3 },
+  // === FROZEN SECTION (5:30-7:00) - "Let It Go" quieter start ===
+  { time: 350, action: 'fireworks', intensity: 0.4 },
+  { time: 350, action: 'spotlights', enabled: true }, // Fade bright
+  { time: 380, action: 'fireworks', intensity: 0.6 },
+  { time: 400, action: 'fireworks', intensity: 0.9 },
+  { time: 400, action: 'spotlights', enabled: false }, // Fade dim
+  { time: 420, action: 'fireworks', intensity: 1.2 },
 
-  // Let it go builds
-  { time: 300, action: 'fireworks', intensity: 0.8 },
-  { time: 300, action: 'spotlights', enabled: false },
+  // === TANGLED SECTION (7:00-8:30) - "I See the Light" ===
+  { time: 440, action: 'fireworks', intensity: 0.5 },
+  { time: 440, action: 'spotlights', enabled: true }, // Fade bright
+  { time: 460, action: 'fireworks', intensity: 0.7 },
+  { time: 480, action: 'fireworks', intensity: 0.9 },
+  { time: 500, action: 'fireworks', intensity: 1.1 },
+  { time: 500, action: 'spotlights', enabled: false }, // Fade dim
+  { time: 510, action: 'fireworks', intensity: 1.3 },
 
-  // Tangled section
-  { time: 330, action: 'fireworks', intensity: 0.6 },
+  // === BRAVE SECTION (8:30-10:00) ===
+  { time: 530, action: 'fireworks', intensity: 0.8 },
+  { time: 550, action: 'fireworks', intensity: 1.0 },
+  { time: 570, action: 'fireworks', intensity: 1.2 },
+  { time: 590, action: 'fireworks', intensity: 1.4 },
 
-  // "I see the light" moment
-  { time: 360, action: 'fireworks', intensity: 0.9 },
+  // === BIG HERO 6 (10:00-11:00) - Action sequence ===
+  { time: 610, action: 'fireworks', intensity: 1.3 },
+  { time: 630, action: 'fireworks', intensity: 1.5 },
+  { time: 650, action: 'fireworks', intensity: 1.7 },
 
-  // Brave section
-  { time: 400, action: 'fireworks', intensity: 1.0 },
+  // === ZOOTOPIA (11:00-12:00) - "Try Everything" ===
+  { time: 670, action: 'fireworks', intensity: 1.1 },
+  { time: 690, action: 'fireworks', intensity: 1.3 },
+  { time: 710, action: 'fireworks', intensity: 1.5 },
 
-  // Big Hero 6 action
-  { time: 430, action: 'fireworks', intensity: 1.3 },
+  // === PRINCESS MEDLEY (12:00-14:00) ===
+  { time: 730, action: 'fireworks', intensity: 1.0 },
+  { time: 730, action: 'spotlights', enabled: true }, // Fade bright
+  { time: 750, action: 'fireworks', intensity: 1.2 },
+  { time: 770, action: 'fireworks', intensity: 1.3 },
+  { time: 790, action: 'fireworks', intensity: 1.4 },
+  { time: 810, action: 'fireworks', intensity: 1.5 },
+  { time: 830, action: 'fireworks', intensity: 1.6 },
 
-  // Zootopia
-  { time: 460, action: 'fireworks', intensity: 1.1 },
+  // === "HAPPILY EVER AFTER" REPRISE (14:00-16:00) - Building ===
+  { time: 850, action: 'fireworks', intensity: 1.4 },
+  { time: 850, action: 'spotlights', enabled: false }, // Fade dim
+  { time: 870, action: 'fireworks', intensity: 1.6 },
+  { time: 890, action: 'fireworks', intensity: 1.8 },
+  { time: 910, action: 'fireworks', intensity: 2.0 },
+  { time: 930, action: 'fireworks', intensity: 2.2 },
+  { time: 950, action: 'fireworks', intensity: 2.4 },
 
-  // Building to finale
-  { time: 500, action: 'fireworks', intensity: 1.5 },
+  // === GRAND FINALE (16:00-17:30) - Maximum intensity ===
+  { time: 970, action: 'fireworks', intensity: 2.6 },
+  { time: 970, action: 'spotlights', enabled: true }, // Fade bright for finale
+  { time: 985, action: 'fireworks', intensity: 2.8 },
+  { time: 1000, action: 'fireworks', intensity: 3.0 },
+  { time: 1000, action: 'spotlights', enabled: false }, // Fade dim
+  { time: 1015, action: 'fireworks', intensity: 3.2 },
+  { time: 1030, action: 'fireworks', intensity: 3.5 },
+  { time: 1040, action: 'fireworks', intensity: 3.0 },
+  { time: 1050, action: 'fireworks', intensity: 2.5 },
 
-  // Princess medley
-  { time: 540, action: 'fireworks', intensity: 1.2 },
-  { time: 540, action: 'spotlights', enabled: true },
+  // === ENDING (17:30-18:00) - Gentle fade ===
+  { time: 1060, action: 'fireworks', intensity: 1.5 },
+  { time: 1060, action: 'spotlights', enabled: true }, // Fade bright for ending
+  { time: 1070, action: 'fireworks', intensity: 0.8 },
+  { time: 1080, action: 'fireworks', intensity: 0.3 },
 
-  // "Happily Ever After" theme returns
-  { time: 580, action: 'fireworks', intensity: 1.4 },
-
-  // Building to final climax
-  { time: 620, action: 'fireworks', intensity: 1.8 },
-  { time: 620, action: 'spotlights', count: 7 },
-
-  // THE BIG FINALE
-  { time: 660, action: 'fireworks', intensity: 2.5 },
-  { time: 660, action: 'spotlights', enabled: false },
-
-  // Absolute peak
-  { time: 680, action: 'fireworks', intensity: 3.0 },
-
-  // Final moments
-  { time: 700, action: 'fireworks', intensity: 2.0 },
-
-  // Gentle ending
-  { time: 720, action: 'fireworks', intensity: 0.5 },
-  { time: 720, action: 'spotlights', enabled: true },
-  { time: 720, action: 'spotlights', count: 3 },
-
-  // Fade out
-  { time: 750, action: 'fireworks', intensity: 0.2 },
-
-  // End
-  { time: 780, action: 'fireworks', intensity: 0 },
-  { time: 780, action: 'spotlights', enabled: false },
-  { time: 785, action: 'end' }
+  // === END ===
+  { time: 1090, action: 'fireworks', intensity: 0 },
+  { time: 1090, action: 'spotlights', enabled: false }, // Fade dim at end
+  { time: 1095, action: 'end' }
 ]
 
 let happilyEverAfterYouTubeId = 'ypp4iuJUW2I'
@@ -3047,8 +3125,22 @@ let lastChoreographyIndex = -1
 function startHappilyEverAfterShow() {
   console.log('MyVMK Genie: Starting Happily Ever After show!')
 
-  // Start night overlay
+  // Start the YouTube audio (minimized player)
+  const youtubeUrl = `https://www.youtube.com/watch?v=${happilyEverAfterYouTubeId}`
+  playAudio(youtubeUrl, true)
+
+  // Start Tinkerbell (event mode - limited to top 70%)
+  startTinkerbellEffect(true)
+
+  // Start night overlay (fades in slowly via CSS transition)
   startNightOverlay(true)
+
+  // Start stars overlay
+  if (!isStarsOverlayEnabled) {
+    toggleStarsOverlay()
+  }
+
+  // Note: Spotlights start at 15 seconds via choreography (not immediately)
 
   // Initialize show timing
   showStartTime = performance.now()
@@ -3097,18 +3189,17 @@ function executeChoreographyEvent(event) {
       if (event.enabled === true && !isSpotlightsEnabled) {
         startSpotlights()
       } else if (event.enabled === false && isSpotlightsEnabled) {
-        stopSpotlights()
-      }
-      if (event.count !== undefined && isSpotlightsEnabled) {
-        // Adjust number of spotlights
-        const bounds = getGameCanvasBounds()
-        while (spotlights.length < event.count) {
-          spotlights.push(createSpotlight(bounds.width, bounds.height))
+        // Fade out spotlights instead of stopping them abruptly
+        for (const spot of spotlights) {
+          spot.targetOpacity = 0.15 // Fade to very dim, not completely off
         }
-        while (spotlights.length > event.count) {
-          spotlights.pop()
+      } else if (event.enabled === true && isSpotlightsEnabled) {
+        // Fade spotlights back in
+        for (const spot of spotlights) {
+          spot.targetOpacity = 1.0
         }
       }
+      // Ignore count changes - keep the 6 spotlight configuration
       break
 
     case 'night':
@@ -3132,6 +3223,17 @@ function stopHappilyEverAfterShow() {
   if (choreographyInterval) {
     clearInterval(choreographyInterval)
     choreographyInterval = null
+  }
+
+  // Stop audio
+  stopAudio()
+
+  // Stop Tinkerbell
+  stopTinkerbellEffect()
+
+  // Stop stars overlay
+  if (isStarsOverlayEnabled) {
+    toggleStarsOverlay()
   }
 
   // Stop all effects
@@ -4497,6 +4599,7 @@ function createOverlaysPanel() {
     () => isSnowEnabled,
     toggleSnowOverlay
   ))
+
 
   div.appendChild(grid)
 

@@ -1,5 +1,31 @@
 # MyVMK Genie Changelog
 
+## 2.0.0 - Official Public Release
+This is the first official public release of MyVMK Genie!
+
+### Features
+- **Quick Phrases**: Send common phrases instantly with Alt+key shortcuts
+- **Screenshots**: Capture game screenshots with Alt+S, including region select
+- **Visual Overlays**: Rain, snow, fireworks, stars, night mode, money rain, emoji rain
+- **Ambient Effects**: Tinkerbell in Fantasyland Courtyard, butterflies in Snow White Forest
+- **Genie Events**: Community events with synchronized effects, audio, and visual overlays
+- **Happily Ever After Show**: Choreographed fireworks and spotlight show synced to audio
+- **YouTube Player**: Play background music with draggable, resizable player
+- **Commands Reference**: Quick access to all MyVMK chat commands
+
+### Genie Events System
+- Remote event scheduling via admin panel
+- Support for all overlay effects (fireworks, rain, snow, butterflies, Tinkerbell)
+- YouTube audio synchronization
+- Pre-event notifications 1 minute before start
+- Events trigger automatically when joining rooms mid-event
+
+### Visual Effects
+- Choreographed spotlight system with synced left/right groups
+- Smooth spotlight fading (dim/bright transitions)
+- Fireworks with adjustable intensity
+- Multiple butterfly flight patterns in Snow White Forest
+
 ## 1.2.0
 - Pre-event notification now stays on screen for 8 seconds
 - All 3 butterflies now permanent in Snow White Forest (no more fading/respawning)

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Package the production extension as a ZIP for Chrome Web Store
+ * Package the extension as a ZIP for Chrome Web Store
  */
 
 const fs = require('fs');
@@ -9,16 +9,16 @@ const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, '..', '..', 'dist');
-const prodDir = path.join(distDir, 'extension-prod');
+const releaseDir = path.join(distDir, 'extension-release');
 const outputZip = path.join(distDir, 'myvmk-genie-extension.zip');
 
-// First, build production
-console.log('🧞 Building production version...\n');
-execSync('node scripts/build.js prod', { cwd: rootDir, stdio: 'inherit' });
+// First, build release version
+console.log('🧞 Building release version...\n');
+execSync('node scripts/build.js release', { cwd: rootDir, stdio: 'inherit' });
 
-// Check if prod build exists
-if (!fs.existsSync(prodDir)) {
-  console.error('❌ Production build not found. Run build:prod first.');
+// Check if release build exists
+if (!fs.existsSync(releaseDir)) {
+  console.error('❌ Release build not found.');
   process.exit(1);
 }
 
@@ -34,12 +34,12 @@ try {
   // Try using PowerShell on Windows
   if (process.platform === 'win32') {
     execSync(
-      `powershell -command "Compress-Archive -Path '${prodDir}\\*' -DestinationPath '${outputZip}'"`,
+      `powershell -command "Compress-Archive -Path '${releaseDir}\\*' -DestinationPath '${outputZip}'"`,
       { stdio: 'inherit' }
     );
   } else {
     // Use zip on Unix
-    execSync(`cd "${prodDir}" && zip -r "${outputZip}" .`, { stdio: 'inherit' });
+    execSync(`cd "${releaseDir}" && zip -r "${outputZip}" .`, { stdio: 'inherit' });
   }
 
   console.log(`\n✨ Package created: ${outputZip}`);
@@ -47,6 +47,6 @@ try {
   console.log('   https://chrome.google.com/webstore/devconsole\n');
 } catch (error) {
   console.error('❌ Failed to create ZIP:', error.message);
-  console.log('\nManually zip the contents of:', prodDir);
+  console.log('\nManually zip the contents of:', releaseDir);
   process.exit(1);
 }

@@ -29,7 +29,13 @@
       "Bash(node:*)",
       "Bash(pnpm ext:package:*)",
       "Bash(powershell -command:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npm run package:*)",
+      "Bash(pnpm ext:build:release:*)",
+      "Bash(pnpm ext:build:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:www.youtube.com)",
+      "WebSearch"
     ]
   }
 }

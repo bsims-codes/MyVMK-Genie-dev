@@ -2,15 +2,14 @@
 // Maps audio folder names (from room_sound/) to room info
 
 const AUDIO_ROOM_MAP = {
-  // Main Street USA
-  'vmk_snd_main_street': { id: 4, land: 'Main Street USA' },
-  'vmk_snd_emporium': { id: 3, land: 'Main Street USA' },
-  'vmk_snd_hub2': { id: 2, land: 'Main Street USA' },
-  'vmk_snd_pennylanearcade': { id: 140, land: 'Main Street USA' },
-
-  // VMK Hub / Esplanade
-  'vmk_snd_vmk_esplanade': { id: 48, land: 'VMK Esplanade' },
-  'vmk_snd_VMK_central': { id: 41, land: 'VMK Central' },
+  // Main Street
+  'vmk_snd_main_street': { id: 4, land: 'Main Street' },
+  'vmk_snd_emporium': { id: 3, land: 'Main Street' },
+  'vmk_snd_hub2': { id: 2, land: 'Main Street' },
+  'vmk_snd_pennylanearcade': { id: 140, land: 'Main Street' },
+  'vmk_snd_vmk_esplanade': { id: 48, land: 'Main Street' },
+  'vmk_snd_VMK_central': { id: 41, land: 'Main Street' },
+  'vmk_snd_drivein': { id: 72, land: 'Main Street' },
 
   // Fantasyland
   'vmk_snd_castle_courtyard': { id: 35, land: 'Fantasyland' },
@@ -51,7 +50,7 @@ const AUDIO_ROOM_MAP = {
   'vmk_snd_mars': { id: 75, land: 'Tomorrowland' },
   'vmk_snd_nautilus_grotto': { id: 82, land: 'Tomorrowland' },
   'vmk_snd_shipwreck': { id: 78, land: 'Tomorrowland' },
-  'vmk_snd_drivein': { id: 72, land: 'Tomorrowland' },
+  
 
   // Animal Kingdom
   'vmk_snd_africa': { id: 299, land: 'Animal Kingdom' },
