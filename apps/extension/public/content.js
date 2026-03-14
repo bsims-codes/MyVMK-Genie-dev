@@ -3262,12 +3262,29 @@ function checkGenieEvents() {
 function startEffect(effectName) {
   console.log('MyVMK Genie: Starting effect:', effectName)
   switch (effectName) {
-    case 'fireworks': startFireworks(); break
-    case 'rain': startRainEffect(); break
-    case 'snow': startSnowEffect(); break
-    case 'money': startMoneyRain(); break
-    case 'emoji': startEmojiRain(); break
-    case 'night': startNightOverlay(); break
+    case 'fireworks':
+      isFireworksEnabled = true
+      startFireworks()
+      break
+    case 'rain':
+      isRainEnabled = true
+      startRainEffect()
+      break
+    case 'snow':
+      isSnowEnabled = true
+      startSnowEffect()
+      break
+    case 'money':
+      isMoneyRainEnabled = true
+      startMoneyRain()
+      break
+    case 'emoji':
+      isEmojiRainEnabled = true
+      startEmojiRain()
+      break
+    case 'night':
+      startNightOverlay()
+      break
   }
 }
 
@@ -3275,12 +3292,29 @@ function startEffect(effectName) {
 function stopEffect(effectName) {
   console.log('MyVMK Genie: Stopping effect:', effectName)
   switch (effectName) {
-    case 'fireworks': stopFireworks(); break
-    case 'rain': stopRainEffect(); break
-    case 'snow': stopSnowEffect(); break
-    case 'money': stopMoneyRain(); break
-    case 'emoji': stopEmojiRain(); break
-    case 'night': stopNightOverlay(); break
+    case 'fireworks':
+      isFireworksEnabled = false
+      stopFireworks()
+      break
+    case 'rain':
+      isRainEnabled = false
+      stopRainEffect()
+      break
+    case 'snow':
+      isSnowEnabled = false
+      stopSnowEffect()
+      break
+    case 'money':
+      isMoneyRainEnabled = false
+      stopMoneyRain()
+      break
+    case 'emoji':
+      isEmojiRainEnabled = false
+      stopEmojiRain()
+      break
+    case 'night':
+      stopNightOverlay()
+      break
   }
 }
 
