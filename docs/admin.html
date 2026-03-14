@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyVMK Genie - Event Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: white;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { text-align: center; color: #ec4899; margin-bottom: 30px; }
+    h2 { color: #8b5cf6; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 30px; }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .tab.active {
+      background: #8b5cf6;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: rgba(255,255,255,0.8);
+      font-size: 14px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.1);
+      color: white;
+      font-size: 14px;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #8b5cf6;
+    }
+    select option { background: #1a1a2e; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .event-list {
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 20px;
+    }
+    .event-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border-left: 3px solid #ec4899;
+    }
+    .event-item.community {
+      border-left-color: #10b981;
+    }
+    .event-item.disabled {
+      opacity: 0.5;
+    }
+    .event-info h4 { margin: 0 0 5px 0; font-size: 14px; }
+    .event-info p { margin: 0; font-size: 12px; color: rgba(255,255,255,0.6); }
+    .event-actions { display: flex; gap: 8px; }
+    .event-actions button { padding: 6px 12px; font-size: 12px; }
+
+    .json-output {
+      background: #0d1117;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 20px;
+      position: relative;
+    }
+    .json-output pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 12px;
+      color: #7ee787;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+
+    .instructions {
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid #8b5cf6;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+    .instructions ol { margin: 10px 0 0 0; padding-left: 20px; }
+    .instructions li { margin-bottom: 5px; }
+
+    .room-select { max-height: 200px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MyVMK Genie - Event Admin</h1>
+
+    <div class="instructions">
+      <strong>How to use:</strong>
+      <ol>
+        <li>Add or edit events using the forms below</li>
+        <li>Click "Generate JSON" to create the events file</li>
+        <li>Copy the JSON and update <code>docs/genie-events.json</code> on GitHub</li>
+        <li>Commit and push - events will be live within minutes!</li>
+      </ol>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('genie')">Genie Events</button>
+      <button class="tab" onclick="showTab('community')">Community Events</button>
+      <button class="tab" onclick="showTab('output')">Generate JSON</button>
+    </div>
+
+    <!-- Genie Events Tab -->
+    <div id="tab-genie" class="tab-content active">
+      <h2>Add Genie Event</h2>
+      <p style="color: rgba(255,255,255,0.6); font-size: 13px;">Genie events can trigger overlays (fireworks) and play audio.</p>
+
+      <form id="genie-form">
+        <div class="form-group">
+          <label>Event Title *</label>
+          <input type="text" id="genie-title" required placeholder="e.g., Fireworks Spectacular">
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="genie-desc" placeholder="e.g., A magical fireworks display!">
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Date *</label>
+            <input type="date" id="genie-date" required>
+          </div>
+          <div class="form-group">
+            <label>Time (ET) *</label>
+            <input type="time" id="genie-time" required>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Duration (minutes)</label>
+            <input type="number" id="genie-duration" value="5" min="1" max="60">
+          </div>
+          <div class="form-group">
+            <label>Effect</label>
+            <select id="genie-effect">
+              <option value="">None</option>
+              <option value="fireworks">Fireworks</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Room</label>
+          <select id="genie-room">
+            <option value="">Any Room (no restriction)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Audio URL (optional)</label>
+          <input type="url" id="genie-audio" placeholder="https://example.com/music.mp3">
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="genie-enabled" checked> Enabled
+          </label>
+        </div>
+
+        <button type="submit" class="btn-primary">Add Genie Event</button>
+      </form>
+
+      <div class="event-list">
+        <h3>Genie Events</h3>
+        <div id="genie-events-list"><p style="color: rgba(255,255,255,0.5);">No events yet</p></div>
+      </div>
+    </div>
+
+    <!-- Community Events Tab -->
+    <div id="tab-community" class="tab-content">
+      <h2>Add Community Event</h2>
+      <p style="color: rgba(255,255,255,0.6); font-size: 13px;">Community events can play audio only (no overlay effects).</p>
+
+      <form id="community-form">
+        <div class="form-group">
+          <label>Event Title *</label>
+          <input type="text" id="community-title" required placeholder="e.g., Dance Party">
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="community-desc" placeholder="e.g., Join us for music and fun!">
+        </div>
+
+        <div class="form-group">
+          <label>Submitted By</label>
+          <input type="text" id="community-submitter" placeholder="Player name">
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Date *</label>
+            <input type="date" id="community-date" required>
+          </div>
+          <div class="form-group">
+            <label>Time (ET) *</label>
+            <input type="time" id="community-time" required>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Duration (minutes)</label>
+            <input type="number" id="community-duration" value="30" min="1" max="120">
+          </div>
+          <div class="form-group">
+            <label>Room</label>
+            <select id="community-room">
+              <option value="">Any Room</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Audio URL (optional)</label>
+          <input type="url" id="community-audio" placeholder="https://example.com/music.mp3">
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="community-enabled" checked> Enabled
+          </label>
+        </div>
+
+        <button type="submit" class="btn-primary">Add Community Event</button>
+      </form>
+
+      <div class="event-list">
+        <h3>Community Events</h3>
+        <div id="community-events-list"><p style="color: rgba(255,255,255,0.5);">No events yet</p></div>
+      </div>
+    </div>
+
+    <!-- Output Tab -->
+    <div id="tab-output" class="tab-content">
+      <h2>Generated JSON</h2>
+      <p style="color: rgba(255,255,255,0.6); font-size: 13px;">Copy this JSON and paste it into <code>docs/genie-events.json</code> on GitHub.</p>
+
+      <button class="btn-primary" onclick="generateJSON()" style="margin-bottom: 15px;">Generate JSON</button>
+      <button class="btn-secondary" onclick="loadFromJSON()" style="margin-bottom: 15px;">Load Existing JSON</button>
+
+      <div class="json-output">
+        <button class="btn-success copy-btn" onclick="copyJSON()">Copy</button>
+        <pre id="json-output">Click "Generate JSON" to create the events file</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Room data
+    const ROOMS = {
+      0: "Skull Rock", 1: "Tiki Tiki Tiki Room", 2: "Central Plaza", 3: "Town Square",
+      4: "Main Street", 5: "Adventureland Bazaar", 6: "Elephant Bathing Pool",
+      7: "Tiki Tiki Tiki Island", 8: "Forbidden Temple", 9: "Explorer's Tent",
+      10: "Lost Safari Party", 11: "Jungle Cruise Dock", 12: "Haunted Mansion Conservatory",
+      13: "Dungeon", 14: "Monorail Station", 15: "Monorail Train", 16: "Shrunken Ned's Shop",
+      17: "Tomorrowland Outerspace", 30: "Castle Gardens", 31: "Gallery", 32: "Spell Room",
+      33: "Matterhorn", 34: "Banquet Hall", 35: "Castle Forecourt", 36: "Pirate Treehouse",
+      37: "Snow White Hide 'n Seek Forest", 38: "it's a small world Imports",
+      39: "Fantasyland in The Sky", 40: "Storybookland", 41: "VMK Central",
+      43: "Emporium", 44: "Golden Horseshoe Mercantile", 45: "Inner-Space Shop",
+      46: "Discovery Island", 47: "Tomorrowland Hub", 48: "VMK Esplanade",
+      49: "Splash Mountain", 50: "Pirate Prison", 53: "Mad Hatter's Tea Party",
+      54: "Maleficent's Evil Fortress", 57: "Mark Twain", 58: "Frontierland Hub",
+      59: "Frontierland Dock", 60: "Haunted Mansion Stretching Room", 61: "Big Thunder Mountain",
+      65: "Haunted Mansion Ballroom", 66: "Haunted Mansion Attic", 67: "Splash Mountain Bayou",
+      70: "Animal Kingdom Safari Lodge", 71: "Expedition Everest", 72: "Sci-Fi Dine-In",
+      95: "New Orleans Square", 97: "Blue Bayou", 99: "Fantasyland Courtyard",
+      140: "Penny Arcade", 279: "Fireworks Show!", 291: "Epcot Entrance",
+      300: "Pixar Pier Entrance", 1104: "Haunted Mansion Lobby", 1105: "Haunted Mansion Game"
+    };
+
+    // State
+    let genieEvents = [];
+    let communityEvents = [];
+
+    // Initialize room dropdowns
+    function initRoomSelects() {
+      const selects = ['genie-room', 'community-room'];
+      const sortedRooms = Object.entries(ROOMS).sort((a, b) => a[1].localeCompare(b[1]));
+
+      selects.forEach(id => {
+        const select = document.getElementById(id);
+        sortedRooms.forEach(([roomId, name]) => {
+          const option = document.createElement('option');
+          option.value = roomId;
+          option.textContent = `${name} (${roomId})`;
+          select.appendChild(option);
+        });
+      });
+    }
+
+    // Tab switching
+    function showTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelector(`[onclick="showTab('${tab}')"]`).classList.add('active');
+      document.getElementById(`tab-${tab}`).classList.add('active');
+    }
+
+    // Generate unique ID
+    function generateId(prefix) {
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    // Format date for display
+    function formatDateTime(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true
+      }) + ' ET';
+    }
+
+    // Render event lists
+    function renderEvents() {
+      // Genie events
+      const genieList = document.getElementById('genie-events-list');
+      if (genieEvents.length === 0) {
+        genieList.innerHTML = '<p style="color: rgba(255,255,255,0.5);">No events yet</p>';
+      } else {
+        genieList.innerHTML = genieEvents.map((e, i) => `
+          <div class="event-item ${e.enabled === false ? 'disabled' : ''}">
+            <div class="event-info">
+              <h4>${e.title}</h4>
+              <p>${formatDateTime(e.startTime)} • ${e.roomName || 'Any Room'} ${e.effect ? '• ' + e.effect : ''}</p>
+            </div>
+            <div class="event-actions">
+              <button class="btn-secondary" onclick="toggleEvent('genie', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
+              <button class="btn-danger" onclick="deleteEvent('genie', ${i})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Community events
+      const communityList = document.getElementById('community-events-list');
+      if (communityEvents.length === 0) {
+        communityList.innerHTML = '<p style="color: rgba(255,255,255,0.5);">No events yet</p>';
+      } else {
+        communityList.innerHTML = communityEvents.map((e, i) => `
+          <div class="event-item community ${e.enabled === false ? 'disabled' : ''}">
+            <div class="event-info">
+              <h4>${e.title}</h4>
+              <p>${formatDateTime(e.startTime)} • ${e.roomName || 'Any Room'} ${e.submittedBy ? '• by ' + e.submittedBy : ''}</p>
+            </div>
+            <div class="event-actions">
+              <button class="btn-secondary" onclick="toggleEvent('community', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
+              <button class="btn-danger" onclick="deleteEvent('community', ${i})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Save to localStorage
+      localStorage.setItem('genieEvents', JSON.stringify(genieEvents));
+      localStorage.setItem('communityEvents', JSON.stringify(communityEvents));
+    }
+
+    // Add genie event
+    document.getElementById('genie-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const date = document.getElementById('genie-date').value;
+      const time = document.getElementById('genie-time').value;
+      const roomId = document.getElementById('genie-room').value;
+
+      const event = {
+        id: generateId('genie'),
+        title: document.getElementById('genie-title').value,
+        description: document.getElementById('genie-desc').value || undefined,
+        roomId: roomId ? parseInt(roomId) : undefined,
+        roomName: roomId ? ROOMS[roomId] : undefined,
+        startTime: new Date(`${date}T${time}:00`).toISOString(),
+        durationMinutes: parseInt(document.getElementById('genie-duration').value) || 5,
+        effect: document.getElementById('genie-effect').value || undefined,
+        audioUrl: document.getElementById('genie-audio').value || undefined,
+        enabled: document.getElementById('genie-enabled').checked
+      };
+
+      // Remove undefined values
+      Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
+
+      genieEvents.push(event);
+      renderEvents();
+      e.target.reset();
+      document.getElementById('genie-enabled').checked = true;
+    });
+
+    // Add community event
+    document.getElementById('community-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const date = document.getElementById('community-date').value;
+      const time = document.getElementById('community-time').value;
+      const roomId = document.getElementById('community-room').value;
+
+      const event = {
+        id: generateId('community'),
+        title: document.getElementById('community-title').value,
+        description: document.getElementById('community-desc').value || undefined,
+        roomId: roomId ? parseInt(roomId) : undefined,
+        roomName: roomId ? ROOMS[roomId] : undefined,
+        startTime: new Date(`${date}T${time}:00`).toISOString(),
+        durationMinutes: parseInt(document.getElementById('community-duration').value) || 30,
+        audioUrl: document.getElementById('community-audio').value || undefined,
+        submittedBy: document.getElementById('community-submitter').value || undefined,
+        enabled: document.getElementById('community-enabled').checked
+      };
+
+      Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
+
+      communityEvents.push(event);
+      renderEvents();
+      e.target.reset();
+      document.getElementById('community-enabled').checked = true;
+    });
+
+    // Toggle event
+    function toggleEvent(type, index) {
+      const events = type === 'genie' ? genieEvents : communityEvents;
+      events[index].enabled = events[index].enabled === false ? true : false;
+      renderEvents();
+    }
+
+    // Delete event
+    function deleteEvent(type, index) {
+      if (!confirm('Delete this event?')) return;
+      const events = type === 'genie' ? genieEvents : communityEvents;
+      events.splice(index, 1);
+      renderEvents();
+    }
+
+    // Generate JSON output
+    function generateJSON() {
+      const output = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        genieEvents: genieEvents,
+        communityEvents: communityEvents
+      };
+
+      document.getElementById('json-output').textContent = JSON.stringify(output, null, 2);
+      showTab('output');
+    }
+
+    // Copy JSON
+    function copyJSON() {
+      const text = document.getElementById('json-output').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Copied to clipboard!');
+      });
+    }
+
+    // Load from existing JSON
+    async function loadFromJSON() {
+      const url = prompt('Enter JSON URL:', 'https://bsims-codes.github.io/MyVMK-Genie-dev/genie-events.json');
+      if (!url) return;
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.genieEvents) genieEvents = data.genieEvents;
+        if (data.communityEvents) communityEvents = data.communityEvents;
+
+        renderEvents();
+        alert('Loaded ' + genieEvents.length + ' genie events and ' + communityEvents.length + ' community events');
+      } catch (err) {
+        alert('Failed to load: ' + err.message);
+      }
+    }
+
+    // Initialize
+    initRoomSelects();
+
+    // Load from localStorage
+    try {
+      const savedGenie = localStorage.getItem('genieEvents');
+      const savedCommunity = localStorage.getItem('communityEvents');
+      if (savedGenie) genieEvents = JSON.parse(savedGenie);
+      if (savedCommunity) communityEvents = JSON.parse(savedCommunity);
+      renderEvents();
+    } catch (e) {}
+  </script>
+</body>
+</html>
