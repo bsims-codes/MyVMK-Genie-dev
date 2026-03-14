@@ -1362,7 +1362,7 @@ function sendPhraseToChat(phrase) {
 }
 
 // Show notification overlay
-function showNotification(text, type = 'info') {
+function showNotification(text, type = 'info', duration = 2000) {
   // Remove existing notification
   const existing = document.getElementById('vmkpal-notification')
   if (existing) existing.remove()
@@ -1406,11 +1406,11 @@ function showNotification(text, type = 'info') {
 
   document.body.appendChild(notification)
 
-  // Remove after 2 seconds
+  // Remove after specified duration
   setTimeout(() => {
     notification.style.animation = 'vmkpal-slide-out 0.3s ease forwards'
     setTimeout(() => notification.remove(), 300)
-  }, 2000)
+  }, duration)
 }
 
 // Show screenshot modal with clipboard/download options
@@ -3191,88 +3191,88 @@ function checkTinkerbellRoom() {
   }
 }
 
-// Track last used butterfly to alternate colors
-let lastButterflyImageIndex = -1
+// Butterfly flight patterns - each butterfly has unique movement characteristics
+const BUTTERFLY_PATTERNS = [
+  { // Butterfly 1: Gentle floater - slow, wide arcs, very smooth
+    moveSpeed: 0.003,
+    wobbleSpeed: 0.015,
+    wobbleAmount: 0.3,
+    wobbleInfluence: 0.08,
+    targetInterval: 8000,
+    phaseOffset: 0
+  },
+  { // Butterfly 2: Drifter - medium speed, figure-8 pattern
+    moveSpeed: 0.004,
+    wobbleSpeed: 0.025,
+    wobbleAmount: 0.6,
+    wobbleInfluence: 0.12,
+    targetInterval: 6000,
+    phaseOffset: Math.PI * 0.66
+  },
+  { // Butterfly 3: Explorer - slightly faster, more direct paths
+    moveSpeed: 0.005,
+    wobbleSpeed: 0.02,
+    wobbleAmount: 0.4,
+    wobbleInfluence: 0.1,
+    targetInterval: 5000,
+    phaseOffset: Math.PI * 1.33
+  }
+]
 
 // Butterfly Effect for Snow White Hide 'n Seek Forest
-function createButterfly() {
+function createButterfly(index) {
   const bounds = getGameCanvasBounds()
+  const pattern = BUTTERFLY_PATTERNS[index]
 
-  // Pick a different butterfly than the last one
-  let imageIndex
-  do {
-    imageIndex = Math.floor(Math.random() * BUTTERFLY_IMAGES.length)
-  } while (imageIndex === lastButterflyImageIndex && BUTTERFLY_IMAGES.length > 1)
-  lastButterflyImageIndex = imageIndex
-
-  const randomImage = BUTTERFLY_IMAGES[imageIndex]
-  const imageUrl = chrome.runtime.getURL(randomImage)
+  // Use specific butterfly image for this index
+  const imageUrl = chrome.runtime.getURL(BUTTERFLY_IMAGES[index])
 
   // Create butterfly element
   const butterfly = document.createElement('img')
   butterfly.src = imageUrl
   butterfly.className = 'vmkpal-butterfly'
 
-  // Random starting position (from edges)
-  const side = Math.floor(Math.random() * 4)
-  let startX, startY
-  switch (side) {
-    case 0: // Top
-      startX = bounds.left + Math.random() * bounds.width
-      startY = bounds.top - 30
-      break
-    case 1: // Right
-      startX = bounds.left + bounds.width + 30
-      startY = bounds.top + Math.random() * bounds.height
-      break
-    case 2: // Bottom
-      startX = bounds.left + Math.random() * bounds.width
-      startY = bounds.top + bounds.height + 30
-      break
-    case 3: // Left
-      startX = bounds.left - 30
-      startY = bounds.top + Math.random() * bounds.height
-      break
-  }
+  // Start from different positions for each butterfly
+  const startPositions = [
+    { x: bounds.left + bounds.width * 0.25, y: bounds.top + bounds.height * 0.3 },
+    { x: bounds.left + bounds.width * 0.75, y: bounds.top + bounds.height * 0.5 },
+    { x: bounds.left + bounds.width * 0.5, y: bounds.top + bounds.height * 0.7 }
+  ]
+  const startPos = startPositions[index]
 
   butterfly.style.cssText = `
     position: fixed;
-    width: 24px;
+    width: 18px;
     height: auto;
     pointer-events: none;
     opacity: 0;
     z-index: 2147483640;
     filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5));
     transition: opacity 1.5s ease-in-out;
-    left: ${startX}px;
-    top: ${startY}px;
+    left: ${startPos.x}px;
+    top: ${startPos.y}px;
   `
 
   document.body.appendChild(butterfly)
 
   const data = {
     element: butterfly,
-    x: startX,
-    y: startY,
+    x: startPos.x,
+    y: startPos.y,
     targetX: bounds.left + 50 + Math.random() * (bounds.width - 100),
     targetY: bounds.top + 50 + Math.random() * (bounds.height - 100),
-    phase: Math.random() * Math.PI * 2,
-    speed: 1 + Math.random() * 0.5,
-    wobbleAmount: 0.5 + Math.random() * 0.5, // Reduced wobble
-    lastTargetChange: performance.now(),
-    targetChangeInterval: 4000 + Math.random() * 5000, // Slower target changes
-    lifespan: 15000 + Math.random() * 20000, // 15-35 seconds
-    birthTime: performance.now(),
-    fadeOutStarted: false
+    phase: pattern.phaseOffset,
+    pattern: pattern,
+    lastTargetChange: performance.now()
   }
 
   butterflyElements.push(butterfly)
   butterflyData.push(data)
 
-  // Fade in
-  requestAnimationFrame(() => {
+  // Fade in with slight delay per butterfly
+  setTimeout(() => {
     butterfly.style.opacity = '1'
-  })
+  }, index * 500)
 }
 
 function updateButterflies() {
@@ -3281,50 +3281,33 @@ function updateButterflies() {
   const bounds = getGameCanvasBounds()
   const now = performance.now()
 
-  for (let i = butterflyData.length - 1; i >= 0; i--) {
+  for (let i = 0; i < butterflyData.length; i++) {
     const data = butterflyData[i]
     const butterfly = data.element
+    const pattern = data.pattern
 
-    // Check if butterfly should start fading out
-    if (!data.fadeOutStarted && now - data.birthTime > data.lifespan) {
-      data.fadeOutStarted = true
-      butterfly.style.opacity = '0'
-
-      // Remove after fade out
-      setTimeout(() => {
-        const idx = butterflyElements.indexOf(butterfly)
-        if (idx > -1) {
-          butterflyElements.splice(idx, 1)
-          butterflyData.splice(idx, 1)
-        }
-        butterfly.remove()
-      }, 1500)
-      continue
-    }
-
-    // Change target position periodically
-    if (now - data.lastTargetChange > data.targetChangeInterval) {
-      data.targetX = bounds.left + 50 + Math.random() * (bounds.width - 100)
-      data.targetY = bounds.top + 50 + Math.random() * (bounds.height - 100)
-      data.targetChangeInterval = 3000 + Math.random() * 4000
+    // Change target position periodically based on pattern
+    if (now - data.lastTargetChange > pattern.targetInterval) {
+      data.targetX = bounds.left + 60 + Math.random() * (bounds.width - 120)
+      data.targetY = bounds.top + 60 + Math.random() * (bounds.height - 120)
       data.lastTargetChange = now
     }
 
-    // Move toward target with gentle wobble
+    // Move toward target with pattern-specific wobble
     const dx = data.targetX - data.x
     const dy = data.targetY - data.y
 
-    data.phase += 0.03 // Slower wobble cycle
-    const wobbleX = Math.sin(data.phase) * data.wobbleAmount
-    const wobbleY = Math.cos(data.phase * 1.3) * data.wobbleAmount
+    data.phase += pattern.wobbleSpeed
+    const wobbleX = Math.sin(data.phase) * pattern.wobbleAmount
+    const wobbleY = Math.cos(data.phase * 1.3) * pattern.wobbleAmount
 
-    // Slower movement (0.006 instead of 0.012) and less wobble influence (0.1 instead of 0.3)
-    data.x += dx * 0.006 + wobbleX * 0.1
-    data.y += dy * 0.006 + wobbleY * 0.1
+    // Apply pattern-specific movement
+    data.x += dx * pattern.moveSpeed + wobbleX * pattern.wobbleInfluence
+    data.y += dy * pattern.moveSpeed + wobbleY * pattern.wobbleInfluence
 
     // Keep within bounds
-    data.x = Math.max(bounds.left + 10, Math.min(data.x, bounds.left + bounds.width - 40))
-    data.y = Math.max(bounds.top + 10, Math.min(data.y, bounds.top + bounds.height - 40))
+    data.x = Math.max(bounds.left + 15, Math.min(data.x, bounds.left + bounds.width - 35))
+    data.y = Math.max(bounds.top + 15, Math.min(data.y, bounds.top + bounds.height - 35))
 
     // Apply position
     butterfly.style.left = data.x + 'px'
@@ -3334,35 +3317,17 @@ function updateButterflies() {
   butterflyAnimationId = requestAnimationFrame(updateButterflies)
 }
 
-function spawnButterflyPeriodically() {
-  if (!isButterflyActive) return
-
-  // Only spawn if we have less than 2 butterflies
-  if (butterflyElements.length < 2) {
-    createButterfly()
-  }
-
-  // Schedule next spawn check (5-12 seconds)
-  butterflySpawnTimer = setTimeout(spawnButterflyPeriodically, 5000 + Math.random() * 7000)
-}
-
 function startButterflyEffect() {
   if (isButterflyActive) return
 
   isButterflyActive = true
 
-  // Start with 1 butterfly
-  createButterfly()
-
-  // Maybe add a second one after a short delay
-  setTimeout(() => {
-    if (isButterflyActive && butterflyElements.length < 2 && Math.random() > 0.5) {
-      createButterfly()
-    }
-  }, 2000)
+  // Create all 3 butterflies permanently
+  for (let i = 0; i < 3; i++) {
+    createButterfly(i)
+  }
 
   updateButterflies()
-  spawnButterflyPeriodically()
 }
 
 function stopButterflyEffect() {
@@ -3511,7 +3476,7 @@ function checkGenieEvents() {
         ? `🧞 Event starting shortly in ${event.roomName}!`
         : '🧞 Event starting shortly!'
 
-      showNotification(message, 'info')
+      showNotification(message, 'info', 8000)
     }
 
     // Clean up old notifications (events that have already ended)
