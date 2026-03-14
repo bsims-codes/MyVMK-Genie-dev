@@ -63,7 +63,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["raingif.gif", "myvmk-genie.png", "myvmk-genie-lamp-logo-pink.png", "genie-background.png", "genie-background-smoky-pink.png", "genie-host-events.png", "genie-genie-events.png", "genie-community-events.png", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png", "Tinkerbelle_Only.gif", "Butterfly1.gif", "Butterfly2.gif", "Butterfly3.gif"],
+      "resources": ["raingif.gif", "myvmk-genie.png", "myvmk-genie-lamp-logo-pink.png", "genie-background.png", "genie-background-smoky-pink.png", "genie-host-events.png", "genie-genie-events.png", "genie-community-events.png", "genie-double-credits.png", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png", "Tinkerbelle_Only.gif", "Butterfly1.gif", "Butterfly2.gif", "Butterfly3.gif"],
       "matches": ["https://www.myvmk.com/*", "https://myvmk.com/*"]
     }
   ]
