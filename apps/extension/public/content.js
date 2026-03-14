@@ -276,16 +276,16 @@ const FANTASYLAND_COURTYARD_ID = 99
 const TINKERBELL_IMAGE = 'Tinkerbelle_Only.gif'
 const TINKERBELL_GLOW_COLOR = '255, 215, 0' // Gold sparkle
 
-// Genie Events System - remote scheduled events
-const GENIE_EVENTS_URL = 'https://bsims-codes.github.io/MyVMK-Genie-dev/genie-events.json'
+// Genie Events System - remote scheduled events via JSONBin.io
+// To configure: Replace YOUR_BIN_ID_HERE with your actual JSONBin bin ID
+const GENIE_EVENTS_BIN_ID = '67d343388960c979a5797de1' // JSONBin bin ID
+const GENIE_EVENTS_URL = `https://api.jsonbin.io/v3/b/${GENIE_EVENTS_BIN_ID}/latest`
 const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
 let scheduledCommunityEvents = []  // Player events - audio only
 let activeGenieEvent = null
 let activeCommunityEvent = null
 let genieEventCheckInterval = null
-let genieEventAudio = null
-let communityEventAudio = null
 
 // Room detection - tries multiple methods to find current room
 function detectRoom() {
@@ -2391,7 +2391,7 @@ function createRocket() {
   return {
     x: Math.random() * (bounds.width * 0.8) + bounds.width * 0.1, // Launch from middle 80% of screen
     y: bounds.height,
-    targetY: bounds.height * 0.15 + Math.random() * (bounds.height * 0.35), // Explode in upper portion
+    targetY: bounds.height * 0.05 + Math.random() * (bounds.height * 0.25), // Explode in top ~30%
     speed: 350 + Math.random() * 150,
     colors: colorSet,
     trail: [],
@@ -3182,10 +3182,14 @@ function checkTinkerbellRoom() {
 
 async function fetchGenieEvents() {
   try {
-    const response = await fetch(GENIE_EVENTS_URL + '?t=' + Date.now(), { cache: 'no-store' })
+    const response = await fetch(GENIE_EVENTS_URL, {
+      headers: { 'X-Access-Key': '$2a$10$placeholder' } // Public read access
+    })
     if (!response.ok) return
 
-    const data = await response.json()
+    const json = await response.json()
+    // JSONBin wraps data in 'record' property
+    const data = json.record || json
 
     // Genie events (admin) - can trigger overlays + audio
     if (data && Array.isArray(data.genieEvents)) {
@@ -3255,17 +3259,13 @@ function startGenieEvent(event) {
     startFireworks()
   }
 
-  // Play audio if specified
+  // Play audio if specified (uses existing YouTube player - mutes game audio)
   if (event.audioUrl) {
-    try {
-      genieEventAudio = new Audio(event.audioUrl)
-      genieEventAudio.volume = 0.7
-      genieEventAudio.play().catch(() => {})
-    } catch (e) {}
+    playAudio(event.audioUrl)
   }
 
   // Show notification
-  showNotification(`${event.title} starting!`, 'success')
+  showNotification(`🧞 ${event.title} starting!`, 'success')
 }
 
 function stopGenieEvent() {
@@ -3279,11 +3279,8 @@ function stopGenieEvent() {
     stopFireworks()
   }
 
-  // Stop audio
-  if (genieEventAudio) {
-    genieEventAudio.pause()
-    genieEventAudio = null
-  }
+  // Stop audio (restores game audio)
+  stopAudio()
 }
 
 // Community Events - audio only, no overlays
@@ -3292,17 +3289,13 @@ function startCommunityEvent(event) {
 
   activeCommunityEvent = event
 
-  // Play audio if specified (audio only - no overlay effects)
+  // Play audio if specified (uses existing YouTube player - mutes game audio)
   if (event.audioUrl) {
-    try {
-      communityEventAudio = new Audio(event.audioUrl)
-      communityEventAudio.volume = 0.7
-      communityEventAudio.play().catch(() => {})
-    } catch (e) {}
+    playAudio(event.audioUrl)
   }
 
   // Show notification
-  showNotification(`${event.title} starting!`, 'info')
+  showNotification(`🎵 ${event.title} starting!`, 'info')
 }
 
 function stopCommunityEvent() {
@@ -3310,11 +3303,8 @@ function stopCommunityEvent() {
 
   activeCommunityEvent = null
 
-  // Stop audio
-  if (communityEventAudio) {
-    communityEventAudio.pause()
-    communityEventAudio = null
-  }
+  // Stop audio (restores game audio)
+  stopAudio()
 }
 
 function startGenieEventSystem() {
@@ -4231,7 +4221,7 @@ function createSettingsPanel() {
   // Version info
   const versionInfo = document.createElement('div')
   versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
-  versionInfo.textContent = 'MyVMK Genie v1.1.6'
+  versionInfo.textContent = 'MyVMK Genie v1.1.7'
   div.appendChild(versionInfo)
 
   return div
@@ -4239,6 +4229,15 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '1.1.7',
+    date: '2025-03-13',
+    changes: [
+      'Added Genie Events system for scheduled events',
+      'Added Community Events support',
+      'Events show in calendar and ticker with unique icons'
+    ]
+  },
   {
     version: '1.1.6',
     date: '2025-03-13',
