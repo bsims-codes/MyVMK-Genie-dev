@@ -224,7 +224,11 @@
             <label>Effect</label>
             <select id="genie-effect">
               <option value="">None</option>
-              <option value="fireworks">Fireworks</option>
+              <option value="fireworks">🎆 Fireworks</option>
+              <option value="rain">🌧️ Rain</option>
+              <option value="snow">❄️ Snow</option>
+              <option value="money">💵 Money Rain</option>
+              <option value="emoji">🎉 Emoji Rain</option>
             </select>
           </div>
         </div>
@@ -237,15 +241,17 @@
         </div>
 
         <div class="form-group">
-          <label>Audio URL (optional - must be direct .mp3/.wav link)</label>
-          <input type="url" id="genie-audio" placeholder="https://example.com/music.mp3">
+          <label>Audio URL (YouTube link or direct audio URL)</label>
+          <input type="url" id="genie-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
         </div>
 
         <div class="form-group">
           <label><input type="checkbox" id="genie-enabled" checked> Enabled</label>
         </div>
 
-        <button type="submit" class="btn-primary">Add Genie Event</button>
+        <input type="hidden" id="genie-edit-index" value="-1">
+        <button type="submit" class="btn-primary" id="genie-submit-btn">Add Genie Event</button>
+        <button type="button" class="btn-secondary" id="genie-cancel-btn" onclick="cancelGenieEdit()" style="display: none; margin-left: 10px;">Cancel</button>
       </form>
 
       <div class="event-list">
@@ -300,15 +306,17 @@
         </div>
 
         <div class="form-group">
-          <label>Audio URL (optional)</label>
-          <input type="url" id="community-audio" placeholder="https://example.com/music.mp3">
+          <label>Audio URL (YouTube link or direct audio URL)</label>
+          <input type="url" id="community-audio" placeholder="https://youtube.com/watch?v=... or direct .mp3 URL">
         </div>
 
         <div class="form-group">
           <label><input type="checkbox" id="community-enabled" checked> Enabled</label>
         </div>
 
-        <button type="submit" class="btn-primary">Add Community Event</button>
+        <input type="hidden" id="community-edit-index" value="-1">
+        <button type="submit" class="btn-primary" id="community-submit-btn">Add Community Event</button>
+        <button type="button" class="btn-secondary" id="community-cancel-btn" onclick="cancelCommunityEdit()" style="display: none; margin-left: 10px;">Cancel</button>
       </form>
 
       <div class="event-list">
@@ -557,6 +565,15 @@
       return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    // Effect display names
+    const EFFECT_NAMES = {
+      fireworks: '🎆 Fireworks',
+      rain: '🌧️ Rain',
+      snow: '❄️ Snow',
+      money: '💵 Money',
+      emoji: '🎉 Emoji'
+    };
+
     // Render events
     function renderEvents() {
       const genieList = document.getElementById('genie-events-list');
@@ -567,9 +584,11 @@
           <div class="event-item ${e.enabled === false ? 'disabled' : ''}">
             <div class="event-info">
               <h4>${e.title}</h4>
-              <p>${formatDateTime(e.startTime)} • ${e.roomName || 'Any Room'} ${e.effect ? '• ' + e.effect : ''}</p>
+              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 5} min • ${e.roomName || 'Any Room'} ${e.effect ? '• ' + (EFFECT_NAMES[e.effect] || e.effect) : ''}</p>
+              ${e.audioUrl ? '<p style="font-size: 11px; color: #8b5cf6;">🎵 Has audio</p>' : ''}
             </div>
             <div class="event-actions">
+              <button class="btn-primary" onclick="editGenieEvent(${i})" style="background: #6366f1;">Edit</button>
               <button class="btn-secondary" onclick="toggleEvent('genie', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
               <button class="btn-danger" onclick="deleteEvent('genie', ${i})">Delete</button>
             </div>
@@ -585,9 +604,11 @@
           <div class="event-item community ${e.enabled === false ? 'disabled' : ''}">
             <div class="event-info">
               <h4>${e.title}</h4>
-              <p>${formatDateTime(e.startTime)} • ${e.roomName || 'Any Room'} ${e.submittedBy ? '• by ' + e.submittedBy : ''}</p>
+              <p>${formatDateTime(e.startTime)} • ${e.durationMinutes || 30} min • ${e.roomName || 'Any Room'} ${e.submittedBy ? '• by ' + e.submittedBy : ''}</p>
+              ${e.audioUrl ? '<p style="font-size: 11px; color: #10b981;">🎵 Has audio</p>' : ''}
             </div>
             <div class="event-actions">
+              <button class="btn-primary" onclick="editCommunityEvent(${i})" style="background: #6366f1;">Edit</button>
               <button class="btn-secondary" onclick="toggleEvent('community', ${i})">${e.enabled === false ? 'Enable' : 'Disable'}</button>
               <button class="btn-danger" onclick="deleteEvent('community', ${i})">Delete</button>
             </div>
@@ -596,15 +617,48 @@
       }
     }
 
-    // Add genie event
+    // Edit genie event - populate form
+    function editGenieEvent(index) {
+      const event = genieEvents[index];
+      const startDate = new Date(event.startTime);
+
+      document.getElementById('genie-title').value = event.title || '';
+      document.getElementById('genie-desc').value = event.description || '';
+      document.getElementById('genie-date').value = startDate.toISOString().split('T')[0];
+      document.getElementById('genie-time').value = startDate.toTimeString().slice(0, 5);
+      document.getElementById('genie-duration').value = event.durationMinutes || 5;
+      document.getElementById('genie-effect').value = event.effect || '';
+      document.getElementById('genie-room').value = event.roomId || '';
+      document.getElementById('genie-audio').value = event.audioUrl || '';
+      document.getElementById('genie-enabled').checked = event.enabled !== false;
+
+      document.getElementById('genie-edit-index').value = index;
+      document.getElementById('genie-submit-btn').textContent = 'Update Event';
+      document.getElementById('genie-cancel-btn').style.display = 'inline-block';
+
+      // Scroll to form
+      document.getElementById('genie-form').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function cancelGenieEdit() {
+      document.getElementById('genie-form').reset();
+      document.getElementById('genie-edit-index').value = -1;
+      document.getElementById('genie-submit-btn').textContent = 'Add Genie Event';
+      document.getElementById('genie-cancel-btn').style.display = 'none';
+      document.getElementById('genie-enabled').checked = true;
+    }
+
+    // Add/update genie event
     document.getElementById('genie-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('genie-date').value;
       const time = document.getElementById('genie-time').value;
       const roomId = document.getElementById('genie-room').value;
+      const editIndex = parseInt(document.getElementById('genie-edit-index').value);
+      const isEditing = editIndex >= 0;
 
       const event = {
-        id: generateId('genie'),
+        id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
         title: document.getElementById('genie-title').value,
         description: document.getElementById('genie-desc').value || undefined,
         roomId: roomId ? parseInt(roomId) : undefined,
@@ -617,23 +671,62 @@
       };
 
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
-      genieEvents.push(event);
+
+      if (isEditing) {
+        genieEvents[editIndex] = event;
+        setStatus('Event updated - click Publish to go live', 'success');
+      } else {
+        genieEvents.push(event);
+        setStatus('Event added - click Publish to go live', 'success');
+      }
+
       renderEvents();
       hasUnsavedChanges = true;
-      setStatus('Event added - click Publish to go live', 'success');
-      e.target.reset();
-      document.getElementById('genie-enabled').checked = true;
+      cancelGenieEdit(); // Reset form
     });
 
-    // Add community event
+    // Edit community event - populate form
+    function editCommunityEvent(index) {
+      const event = communityEvents[index];
+      const startDate = new Date(event.startTime);
+
+      document.getElementById('community-title').value = event.title || '';
+      document.getElementById('community-desc').value = event.description || '';
+      document.getElementById('community-submitter').value = event.submittedBy || '';
+      document.getElementById('community-date').value = startDate.toISOString().split('T')[0];
+      document.getElementById('community-time').value = startDate.toTimeString().slice(0, 5);
+      document.getElementById('community-duration').value = event.durationMinutes || 30;
+      document.getElementById('community-room').value = event.roomId || '';
+      document.getElementById('community-audio').value = event.audioUrl || '';
+      document.getElementById('community-enabled').checked = event.enabled !== false;
+
+      document.getElementById('community-edit-index').value = index;
+      document.getElementById('community-submit-btn').textContent = 'Update Event';
+      document.getElementById('community-cancel-btn').style.display = 'inline-block';
+
+      // Scroll to form
+      document.getElementById('community-form').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function cancelCommunityEdit() {
+      document.getElementById('community-form').reset();
+      document.getElementById('community-edit-index').value = -1;
+      document.getElementById('community-submit-btn').textContent = 'Add Community Event';
+      document.getElementById('community-cancel-btn').style.display = 'none';
+      document.getElementById('community-enabled').checked = true;
+    }
+
+    // Add/update community event
     document.getElementById('community-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('community-date').value;
       const time = document.getElementById('community-time').value;
       const roomId = document.getElementById('community-room').value;
+      const editIndex = parseInt(document.getElementById('community-edit-index').value);
+      const isEditing = editIndex >= 0;
 
       const event = {
-        id: generateId('community'),
+        id: isEditing ? communityEvents[editIndex].id : generateId('community'),
         title: document.getElementById('community-title').value,
         description: document.getElementById('community-desc').value || undefined,
         roomId: roomId ? parseInt(roomId) : undefined,
@@ -646,12 +739,18 @@
       };
 
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
-      communityEvents.push(event);
+
+      if (isEditing) {
+        communityEvents[editIndex] = event;
+        setStatus('Event updated - click Publish to go live', 'success');
+      } else {
+        communityEvents.push(event);
+        setStatus('Event added - click Publish to go live', 'success');
+      }
+
       renderEvents();
       hasUnsavedChanges = true;
-      setStatus('Event added - click Publish to go live', 'success');
-      e.target.reset();
-      document.getElementById('community-enabled').checked = true;
+      cancelCommunityEdit(); // Reset form
     });
 
     function toggleEvent(type, index) {

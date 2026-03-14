@@ -3255,8 +3255,22 @@ function startGenieEvent(event) {
   activeGenieEvent = event
 
   // Trigger the appropriate effect
-  if (event.effect === 'fireworks') {
-    startFireworks()
+  switch (event.effect) {
+    case 'fireworks':
+      startFireworks()
+      break
+    case 'rain':
+      startRainEffect()
+      break
+    case 'snow':
+      startSnowEffect()
+      break
+    case 'money':
+      startMoneyRain()
+      break
+    case 'emoji':
+      startEmojiRain()
+      break
   }
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
@@ -3275,8 +3289,22 @@ function stopGenieEvent() {
   activeGenieEvent = null
 
   // Stop the effect
-  if (event.effect === 'fireworks') {
-    stopFireworks()
+  switch (event.effect) {
+    case 'fireworks':
+      stopFireworks()
+      break
+    case 'rain':
+      stopRainEffect()
+      break
+    case 'snow':
+      stopSnowEffect()
+      break
+    case 'money':
+      stopMoneyRain()
+      break
+    case 'emoji':
+      stopEmojiRain()
+      break
   }
 
   // Stop audio (restores game audio)
@@ -4218,6 +4246,37 @@ function createSettingsPanel() {
   changelogBtn.onclick = () => openFeaturePanel('📋', 'Change Log', createChangelogPanel)
   div.appendChild(changelogBtn)
 
+  // Refresh Events Button
+  const refreshEventsBtn = document.createElement('button')
+  refreshEventsBtn.innerHTML = '🔄 Refresh Events'
+  refreshEventsBtn.style.cssText = `
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(139, 92, 246, 0.2);
+    color: rgba(255,255,255,0.8);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 8px;
+  `
+  refreshEventsBtn.onmouseenter = () => refreshEventsBtn.style.background = 'rgba(139, 92, 246, 0.3)'
+  refreshEventsBtn.onmouseleave = () => refreshEventsBtn.style.background = 'rgba(139, 92, 246, 0.2)'
+  refreshEventsBtn.onclick = async () => {
+    refreshEventsBtn.innerHTML = '🔄 Refreshing...'
+    refreshEventsBtn.style.opacity = '0.7'
+    await fetchGenieEvents()
+    refreshEventsBtn.innerHTML = '✅ Events Refreshed!'
+    setTimeout(() => {
+      refreshEventsBtn.innerHTML = '🔄 Refresh Events'
+      refreshEventsBtn.style.opacity = '1'
+    }, 2000)
+    showNotification(`Loaded ${scheduledGenieEvents.length} genie events`, 'success')
+  }
+  div.appendChild(refreshEventsBtn)
+
   // Version info
   const versionInfo = document.createElement('div')
   versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
@@ -4233,9 +4292,10 @@ const CHANGELOG = [
     version: '1.1.7',
     date: '2025-03-13',
     changes: [
-      'Added Genie Events system for scheduled events',
-      'Added Community Events support',
-      'Events show in calendar and ticker with unique icons'
+      'Added Genie Events system with all overlay effects',
+      'Events support YouTube audio with embedded player',
+      'Added Refresh Events button in Settings',
+      'Fireworks now explode in top 30% of screen'
     ]
   },
   {
