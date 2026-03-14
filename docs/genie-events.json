@@ -1,32 +1,18 @@
 {
   "version": 1,
-  "lastUpdated": "2025-03-13T00:00:00Z",
+  "lastUpdated": "2026-03-14T03:37:11.885Z",
   "genieEvents": [
     {
-      "id": "example-fireworks-001",
-      "title": "Genie Fireworks Show",
-      "description": "A magical fireworks display by MyVMK Genie!",
-      "roomId": 99,
-      "roomName": "Fantasyland Courtyard",
-      "startTime": "2025-03-15T20:00:00Z",
-      "durationMinutes": 5,
+      "id": "genie-1773459367996-ux0v06jq4",
+      "title": "Happily Ever After - Genie Release Party",
+      "description": "A fireworks extravaganza to celebrate the release of MyVMK Genie",
+      "roomId": 30,
+      "roomName": "Castle Gardens",
+      "startTime": "2026-03-14T04:00:00.000Z",
+      "durationMinutes": 18,
       "effect": "fireworks",
-      "audioUrl": null,
-      "enabled": false
+      "enabled": true
     }
   ],
-  "communityEvents": [
-    {
-      "id": "example-community-001",
-      "title": "Community Dance Party",
-      "description": "Join us for music and fun!",
-      "roomId": 2,
-      "roomName": "Central Plaza",
-      "startTime": "2025-03-16T19:00:00Z",
-      "durationMinutes": 30,
-      "audioUrl": null,
-      "submittedBy": "PlayerName",
-      "enabled": false
-    }
-  ]
+  "communityEvents": []
 }
