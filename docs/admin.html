@@ -246,6 +246,11 @@
         </div>
 
         <div class="form-group">
+          <label><input type="checkbox" id="genie-tinkerbell"> Include Tinkerbell</label>
+          <span style="font-size: 11px; color: rgba(255,255,255,0.5); margin-left: 5px;">Tinkerbell will fly around during the event</span>
+        </div>
+
+        <div class="form-group">
           <label><input type="checkbox" id="genie-enabled" checked> Enabled</label>
         </div>
 
@@ -572,14 +577,19 @@
       snow: '❄️',
       money: '💵',
       emoji: '🎉',
-      night: '🌙'
+      night: '🌙',
+      tinkerbell: '🧚'
     };
 
     // Format effects for display
     function formatEffects(event) {
       const effects = event.effects || (event.effect ? [event.effect] : []);
-      if (effects.length === 0) return '';
-      return '• ' + effects.map(e => EFFECT_NAMES[e] || e).join(' ');
+      let display = effects.map(e => EFFECT_NAMES[e] || e);
+      if (event.includeTinkerbell) {
+        display.push(EFFECT_NAMES.tinkerbell);
+      }
+      if (display.length === 0) return '';
+      return '• ' + display.join(' ');
     }
 
     // Render events
@@ -653,6 +663,7 @@
       setSelectedEffects(event.effects || event.effect); // Support both old and new format
       document.getElementById('genie-room').value = event.roomId || '';
       document.getElementById('genie-audio').value = event.audioUrl || '';
+      document.getElementById('genie-tinkerbell').checked = event.includeTinkerbell === true;
       document.getElementById('genie-enabled').checked = event.enabled !== false;
 
       document.getElementById('genie-edit-index').value = index;
@@ -668,6 +679,7 @@
       document.getElementById('genie-edit-index').value = -1;
       document.getElementById('genie-submit-btn').textContent = 'Add Genie Event';
       document.getElementById('genie-cancel-btn').style.display = 'none';
+      document.getElementById('genie-tinkerbell').checked = false;
       document.getElementById('genie-enabled').checked = true;
     }
 
@@ -681,6 +693,7 @@
       const isEditing = editIndex >= 0;
 
       const selectedEffects = getSelectedEffects();
+      const includeTinkerbell = document.getElementById('genie-tinkerbell').checked;
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
         title: document.getElementById('genie-title').value,
@@ -690,6 +703,7 @@
         startTime: new Date(`${date}T${time}:00`).toISOString(),
         durationMinutes: parseInt(document.getElementById('genie-duration').value) || 5,
         effects: selectedEffects.length > 0 ? selectedEffects : undefined,
+        includeTinkerbell: includeTinkerbell || undefined,
         audioUrl: document.getElementById('genie-audio').value || undefined,
         enabled: document.getElementById('genie-enabled').checked
       };

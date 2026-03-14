@@ -3586,6 +3586,9 @@ function startGenieEvent(event) {
   if (activeGenieEvent) {
     const prevEffects = activeGenieEvent.effects || (activeGenieEvent.effect ? [activeGenieEvent.effect] : [])
     prevEffects.forEach(stopEffect)
+    if (activeGenieEvent.includeTinkerbell) {
+      stopTinkerbellEffect()
+    }
   }
 
   console.log('MyVMK Genie: Starting event:', event, 'in room:', currentRoomId)
@@ -3596,6 +3599,12 @@ function startGenieEvent(event) {
   const effects = event.effects || (event.effect ? [event.effect] : [])
   console.log('MyVMK Genie: Effects to trigger:', effects)
   effects.forEach(startEffect)
+
+  // Start Tinkerbell if included
+  if (event.includeTinkerbell) {
+    console.log('MyVMK Genie: Starting Tinkerbell effect')
+    startTinkerbellEffect()
+  }
 
   // Play audio if specified (uses existing YouTube player - mutes game audio)
   // Start minimized so it doesn't cover the game
@@ -3617,6 +3626,11 @@ function stopGenieEvent() {
   // Stop effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
   effects.forEach(stopEffect)
+
+  // Stop Tinkerbell if it was included
+  if (event.includeTinkerbell) {
+    stopTinkerbellEffect()
+  }
 
   // Stop audio (restores game audio)
   stopAudio()
