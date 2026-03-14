@@ -1423,6 +1423,116 @@ function showNotification(text, type = 'info', duration = 2000, isHtml = false) 
   }, duration)
 }
 
+// Show bee banner notification - bee pulling a banner across the screen
+function showBeeBanner(text) {
+  // Remove existing bee banner
+  const existing = document.getElementById('vmkpal-bee-banner')
+  if (existing) existing.remove()
+
+  const beeGifUrl = chrome.runtime.getURL('bee.gif')
+
+  // Add animation keyframes if not present
+  if (!document.getElementById('vmkpal-bee-styles')) {
+    const style = document.createElement('style')
+    style.id = 'vmkpal-bee-styles'
+    style.textContent = `
+      @keyframes vmkpal-bee-fly {
+        from { transform: translateX(100vw); }
+        to { transform: translateX(-100%); }
+      }
+      @keyframes vmkpal-banner-wave {
+        0%, 100% { transform: rotate(-1deg); }
+        50% { transform: rotate(1deg); }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  // Create container for bee + banner
+  const container = document.createElement('div')
+  container.id = 'vmkpal-bee-banner'
+  container.style.cssText = `
+    position: fixed;
+    top: 30px;
+    left: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    animation: vmkpal-bee-fly 10s linear forwards;
+    pointer-events: none;
+  `
+
+  // Create bee image (on the left, pulling the banner)
+  const bee = document.createElement('img')
+  bee.src = beeGifUrl
+  bee.style.cssText = `
+    width: 40px;
+    height: auto;
+    flex-shrink: 0;
+    transform: scaleX(-1);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+  `
+
+  // Create rope/string connecting bee to banner
+  const rope = document.createElement('div')
+  rope.style.cssText = `
+    width: 15px;
+    height: 2px;
+    background: linear-gradient(to right, #8B4513, #654321);
+    flex-shrink: 0;
+    margin: 0 -2px;
+  `
+
+  // Create banner
+  const banner = document.createElement('div')
+  banner.style.cssText = `
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px solid #d97706;
+    border-radius: 4px;
+    padding: 8px 20px 8px 15px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: #92400e;
+    white-space: nowrap;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    animation: vmkpal-banner-wave 0.5s ease-in-out infinite;
+    position: relative;
+  `
+
+  // Add triangular attachment point on left side of banner
+  const attachment = document.createElement('div')
+  attachment.style.cssText = `
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-right: 8px solid #d97706;
+  `
+  banner.appendChild(attachment)
+
+  // Add text to banner
+  banner.appendChild(document.createTextNode(text))
+
+  // Assemble: bee -> rope -> banner
+  container.appendChild(bee)
+  container.appendChild(rope)
+  container.appendChild(banner)
+
+  document.body.appendChild(container)
+
+  // Remove after animation completes (10 seconds + buffer)
+  setTimeout(() => {
+    if (container.parentNode) {
+      container.remove()
+    }
+  }, 11000)
+}
+
 // Show screenshot modal with clipboard/download options
 function showScreenshotModal(dataUrl, isRegionSelect = false) {
   // Remove existing modal
@@ -3567,12 +3677,11 @@ function checkGenieEvents() {
     if (timeUntilStart > 0 && timeUntilStart <= 60 * 1000 && !notifiedUpcomingEvents.has(event.id)) {
       notifiedUpcomingEvents.add(event.id)
 
-      const beeIconUrl = chrome.runtime.getURL('bee-static.png')
       const message = event.roomName
-        ? `<img src="${beeIconUrl}" style="width: 20px; height: 20px;">Event starting shortly in ${event.roomName}!`
-        : `<img src="${beeIconUrl}" style="width: 20px; height: 20px;">Event starting shortly!`
+        ? `Event starting shortly in ${event.roomName}!`
+        : 'Event starting shortly!'
 
-      showNotification(message, 'info', 8000, true)
+      showBeeBanner(message)
     }
 
     // Clean up old notifications (events that have already ended)

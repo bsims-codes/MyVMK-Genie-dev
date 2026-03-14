@@ -53,6 +53,7 @@ const staticFiles = [
   'genie-community-events.png',
   'genie-double-credits.png',
   'bee-static.png',
+  'bee.gif',
   'genie-questcover-unclicked.png',
   'genie-questcover-clicked2.png',
   'beadie-genie-1.png',
