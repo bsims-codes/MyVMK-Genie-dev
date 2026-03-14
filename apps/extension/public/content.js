@@ -3240,6 +3240,9 @@ function createButterfly(index) {
   ]
   const startPos = startPositions[index]
 
+  // Flip the second butterfly to face left
+  const flipStyle = index === 1 ? 'transform: scaleX(-1);' : ''
+
   butterfly.style.cssText = `
     position: fixed;
     width: 18px;
@@ -3251,6 +3254,7 @@ function createButterfly(index) {
     transition: opacity 1.5s ease-in-out;
     left: ${startPos.x}px;
     top: ${startPos.y}px;
+    ${flipStyle}
   `
 
   document.body.appendChild(butterfly)
