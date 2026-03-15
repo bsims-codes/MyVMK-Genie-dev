@@ -4218,6 +4218,11 @@ function startEffect(effectName, eventMode = false) {
     case 'night':
       startNightOverlay(eventMode)
       break
+    case 'stars':
+      if (!isStarsOverlayEnabled) {
+        toggleStarsOverlay()
+      }
+      break
     case 'happilyEverAfter':
       startHappilyEverAfterShow()
       break
@@ -4253,6 +4258,11 @@ function stopEffect(effectName) {
       break
     case 'night':
       stopNightOverlay()
+      break
+    case 'stars':
+      if (isStarsOverlayEnabled) {
+        toggleStarsOverlay()
+      }
       break
     case 'happilyEverAfter':
       stopHappilyEverAfterShow()
