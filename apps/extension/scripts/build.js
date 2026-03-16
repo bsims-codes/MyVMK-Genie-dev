@@ -89,15 +89,24 @@ async function processJsFiles() {
 
     let content = fs.readFileSync(sourcePath, 'utf8');
 
-    // Minify for release builds
+    // For release builds: disable DEV_MODE
+    if (isRelease) {
+      content = content.replace(
+        /const DEV_MODE = true/g,
+        'const DEV_MODE = false'
+      );
+    }
+
+    // Minify for release builds and strip console.log
     if (isRelease && esbuild) {
       try {
         const result = await esbuild.transform(content, {
           minify: true,
           target: 'es2020',
+          drop: ['console'],  // Strip all console.* calls in release
         });
         content = result.code;
-        console.log(`✅ ${file} (minified)`);
+        console.log(`✅ ${file} (minified, logs stripped, DEV_MODE=false)`);
       } catch (e) {
         console.log(`⚠️  ${file} (minification failed, using original)`);
         fs.writeFileSync(outputPath, content);

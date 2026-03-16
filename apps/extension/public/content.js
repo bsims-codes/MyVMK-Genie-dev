@@ -1,8 +1,10 @@
 // MyVMK Genie - Content Script
 // Injected into myvmk.com pages (including game client popup)
 
-// Set to false before publishing to Chrome Web Store
-const INTERNAL_MODE = false
+// DEV_MODE: Enables internal/testing features
+// - true: Local development (includes test effects, internal features)
+// - false: Production release (automatically set by build script)
+const DEV_MODE = true
 
 console.log('MyVMK Genie loaded on:', window.location.href)
 
@@ -176,6 +178,8 @@ let isFireworksEnabled = false
 let isSnowEnabled = false
 let isEmojiRainEnabled = false
 let selectedEmoji = '🎉'
+let activeShakeIntensity = null // null, 'light', 'medium', 'heavy'
+let shakeAnimationId = null
 let isPositionLocked = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
@@ -2035,7 +2039,7 @@ function createToolbar() {
   content.appendChild(tickerContainer)
 
   // Room info box - hidden from UI but detection runs in background
-  // if (INTERNAL_MODE) {
+  // if (DEV_MODE) {
   //   const roomInfoBox = document.createElement('div')
   //   roomInfoBox.id = 'vmkpal-room-info'
   //   roomInfoBox.style.cssText = `
@@ -2068,50 +2072,23 @@ function createToolbar() {
     border-bottom: 1px solid rgba(255,255,255,0.1);
   `
 
-  // Screenshot button
-  const screenshotBtn = document.createElement('button')
-  screenshotBtn.innerHTML = '📸 Screenshot'
-  screenshotBtn.style.cssText = `
+  // Screenshot helper text (use Alt+S keyboard shortcut)
+  const screenshotHelper = document.createElement('div')
+  screenshotHelper.innerHTML = '📸 <span style="opacity:0.7">Alt+S</span>'
+  screenshotHelper.style.cssText = `
     flex: 1;
     padding: 12px;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
-    background: rgba(255,255,255,0.05);
-    color: rgba(255,255,255,0.8);
+    background: rgba(255,255,255,0.03);
+    color: rgba(255,255,255,0.6);
     font-size: 13px;
     font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
   `
-  screenshotBtn.onmouseover = () => {
-    screenshotBtn.style.background = 'rgba(255,255,255,0.1)'
-    screenshotBtn.style.borderColor = 'rgba(255,255,255,0.2)'
-    screenshotBtn.style.transform = 'scale(1.02)'
-  }
-  screenshotBtn.onmouseout = () => {
-    screenshotBtn.style.background = 'rgba(255,255,255,0.05)'
-    screenshotBtn.style.borderColor = 'rgba(255,255,255,0.1)'
-    screenshotBtn.style.transform = 'scale(1)'
-  }
-  screenshotBtn.onclick = async () => {
-    screenshotBtn.blur() // Prevent spacebar re-trigger
-    try {
-      showNotification('Capturing...', 'info')
-      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
-        if (chrome.runtime.lastError) {
-          showNotification('Extension error - refresh page', 'error')
-          return
-        }
-        if (response && response.success) {
-          showScreenshotModal(response.dataUrl)
-        } else {
-          showNotification('Screenshot failed', 'error')
-        }
-      })
-    } catch (e) {
-      showNotification('Refresh page first', 'error')
-    }
-  }
 
   // Record button
   recordBtn = document.createElement('button')
@@ -2147,7 +2124,7 @@ function createToolbar() {
     }
   }
 
-  quickActions.appendChild(screenshotBtn)
+  quickActions.appendChild(screenshotHelper)
   quickActions.appendChild(recordBtn)
   content.appendChild(quickActions)
 
@@ -2167,7 +2144,7 @@ function createToolbar() {
   // featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel)) // Hidden until feature is ready
   featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
-  if (INTERNAL_MODE) {
+  if (DEV_MODE) {
     featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
     featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
   }
@@ -3933,9 +3910,6 @@ function createButterfly(index) {
   ]
   const startPos = startPositions[index]
 
-  // Flip the second butterfly to face left
-  const flipStyle = index === 1 ? 'transform: scaleX(-1);' : ''
-
   butterfly.style.cssText = `
     position: fixed;
     width: 18px;
@@ -3947,7 +3921,6 @@ function createButterfly(index) {
     transition: opacity 1.5s ease-in-out;
     left: ${startPos.x}px;
     top: ${startPos.y}px;
-    ${flipStyle}
   `
 
   document.body.appendChild(butterfly)
@@ -4006,9 +3979,16 @@ function updateButterflies() {
     data.x = Math.max(bounds.left + 15, Math.min(data.x, bounds.left + bounds.width - 35))
     data.y = Math.max(bounds.top + 15, Math.min(data.y, bounds.top + bounds.height - 35))
 
-    // Apply position
+    // Apply position and flip based on direction
     butterfly.style.left = data.x + 'px'
     butterfly.style.top = data.y + 'px'
+
+    // Flip butterfly to face movement direction (default image faces right)
+    if (dx < -0.5) {
+      butterfly.style.transform = 'scaleX(-1)'
+    } else if (dx > 0.5) {
+      butterfly.style.transform = 'scaleX(1)'
+    }
   }
 
   butterflyAnimationId = requestAnimationFrame(updateButterflies)
@@ -4067,6 +4047,238 @@ function checkButterflyRoom() {
   if (isButterflyActive) {
     stopButterflyEffect()
   }
+}
+
+// ============================================
+// SCREEN SHAKE EFFECT
+// ============================================
+
+const SHAKE_INTENSITIES = {
+  light: { offset: 3, interval: 50 },
+  medium: { offset: 7, interval: 40 },
+  heavy: { offset: 14, interval: 30 }
+}
+
+function startShakeEffect(intensity) {
+  // Stop any existing shake first
+  if (activeShakeIntensity) {
+    stopShakeEffect()
+  }
+
+  const canvas = document.getElementById('gameCanvas') || document.querySelector('canvas')
+  if (!canvas) {
+    showNotification('Game canvas not found', 'error')
+    return
+  }
+
+  activeShakeIntensity = intensity
+  const config = SHAKE_INTENSITIES[intensity]
+
+  // Store original transform
+  canvas.dataset.originalTransform = canvas.style.transform || ''
+
+  function shake() {
+    if (!activeShakeIntensity) return
+
+    const offsetX = (Math.random() - 0.5) * 2 * config.offset
+    const offsetY = (Math.random() - 0.5) * 2 * config.offset
+    canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`
+
+    shakeAnimationId = setTimeout(shake, config.interval)
+  }
+
+  shake()
+  showNotification(`📳 ${intensity.charAt(0).toUpperCase() + intensity.slice(1)} shake enabled`, 'success')
+}
+
+function stopShakeEffect() {
+  if (!activeShakeIntensity) return
+
+  const canvas = document.getElementById('gameCanvas') || document.querySelector('canvas')
+  if (canvas) {
+    canvas.style.transform = canvas.dataset.originalTransform || ''
+  }
+
+  if (shakeAnimationId) {
+    clearTimeout(shakeAnimationId)
+    shakeAnimationId = null
+  }
+
+  const wasIntensity = activeShakeIntensity
+  activeShakeIntensity = null
+  showNotification(`📳 ${wasIntensity.charAt(0).toUpperCase() + wasIntensity.slice(1)} shake disabled`, 'info')
+}
+
+function toggleShakeEffect(intensity) {
+  if (activeShakeIntensity === intensity) {
+    stopShakeEffect()
+  } else {
+    startShakeEffect(intensity)
+  }
+}
+
+// ============================================
+// CANVAS FLIP EFFECTS
+// ============================================
+
+function flipCanvas(type) {
+  const canvas = document.getElementById('gameCanvas') || document.querySelector('canvas')
+  if (!canvas) {
+    showNotification('Game canvas not found', 'error')
+    return
+  }
+
+  // Stop any shake effect first
+  if (activeShakeIntensity) {
+    stopShakeEffect()
+  }
+
+  // Set up transition for smooth animation
+  const originalTransition = canvas.style.transition
+  const originalTransform = canvas.style.transform || ''
+
+  canvas.style.transition = 'transform 0.8s ease-in-out'
+  canvas.style.transformStyle = 'preserve-3d'
+
+  // Apply the flip based on type
+  let flipTransform = ''
+  let emoji = '🔄'
+
+  switch (type) {
+    case 'horizontal':
+      flipTransform = 'rotateY(360deg)'
+      emoji = '↔️'
+      break
+    case 'vertical':
+      flipTransform = 'rotateX(360deg)'
+      emoji = '↕️'
+      break
+    case 'spin':
+      flipTransform = 'rotate(360deg)'
+      emoji = '🔄'
+      break
+  }
+
+  canvas.style.transform = flipTransform
+  showNotification(`${emoji} ${type.charAt(0).toUpperCase() + type.slice(1)} flip!`, 'success')
+
+  // Reset after animation completes
+  setTimeout(() => {
+    canvas.style.transition = originalTransition
+    canvas.style.transform = originalTransform
+  }, 850)
+}
+
+// ============================================
+// CANVAS EXPLOSION/SHATTER EFFECT
+// ============================================
+
+function explodeCanvas() {
+  const canvas = document.getElementById('gameCanvas') || document.querySelector('canvas')
+  if (!canvas) {
+    showNotification('Game canvas not found', 'error')
+    return
+  }
+
+  const bounds = canvas.getBoundingClientRect()
+  const cols = 12
+  const rows = 8
+  const pieceWidth = bounds.width / cols
+  const pieceHeight = bounds.height / rows
+
+  // Try to capture canvas image
+  let canvasDataUrl = null
+  try {
+    canvasDataUrl = canvas.toDataURL('image/png')
+  } catch (e) {
+    // Canvas might be tainted, use fallback colors
+  }
+
+  // Create container for pieces
+  const container = document.createElement('div')
+  container.id = 'vmkpal-explosion-container'
+  container.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 2147483647;
+    overflow: hidden;
+  `
+  document.body.appendChild(container)
+
+  // Hide original canvas briefly
+  const originalOpacity = canvas.style.opacity
+  canvas.style.opacity = '0'
+
+  // Create pieces
+  const pieces = []
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const piece = document.createElement('div')
+      const x = bounds.left + col * pieceWidth
+      const y = bounds.top + row * pieceHeight
+
+      // Calculate center of canvas for explosion direction
+      const centerX = bounds.left + bounds.width / 2
+      const centerY = bounds.top + bounds.height / 2
+
+      // Direction from center (normalized and amplified)
+      const dirX = (x + pieceWidth / 2 - centerX) / bounds.width
+      const dirY = (y + pieceHeight / 2 - centerY) / bounds.height
+
+      piece.style.cssText = `
+        position: fixed;
+        left: ${x}px;
+        top: ${y}px;
+        width: ${pieceWidth}px;
+        height: ${pieceHeight}px;
+        ${canvasDataUrl
+          ? `background-image: url(${canvasDataUrl});
+             background-size: ${bounds.width}px ${bounds.height}px;
+             background-position: -${col * pieceWidth}px -${row * pieceHeight}px;`
+          : `background: linear-gradient(135deg,
+               hsl(${Math.random() * 60 + 200}, 70%, 50%),
+               hsl(${Math.random() * 60 + 200}, 70%, 30%));`
+        }
+        border: 1px solid rgba(255,255,255,0.3);
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        transition: all 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        transform-origin: center center;
+      `
+
+      container.appendChild(piece)
+      pieces.push({
+        element: piece,
+        dirX: dirX,
+        dirY: dirY,
+        rotation: (Math.random() - 0.5) * 720
+      })
+    }
+  }
+
+  // Trigger explosion animation after a brief moment
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      pieces.forEach(p => {
+        const distance = 300 + Math.random() * 400
+        const finalX = p.dirX * distance
+        const finalY = p.dirY * distance + 200 // Add gravity effect
+        p.element.style.transform = `translate(${finalX}px, ${finalY}px) rotate(${p.rotation}deg) scale(0.3)`
+        p.element.style.opacity = '0'
+      })
+    })
+  })
+
+  showNotification('💥 Explosion!', 'success')
+
+  // Clean up and restore canvas
+  setTimeout(() => {
+    canvas.style.opacity = originalOpacity || '1'
+    container.remove()
+  }, 1300)
 }
 
 // ============================================
@@ -4414,7 +4626,7 @@ function startGenieEventSystem() {
   setInterval(fetchGenieEvents, GENIE_EVENTS_FETCH_INTERVAL)
 
   // Check for active events every 10 seconds
-  genieEventCheckInterval = setInterval(checkGenieEvents, 10000)
+  genieEventCheckInterval = setInterval(checkGenieEvents, 30000) // Check every 30 seconds
 }
 
 // Get scheduled Genie events for calendar display
@@ -4610,6 +4822,55 @@ function createOverlaysPanel() {
     toggleSnowOverlay
   ))
 
+  // DEV_MODE only: Testing effects (shake, flip, explode)
+  if (DEV_MODE) {
+    // Shake toggles (light, medium, heavy)
+    grid.appendChild(createOverlayToggle(
+      '📳',
+      'Shake Light',
+      () => activeShakeIntensity === 'light',
+      () => toggleShakeEffect('light')
+    ))
+
+    grid.appendChild(createOverlayToggle(
+      '📳',
+      'Shake Med',
+      () => activeShakeIntensity === 'medium',
+      () => toggleShakeEffect('medium')
+    ))
+
+    grid.appendChild(createOverlayToggle(
+      '📳',
+      'Shake Heavy',
+      () => activeShakeIntensity === 'heavy',
+      () => toggleShakeEffect('heavy')
+    ))
+
+    // Flip actions (one-time animations)
+    grid.appendChild(createOverlayAction(
+      '↔️',
+      'Flip H',
+      () => flipCanvas('horizontal')
+    ))
+
+    grid.appendChild(createOverlayAction(
+      '↕️',
+      'Flip V',
+      () => flipCanvas('vertical')
+    ))
+
+    grid.appendChild(createOverlayAction(
+      '🔄',
+      'Spin',
+      () => flipCanvas('spin')
+    ))
+
+    grid.appendChild(createOverlayAction(
+      '💥',
+      'Explode',
+      () => explodeCanvas()
+    ))
+  }
 
   div.appendChild(grid)
 
@@ -4817,6 +5078,49 @@ function createOverlaysPanel() {
 }
 
 // Helper to create overlay toggle square button
+function createOverlayAction(icon, label, actionFn) {
+  const btn = document.createElement('button')
+
+  btn.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 8px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(255,255,255,0.08);
+    color: white;
+  `
+
+  btn.innerHTML = `
+    <span style="font-size: 22px;">${icon}</span>
+    <span style="font-size: 10px; font-weight: 500;">${label}</span>
+  `
+
+  btn.onclick = () => {
+    actionFn()
+    // Brief highlight effect
+    btn.style.background = 'linear-gradient(135deg, #10b981, #059669)'
+    setTimeout(() => {
+      btn.style.background = 'rgba(255,255,255,0.08)'
+    }, 300)
+  }
+
+  btn.onmouseenter = () => {
+    btn.style.background = 'rgba(255,255,255,0.15)'
+  }
+
+  btn.onmouseleave = () => {
+    btn.style.background = 'rgba(255,255,255,0.08)'
+  }
+
+  return btn
+}
+
 function createOverlayToggle(icon, label, isEnabledFn, toggleFn) {
   const btn = document.createElement('button')
 
@@ -5503,7 +5807,7 @@ const CHANGELOG = [
     version: '1.0.3',
     date: '2025-03-13',
     changes: [
-      'Added INTERNAL_MODE for dev features',
+      'Added DEV_MODE for dev features',
       'Queue, Room Audio, Current Room hidden in production'
     ]
   }
@@ -5964,7 +6268,7 @@ function createAudioLearningPanel() {
       }
     }
   }
-  setInterval(updateAudioDisplay, 500)
+  setInterval(updateAudioDisplay, 2000) // Update every 2 seconds
 
   return div
 }
@@ -7457,7 +7761,7 @@ function createEventsPanel() {
       cursor: pointer;
       font-size: 12px;
     `
-    link.onclick = () => window.open('http://localhost:3000/calendar', '_blank')
+    link.onclick = () => window.open('https://bsims-codes.github.io/myvmk-genie/calendar.html', '_blank')
     div.appendChild(link)
   })
 
@@ -7977,7 +8281,7 @@ async function init() {
     startRoomWatcher()
     startGenieEventSystem()
     // Queue monitoring commented out for future reference
-    // if (INTERNAL_MODE) {
+    // if (DEV_MODE) {
     //   startQueueMonitor()
     // }
   }, 500)
@@ -7988,7 +8292,7 @@ async function init() {
   })
 
   // Debug only in internal mode
-  if (INTERNAL_MODE) {
+  if (DEV_MODE) {
     setTimeout(() => runDebug(), 3000)
   }
 }

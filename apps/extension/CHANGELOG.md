@@ -1,5 +1,20 @@
 # MyVMK Genie Changelog
 
+## 2.0.1
+
+### Permissions & Security
+- Tightened permissions for faster Chrome Web Store review
+- Removed broad host permissions, narrowed to MyVMK domains only
+- Screenshot shortcut now Alt+S only (displayed as helper text in UI)
+
+### Performance Optimizations
+- Console logs stripped from release builds (cleaner console, less overhead)
+- Event check interval reduced from 10s to 30s
+- Audio display update reduced from 500ms to 2s
+
+### Bug Fixes
+- Butterflies now flip to face their movement direction
+
 ## 2.0.0 - Official Public Release
 This is the first official public release of MyVMK Genie!
 
