@@ -10,8 +10,9 @@ When the user asks to "create a package", "build the extension", or similar:
    - Use semantic versioning (e.g., 1.1.3 → 1.1.4 for minor changes)
    - Major version bumps for breaking changes or significant features
 
-2. **Add a changelog entry** in `apps/extension/public/content.js`
-   - Find the `CHANGELOG` array near line 3874
+2. **Update BOTH changelog locations** (keep them in sync!):
+   - `apps/extension/CHANGELOG.md` - User-facing changelog file
+   - `apps/extension/public/content.js` - In-app CHANGELOG array (search for `const CHANGELOG = [`)
    - Add a new entry at the TOP of the array with:
      - `version`: matching the manifest version
      - `date`: current date in YYYY-MM-DD format
@@ -27,6 +28,19 @@ When the user asks to "create a package", "build the extension", or similar:
    ```
 
 5. **Output location**: `dist/myvmk-genie-extension.zip`
+
+## Version Management
+
+**IMPORTANT:** The version is displayed in the Settings menu and is read dynamically from `manifest.json` using `chrome.runtime.getManifest().version`.
+
+When releasing a new version, update these locations:
+| Location | What to Update |
+|----------|----------------|
+| `manifest.json` | `"version": "X.Y.Z"` |
+| `CHANGELOG.md` | Add new section at top |
+| `content.js` CHANGELOG array | Add new entry at top of array |
+
+The Settings menu version will automatically match `manifest.json`. The in-app changelog (accessible from Settings) reads from the CHANGELOG array in content.js.
 
 ## Project Structure
 

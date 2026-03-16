@@ -5660,10 +5660,11 @@ function createSettingsPanel() {
   }
   div.appendChild(refreshEventsBtn)
 
-  // Version info
+  // Version info (reads from manifest.json)
   const versionInfo = document.createElement('div')
   versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
-  versionInfo.textContent = 'MyVMK Genie v1.1.8'
+  const manifestVersion = chrome.runtime.getManifest().version
+  versionInfo.textContent = `MyVMK Genie v${manifestVersion}`
   div.appendChild(versionInfo)
 
   return div
@@ -5671,6 +5672,27 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.0.1',
+    date: '2025-03-16',
+    changes: [
+      'Tightened permissions for faster Chrome Web Store review',
+      'Screenshot shortcut now Alt+S (shown as helper text)',
+      'Performance optimizations (reduced background intervals)',
+      'Butterflies now flip to face movement direction'
+    ]
+  },
+  {
+    version: '2.0.0',
+    date: '2025-03-15',
+    changes: [
+      'Official public release',
+      'Happily Ever After choreographed show',
+      'Spotlight system with synced left/right groups',
+      'Pre-event notifications',
+      'Stars overlay effect'
+    ]
+  },
   {
     version: '1.1.8',
     date: '2025-03-14',
