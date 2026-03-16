@@ -2017,7 +2017,7 @@ function createToolbar() {
     font-size: 12px;
     font-weight: 500;
     padding-left: 100%;
-    animation: vmkpal-scroll 25s linear infinite;
+    animation: vmkpal-scroll 45s linear infinite;
   `
   tickerText.textContent = 'Loading next event...'
 
@@ -4312,6 +4312,9 @@ async function fetchGenieEvents() {
       scheduledCommunityEvents = data.communityEvents.filter(e => e.enabled !== false)
       console.log('MyVMK Genie: Loaded', scheduledCommunityEvents.length, 'community events')
     }
+
+    // Re-render ticker to include newly loaded events
+    renderTickerContent()
   } catch (e) {
     console.error('MyVMK Genie: Error fetching events', e)
   }
