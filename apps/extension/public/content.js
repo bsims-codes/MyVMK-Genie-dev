@@ -184,7 +184,6 @@ let isPositionLocked = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
-let tickerShowWelcome = true // Alternates between welcome message and event
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
 
 // Rain effect (canvas-based like The Swan game)
@@ -8025,7 +8024,7 @@ function updateRoomInfoDisplay() {
   checkGenieEvents()
 }
 
-// Render the current ticker content without toggling state
+// Render the ticker as one continuous scroll: Welcome + all upcoming events
 async function renderTickerContent() {
   const tickerText = document.getElementById('vmkpal-ticker-text')
   if (!tickerText) return
@@ -8036,48 +8035,55 @@ async function renderTickerContent() {
   const doubleCreditsIconUrl = chrome.runtime.getURL('genie-double-credits.png')
 
   try {
-    const { nextEvent } = await loadTodaysEvents()
+    const { allUpcomingEvents } = await loadTodaysEvents()
 
-    if (tickerShowWelcome) {
-      // Show welcome message with genie logo
-      const welcomeHtml = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie by bsims!   •   `
-      tickerText.innerHTML = welcomeHtml + welcomeHtml
-    } else if (nextEvent) {
-      const eventDate = new Date(nextEvent.timestamp)
-      const countdown = getCountdown(eventDate)
-      const eventName = nextEvent.title
-      const timeStr = nextEvent.timeStr || 'TBD'
+    // Build continuous ticker content
+    let tickerContent = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie`
 
-      // Check if this is a Double Credits event
-      const isDoubleCredits = nextEvent.title && nextEvent.title.toLowerCase().includes('double credits')
+    // Add upcoming events (up to 3)
+    const eventsToShow = allUpcomingEvents.slice(0, 3)
+    if (eventsToShow.length > 0) {
+      tickerContent += '   —   '
 
-      // Different icons by event type
-      let iconUrl
-      if (isDoubleCredits) {
-        iconUrl = doubleCreditsIconUrl
-      } else if (nextEvent.type === 'genie') {
-        iconUrl = genieLogoUrl
-      } else if (nextEvent.type === 'community') {
-        iconUrl = communityIconUrl
-      } else {
-        iconUrl = hostIconUrl // Host events
-      }
+      eventsToShow.forEach((event, index) => {
+        const eventDate = new Date(event.timestamp)
+        const countdown = event.isLive ? '🔴 LIVE' : getCountdown(eventDate)
+        const eventName = event.title
+        const timeStr = event.timeStr || 'TBD'
 
-      const iconHtml = `<img src="${iconUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">`
-      const eventHtml = `${iconHtml}${countdown} until ${eventName} (${timeStr})   •   `
-      tickerText.innerHTML = eventHtml + eventHtml
-    } else {
-      // No events - show welcome message instead of "no events"
-      const welcomeHtml = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie by bsims!   •   `
-      tickerText.innerHTML = welcomeHtml + welcomeHtml
+        // Different icons by event type
+        const isDoubleCredits = event.title && event.title.toLowerCase().includes('double credits')
+        let iconUrl
+        if (isDoubleCredits) {
+          iconUrl = doubleCreditsIconUrl
+        } else if (event.type === 'genie') {
+          iconUrl = genieLogoUrl
+        } else if (event.type === 'community') {
+          iconUrl = communityIconUrl
+        } else {
+          iconUrl = hostIconUrl
+        }
+
+        const iconHtml = `<img src="${iconUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">`
+        tickerContent += `${iconHtml}${countdown}: ${eventName} (${timeStr})`
+
+        if (index < eventsToShow.length - 1) {
+          tickerContent += '   •   '
+        }
+      })
     }
+
+    tickerContent += '   •   '
+    // Duplicate for seamless loop
+    tickerText.innerHTML = tickerContent + tickerContent
+
   } catch (err) {
     console.error('Failed to update ticker:', err)
     tickerText.innerHTML = '📅 Check events calendar for updates   •   '
   }
 }
 
-// Start the event ticker - sets up animation-based content swapping
+// Start the event ticker - renders once and updates periodically
 function updateEventTicker() {
   const tickerText = document.getElementById('vmkpal-ticker-text')
   if (!tickerText) return
@@ -8091,11 +8097,8 @@ function updateEventTicker() {
   // Mark as initialized
   tickerIntervalId = true
 
-  // Swap content only when animation loops (text is off-screen)
-  tickerText.addEventListener('animationiteration', () => {
-    tickerShowWelcome = !tickerShowWelcome
-    renderTickerContent()
-  })
+  // Update content every 60 seconds to refresh countdowns
+  setInterval(renderTickerContent, 60000)
 }
 
 
