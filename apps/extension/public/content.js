@@ -7752,14 +7752,15 @@ function createEventsPanel() {
           align-items: flex-start;
           gap: 10px;
           padding: 10px;
-          background: rgba(255,255,255,0.05);
+          background: ${event.isLive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)'};
           border-radius: 8px;
           margin-bottom: 6px;
-          border-left: 3px solid ${color};
+          border-left: 3px solid ${event.isLive ? '#10b981' : color};
         `
+        const liveBadge = event.isLive ? '<span style="background: #10b981; color: white; font-size: 9px; padding: 2px 6px; border-radius: 10px; margin-left: 6px; font-weight: 600;">LIVE</span>' : ''
         row.innerHTML = `
           <div style="flex: 1; min-width: 0;">
-            <div style="color: white; font-size: 12px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(event.title)}</div>
+            <div style="color: white; font-size: 12px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(event.title)}${liveBadge}</div>
             <div style="color: rgba(255,255,255,0.5); font-size: 10px;">${event.dateStr} • ${event.timeStr}${event.location ? ' • ' + escapeHtml(event.location) : ''}</div>
           </div>
           <img src="${iconUrl}" alt="${iconTitle}" title="${iconTitle}" style="width: 24px; height: 24px; object-fit: contain;">
@@ -7825,24 +7826,31 @@ async function loadTodaysEvents() {
   }
 
   // Also include scheduled Genie events (admin)
+  // Show events until they END (not just until they start)
   scheduledGenieEvents.forEach(event => {
     const startTime = new Date(event.startTime).getTime()
-    if (startTime > now) {
+    const endTime = startTime + (event.durationMinutes || 5) * 60 * 1000
+    if (endTime > now) {
+      const isLive = now >= startTime && now <= endTime
       allUpcomingEvents.push({
         title: event.title,
         timestamp: startTime,
         location: event.roomName || '',
         dateStr: formatDateStr(new Date(event.startTime)),
         timeStr: formatTimeStr(new Date(event.startTime)),
-        type: 'genie'
+        type: 'genie',
+        isLive: isLive
       })
     }
   })
 
   // Also include scheduled Community events (player)
+  // Show events until they END (not just until they start)
   scheduledCommunityEvents.forEach(event => {
     const startTime = new Date(event.startTime).getTime()
-    if (startTime > now) {
+    const endTime = startTime + (event.durationMinutes || 5) * 60 * 1000
+    if (endTime > now) {
+      const isLive = now >= startTime && now <= endTime
       allUpcomingEvents.push({
         title: event.title,
         timestamp: startTime,
@@ -7850,7 +7858,8 @@ async function loadTodaysEvents() {
         dateStr: formatDateStr(new Date(event.startTime)),
         timeStr: formatTimeStr(new Date(event.startTime)),
         type: 'community',
-        submittedBy: event.submittedBy
+        submittedBy: event.submittedBy,
+        isLive: isLive
       })
     }
   })
