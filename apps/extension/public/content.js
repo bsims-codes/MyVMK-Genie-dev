@@ -2565,6 +2565,15 @@ function createParticle(x, y, colors) {
   const speed = 100 + Math.random() * 200
   const type = Math.random() // For variety in particle behavior
 
+  // At high intensity (2.0+), particles decay faster to prevent screen coverage
+  // Base decay: 0.004-0.01 (~100-250 frames lifetime)
+  // High intensity: up to 3x faster decay
+  let baseDecay = 0.004 + Math.random() * 0.006
+  if (fireworksIntensity > 1.5) {
+    const intensityMultiplier = 1 + (fireworksIntensity - 1.5) * 0.8 // Scale up decay at high intensity
+    baseDecay *= intensityMultiplier
+  }
+
   return {
     x: x,
     y: y,
@@ -2572,7 +2581,7 @@ function createParticle(x, y, colors) {
     vy: Math.sin(angle) * speed,
     color: colors[Math.floor(Math.random() * colors.length)], // Now in "r,g,b" format
     life: 1.0,
-    decay: 0.004 + Math.random() * 0.006, // Much slower decay for longer-lasting explosions
+    decay: baseDecay,
     size: 2.5 + Math.random() * 2.5,
     type: type,
     sparkle: Math.random() > 0.7, // Some particles sparkle
