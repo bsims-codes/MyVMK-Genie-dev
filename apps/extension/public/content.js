@@ -3110,12 +3110,13 @@ let happilyEverAfterYouTubeId = 'ypp4iuJUW2I'
 let showStartTime = 0
 let lastChoreographyIndex = -1
 
-function startHappilyEverAfterShow() {
-  console.log('MyVMK Genie: Starting Happily Ever After show!')
+function startHappilyEverAfterShow(offsetSeconds = 0) {
+  const isLateJoin = offsetSeconds > 5
+  console.log('MyVMK Genie: Starting Happily Ever After show!' + (isLateJoin ? ` (syncing to ${Math.floor(offsetSeconds)}s)` : ''))
 
-  // Start the YouTube audio (minimized player)
+  // Start the YouTube audio (minimized player) - seek if late joining
   const youtubeUrl = `https://www.youtube.com/watch?v=${happilyEverAfterYouTubeId}`
-  playAudio(youtubeUrl, true)
+  playAudio(youtubeUrl, true, offsetSeconds)
 
   // Start Tinkerbell (event mode - limited to top 70%)
   startTinkerbellEffect(true)
@@ -3130,10 +3131,47 @@ function startHappilyEverAfterShow() {
 
   // Note: Spotlights start at 15 seconds via choreography (not immediately)
 
-  // Initialize show timing
-  showStartTime = performance.now()
-  lastChoreographyIndex = -1
+  // Initialize show timing - adjust for late join offset
+  showStartTime = performance.now() - (offsetSeconds * 1000)
   choreographyActive = true
+
+  // For late joiners, find the correct starting point in choreography
+  // and apply current state (fireworks intensity, spotlights, etc.)
+  if (isLateJoin) {
+    // Find the last choreography index before our current time
+    lastChoreographyIndex = -1
+    let currentFireworksIntensity = 0
+    let spotlightsEnabled = false
+
+    for (let i = 0; i < HAPPILY_EVER_AFTER_CHOREOGRAPHY.length; i++) {
+      const event = HAPPILY_EVER_AFTER_CHOREOGRAPHY[i]
+      if (event.time <= offsetSeconds) {
+        lastChoreographyIndex = i
+        // Track state without executing (we'll apply final state)
+        if (event.action === 'fireworks') {
+          currentFireworksIntensity = event.intensity
+        } else if (event.action === 'spotlights') {
+          spotlightsEnabled = event.enabled
+        }
+      } else {
+        break
+      }
+    }
+
+    // Apply current state
+    if (currentFireworksIntensity > 0) {
+      isFireworksEnabled = true
+      fireworksIntensity = currentFireworksIntensity
+      startFireworks()
+    }
+    if (spotlightsEnabled) {
+      startSpotlights()
+    }
+
+    console.log('MyVMK Genie: Late join - starting at choreography index', lastChoreographyIndex, 'fireworks:', currentFireworksIntensity, 'spotlights:', spotlightsEnabled)
+  } else {
+    lastChoreographyIndex = -1
+  }
 
   // Start the choreography loop
   choreographyInterval = setInterval(() => {
@@ -4411,19 +4449,19 @@ function checkGenieEvents() {
 }
 
 // Helper to start a single effect
-function startEffect(effectName, eventMode = false) {
+function startEffect(effectName, eventMode = false, offsetSeconds = 0) {
   // Skip if user manually disabled this effect during the event
   if (manuallyDisabledEffects.has(effectName)) {
     console.log('MyVMK Genie: Skipping effect (manually disabled):', effectName)
     return
   }
 
-  console.log('MyVMK Genie: Starting effect:', effectName, eventMode ? '(event mode)' : '')
+  console.log('MyVMK Genie: Starting effect:', effectName, eventMode ? '(event mode)' : '', offsetSeconds > 0 ? `at ${Math.floor(offsetSeconds)}s` : '')
   switch (effectName) {
     case 'fireworks':
       isFireworksEnabled = true
-      if (eventMode) {
-        // Delay fireworks start for events
+      if (eventMode && offsetSeconds === 0) {
+        // Delay fireworks start for events (only if not late joining)
         setTimeout(() => {
           if (isFireworksEnabled) startFireworks()
         }, 2500)
@@ -4456,7 +4494,7 @@ function startEffect(effectName, eventMode = false) {
       }
       break
     case 'happilyEverAfter':
-      startHappilyEverAfterShow()
+      startHappilyEverAfterShow(offsetSeconds)
       break
     case 'spotlights':
       startSpotlights()
@@ -4568,10 +4606,20 @@ function startGenieEvent(event) {
   activeGenieEvent = event
   activeGenieEventRoomId = currentRoomId
 
+  // Calculate elapsed seconds for late joiners
+  const eventStartTime = new Date(event.startTime)
+  const now = new Date()
+  const elapsedSeconds = Math.max(0, (now - eventStartTime) / 1000)
+  const isLateJoin = elapsedSeconds > 5 // More than 5 seconds = late join
+
+  if (isLateJoin) {
+    console.log('MyVMK Genie: Late join detected, syncing to', Math.floor(elapsedSeconds), 'seconds')
+  }
+
   // Trigger effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
   console.log('MyVMK Genie: Effects to trigger:', effects)
-  effects.forEach(effect => startEffect(effect, true)) // Pass true for event mode
+  effects.forEach(effect => startEffect(effect, true, isLateJoin ? elapsedSeconds : 0)) // Pass offset for late joiners
 
   // Start Tinkerbell if included
   if (event.includeTinkerbell) {
@@ -4582,7 +4630,7 @@ function startGenieEvent(event) {
   // Play audio if specified (uses existing YouTube player - mutes game audio)
   // Start minimized so it doesn't cover the game
   if (event.audioUrl) {
-    playAudio(event.audioUrl, true)
+    playAudio(event.audioUrl, true, isLateJoin ? elapsedSeconds : 0)
   }
 
   // Show notification with bee image
@@ -4623,10 +4671,16 @@ function startCommunityEvent(event) {
   activeCommunityEvent = event
   activeCommunityEventRoomId = currentRoomId
 
+  // Calculate elapsed seconds for late joiners
+  const eventStartTime = new Date(event.startTime)
+  const now = new Date()
+  const elapsedSeconds = Math.max(0, (now - eventStartTime) / 1000)
+  const isLateJoin = elapsedSeconds > 5
+
   // Play audio if specified (uses existing YouTube player - mutes game audio)
   // Start minimized so it doesn't cover the game
   if (event.audioUrl) {
-    playAudio(event.audioUrl, true)
+    playAudio(event.audioUrl, true, isLateJoin ? elapsedSeconds : 0)
   }
 
   // Show notification with bee image
@@ -7607,7 +7661,7 @@ function unmuteGameAudio() {
   console.log('MyVMK Genie: Restored game audio')
 }
 
-function playAudio(url, startMinimized = false) {
+function playAudio(url, startMinimized = false, seekToSeconds = 0) {
   stopAudio(false) // Don't unmute yet, we're about to play new audio
 
   // Mute game audio
@@ -7635,9 +7689,10 @@ function playAudio(url, startMinimized = false) {
       embedUrl += `${videoId}?autoplay=1&loop=1&playlist=${videoId}`
     }
 
-    // Add start time if specified in original URL
-    if (startTime) {
-      embedUrl += `&start=${startTime}`
+    // Add start time - either from URL or from seek offset (for late joiners)
+    const effectiveStartTime = seekToSeconds > 0 ? Math.floor(seekToSeconds) : startTime
+    if (effectiveStartTime) {
+      embedUrl += `&start=${effectiveStartTime}`
     }
 
     const isPlaylist = !!playlistId
