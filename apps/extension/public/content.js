@@ -185,6 +185,7 @@ let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
+let manuallyDisabledEffects = new Set() // Track effects user manually disabled during an event
 
 // Rain effect (canvas-based like The Swan game)
 let rainDrops = []
@@ -2535,9 +2536,11 @@ function toggleFireworks() {
   isFireworksEnabled = !isFireworksEnabled
 
   if (isFireworksEnabled) {
+    manuallyDisabledEffects.delete('fireworks') // User re-enabled, clear manual disable
     startFireworks()
     showNotification('🎆 Fireworks enabled', 'success')
   } else {
+    manuallyDisabledEffects.add('fireworks') // Track that user manually disabled
     stopFireworks()
     showNotification('🎇 Fireworks disabled', 'info')
   }
@@ -4409,6 +4412,12 @@ function checkGenieEvents() {
 
 // Helper to start a single effect
 function startEffect(effectName, eventMode = false) {
+  // Skip if user manually disabled this effect during the event
+  if (manuallyDisabledEffects.has(effectName)) {
+    console.log('MyVMK Genie: Skipping effect (manually disabled):', effectName)
+    return
+  }
+
   console.log('MyVMK Genie: Starting effect:', effectName, eventMode ? '(event mode)' : '')
   switch (effectName) {
     case 'fireworks':
@@ -4541,6 +4550,11 @@ function startGenieEvent(event) {
 
   const isJoiningMidEvent = activeGenieEvent && activeGenieEvent.id === event.id
 
+  // Clear manually disabled effects when a truly new event starts (not just room change)
+  if (!isJoiningMidEvent) {
+    manuallyDisabledEffects.clear()
+  }
+
   // Stop previous effects if switching events or rooms
   if (activeGenieEvent) {
     const prevEffects = activeGenieEvent.effects || (activeGenieEvent.effect ? [activeGenieEvent.effect] : [])
@@ -4582,6 +4596,7 @@ function stopGenieEvent() {
   const event = activeGenieEvent
   activeGenieEvent = null
   activeGenieEventRoomId = null
+  manuallyDisabledEffects.clear() // Reset for next event
 
   // Stop effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
