@@ -8,8 +8,7 @@
     "activeTab",
     "scripting",
     "downloads",
-    "tabCapture",
-    "tabs"
+    "tabCapture"
   ],
   "host_permissions": [
     "https://www.myvmk.com/*",
