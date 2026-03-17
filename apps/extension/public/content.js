@@ -237,6 +237,23 @@ const GRAVITY = 60
 const LAUNCH_INTERVAL_MIN = 600
 const LAUNCH_INTERVAL_MAX = 1500
 
+// Neon Rave effect (DEV_MODE only)
+let raveCanvas = null
+let raveCtx = null
+let raveAnimationId = null
+let isRaveEnabled = false
+let raveStartTime = 0
+const RAVE_COLORS = [
+  '#ff00ff', // Magenta
+  '#00ffff', // Cyan
+  '#ff0080', // Hot pink
+  '#80ff00', // Lime
+  '#ff8000', // Orange
+  '#0080ff', // Electric blue
+  '#ffff00', // Yellow
+  '#ff0000', // Red
+]
+
 // Choreography system for synced shows
 let choreographyActive = false
 let choreographyStartTime = 0
@@ -4331,6 +4348,159 @@ function explodeCanvas() {
 }
 
 // ============================================
+// NEON RAVE EFFECT (DEV_MODE only)
+// ============================================
+
+function toggleRaveEffect() {
+  isRaveEnabled = !isRaveEnabled
+
+  if (isRaveEnabled) {
+    startRaveEffect()
+    showNotification('🎉 Rave mode activated!', 'success')
+  } else {
+    stopRaveEffect()
+    showNotification('🎉 Rave mode off', 'info')
+  }
+}
+
+function startRaveEffect() {
+  const bounds = getGameCanvasBounds()
+
+  if (!raveCanvas) {
+    raveCanvas = document.createElement('canvas')
+    raveCanvas.id = 'vmkpal-rave-canvas'
+    raveCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483645;
+      mix-blend-mode: screen;
+    `
+    raveCtx = raveCanvas.getContext('2d')
+    document.body.appendChild(raveCanvas)
+  }
+
+  raveCanvas.style.left = bounds.left + 'px'
+  raveCanvas.style.top = bounds.top + 'px'
+  raveCanvas.width = bounds.width
+  raveCanvas.height = bounds.height
+  raveCanvas.style.display = 'block'
+
+  raveStartTime = performance.now()
+  renderRave()
+}
+
+function stopRaveEffect() {
+  if (raveAnimationId) {
+    cancelAnimationFrame(raveAnimationId)
+    raveAnimationId = null
+  }
+  if (raveCanvas) {
+    raveCanvas.style.display = 'none'
+  }
+  isRaveEnabled = false
+}
+
+function renderRave() {
+  if (!raveCtx || !isRaveEnabled) return
+
+  const now = performance.now()
+  const elapsed = (now - raveStartTime) / 1000
+  const width = raveCanvas.width
+  const height = raveCanvas.height
+
+  // Clear with slight fade for trails
+  raveCtx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+  raveCtx.fillRect(0, 0, width, height)
+
+  // Beat frequency (simulated 120 BPM = 2 beats per second)
+  const beatPhase = (elapsed * 2) % 1
+  const beatIntensity = Math.pow(1 - beatPhase, 3)
+
+  // Strobe flash on beat
+  if (beatIntensity > 0.8) {
+    const flashColor = RAVE_COLORS[Math.floor(elapsed * 2) % RAVE_COLORS.length]
+    raveCtx.fillStyle = flashColor + '40' // 25% opacity
+    raveCtx.fillRect(0, 0, width, height)
+  }
+
+  // Laser beams
+  const numLasers = 6
+  for (let i = 0; i < numLasers; i++) {
+    const laserPhase = elapsed * (0.3 + i * 0.1) + i * 0.5
+    const angle = Math.sin(laserPhase) * 0.8 + Math.PI / 2
+    const originX = (i / (numLasers - 1)) * width
+    const originY = 0
+
+    const endX = originX + Math.cos(angle) * height * 1.5
+    const endY = originY + Math.sin(angle) * height * 1.5
+
+    const color = RAVE_COLORS[i % RAVE_COLORS.length]
+
+    // Laser glow
+    const gradient = raveCtx.createLinearGradient(originX, originY, endX, endY)
+    gradient.addColorStop(0, color + 'ff')
+    gradient.addColorStop(0.5, color + '80')
+    gradient.addColorStop(1, color + '00')
+
+    raveCtx.strokeStyle = gradient
+    raveCtx.lineWidth = 3 + beatIntensity * 4
+    raveCtx.shadowColor = color
+    raveCtx.shadowBlur = 20 + beatIntensity * 30
+    raveCtx.beginPath()
+    raveCtx.moveTo(originX, originY)
+    raveCtx.lineTo(endX, endY)
+    raveCtx.stroke()
+  }
+
+  // Neon light bars at bottom
+  const numBars = 16
+  const barWidth = width / numBars
+  for (let i = 0; i < numBars; i++) {
+    const barPhase = elapsed * 4 + i * 0.3
+    const barHeight = (Math.sin(barPhase) * 0.5 + 0.5) * height * 0.4
+    const color = RAVE_COLORS[(i + Math.floor(elapsed * 2)) % RAVE_COLORS.length]
+
+    raveCtx.fillStyle = color + '60'
+    raveCtx.shadowColor = color
+    raveCtx.shadowBlur = 15
+    raveCtx.fillRect(i * barWidth + 2, height - barHeight, barWidth - 4, barHeight)
+  }
+
+  // Pulsing circles from center
+  const numCircles = 3
+  for (let i = 0; i < numCircles; i++) {
+    const circlePhase = ((elapsed * 0.5) + i * 0.33) % 1
+    const radius = circlePhase * Math.max(width, height) * 0.8
+    const alpha = (1 - circlePhase) * 0.3
+
+    const color = RAVE_COLORS[(i + Math.floor(elapsed)) % RAVE_COLORS.length]
+    raveCtx.strokeStyle = color + Math.floor(alpha * 255).toString(16).padStart(2, '0')
+    raveCtx.lineWidth = 3
+    raveCtx.shadowColor = color
+    raveCtx.shadowBlur = 20
+    raveCtx.beginPath()
+    raveCtx.arc(width / 2, height / 2, radius, 0, Math.PI * 2)
+    raveCtx.stroke()
+  }
+
+  // Scanning spotlight
+  const spotlightAngle = elapsed * 1.5
+  const spotX = width / 2 + Math.cos(spotlightAngle) * width * 0.4
+  const spotY = height / 2 + Math.sin(spotlightAngle * 0.7) * height * 0.3
+  const spotGradient = raveCtx.createRadialGradient(spotX, spotY, 0, spotX, spotY, 150)
+  const spotColor = RAVE_COLORS[Math.floor(elapsed * 3) % RAVE_COLORS.length]
+  spotGradient.addColorStop(0, spotColor + '60')
+  spotGradient.addColorStop(0.5, spotColor + '20')
+  spotGradient.addColorStop(1, spotColor + '00')
+  raveCtx.fillStyle = spotGradient
+  raveCtx.fillRect(0, 0, width, height)
+
+  raveCtx.shadowBlur = 0
+
+  raveAnimationId = requestAnimationFrame(renderRave)
+}
+
+// ============================================
 // GENIE EVENTS SYSTEM
 // Fetch and trigger remote scheduled events
 // ============================================
@@ -4949,6 +5119,14 @@ function createOverlaysPanel() {
       '💥',
       'Explode',
       () => explodeCanvas()
+    ))
+
+    // Neon Rave toggle
+    grid.appendChild(createOverlayToggle(
+      '🎉',
+      'Rave',
+      () => isRaveEnabled,
+      toggleRaveEffect
     ))
   }
 
