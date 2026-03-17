@@ -10,9 +10,11 @@
 - Version display now reads dynamically from manifest
 - Added public event calendar page
 - Fireworks fade faster during high-intensity moments to reduce screen coverage
+- Late joiners now sync to events in progress (audio and effects start at correct time)
 
 ### Bug Fixes
 - Fixed Genie events not appearing in ticker scroller
+- Fixed effects re-enabling after manually disabling during an event
 
 ## 2.0.1
 
