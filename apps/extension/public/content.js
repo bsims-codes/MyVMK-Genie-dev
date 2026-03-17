@@ -7802,7 +7802,7 @@ function createEventsPanel() {
       cursor: pointer;
       font-size: 12px;
     `
-    link.onclick = () => window.open('https://bsims-codes.github.io/myvmk-genie/calendar.html', '_blank')
+    link.onclick = () => window.open('https://bsims-codes.github.io/MyVMK-Genie-dev/calendar.html', '_blank')
     div.appendChild(link)
   })
 
