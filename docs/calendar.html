@@ -245,10 +245,10 @@
     };
 
     const TYPE_ICONS = {
-      host: '🎪',
-      genie: '🧞',
-      community: '👥',
-      'double-credits': '💰'
+      host: 'genie-host-events.png',
+      genie: 'genie-genie-events.png',
+      community: 'genie-community-events.png',
+      'double-credits': 'genie-double-credits.png'
     };
 
     // Parse ICS file to extract events
@@ -379,10 +379,25 @@
         return;
       }
 
-      // Filter upcoming and past events
+      // Helper to check if date is today/tomorrow
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+      const dayAfterTomorrow = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
+
+      const isToday = (date) => date >= today && date < tomorrow;
+      const isTomorrow = (date) => date >= tomorrow && date < dayAfterTomorrow;
+
+      // Filter and categorize upcoming events
       const upcoming = allEvents.filter(e => {
         const endTime = new Date(new Date(e.startTime).getTime() + (e.durationMinutes || 5) * 60 * 1000);
         return endTime > now;
+      });
+
+      const todayEvents = upcoming.filter(e => isToday(new Date(e.startTime)));
+      const tomorrowEvents = upcoming.filter(e => isTomorrow(new Date(e.startTime)));
+      const laterEvents = upcoming.filter(e => {
+        const startDate = new Date(e.startTime);
+        return startDate >= dayAfterTomorrow;
       });
 
       const past = allEvents.filter(e => {
@@ -392,11 +407,29 @@
 
       let html = '';
 
-      if (upcoming.length > 0) {
+      if (todayEvents.length > 0) {
         html += `
           <div class="events-section">
-            <h2 class="section-title upcoming">📅 Upcoming Events</h2>
-            ${upcoming.map(e => renderEvent(e, now)).join('')}
+            <h2 class="section-title upcoming">📅 Today</h2>
+            ${todayEvents.map(e => renderEvent(e, now)).join('')}
+          </div>
+        `;
+      }
+
+      if (tomorrowEvents.length > 0) {
+        html += `
+          <div class="events-section">
+            <h2 class="section-title upcoming">📆 Tomorrow</h2>
+            ${tomorrowEvents.map(e => renderEvent(e, now)).join('')}
+          </div>
+        `;
+      }
+
+      if (laterEvents.length > 0) {
+        html += `
+          <div class="events-section">
+            <h2 class="section-title upcoming">🗓️ Later</h2>
+            ${laterEvents.map(e => renderEvent(e, now)).join('')}
           </div>
         `;
       }
@@ -404,7 +437,7 @@
       if (past.length > 0) {
         html += `
           <div class="events-section">
-            <h2 class="section-title past">📜 Recent Events</h2>
+            <h2 class="section-title past">📜 Recent</h2>
             ${past.map(e => renderEvent(e, now, true)).join('')}
           </div>
         `;
@@ -421,7 +454,12 @@
     function renderEvent(event, now, isPast = false) {
       const startTime = new Date(event.startTime);
       const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000);
-      const isActive = now >= startTime && now <= endTime;
+
+      // Double Credits events are LIVE for the entire duration (typically 24 hours)
+      const isDoubleCredits = event.type === 'double-credits';
+      const isActive = isDoubleCredits
+        ? (now >= startTime && now <= endTime)  // Full duration for double credits
+        : (now >= startTime && now <= endTime); // Normal check for other events
 
       const dateStr = startTime.toLocaleDateString('en-US', {
         weekday: 'short',
@@ -466,13 +504,14 @@
           typeClass = 'host';
       }
 
-      const icon = TYPE_ICONS[event.type] || '🎪';
+      const iconSrc = TYPE_ICONS[event.type] || TYPE_ICONS.host;
 
       return `
         <div class="event-card ${isPast ? 'past' : ''} ${isActive ? 'active' : ''}">
           <div class="event-header">
             <div class="event-title">
-              ${icon} ${escapeHtml(eventTitle)}
+              <img src="${iconSrc}" alt="" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 6px;">
+              ${escapeHtml(eventTitle)}
               ${isActive ? '<span class="live-badge">LIVE</span>' : ''}
             </div>
             <span class="event-type ${typeClass}">${typeLabel}</span>
