@@ -1464,7 +1464,22 @@ function showScreenshotModal(dataUrl, isRegionSelect = false) {
   `
 
   modal.innerHTML = `
-    <div style="color: white; font-weight: 600; margin-bottom: 12px; font-size: 14px;">Screenshot captured!</div>
+    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+      <div style="color: white; font-weight: 600; font-size: 14px; flex: 1;">Screenshot captured!</div>
+      <button id="vmkpal-ss-close" style="
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.7);
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      " title="Close">✕</button>
+    </div>
     <img src="${dataUrl}" style="width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.2);" />
     <div style="display: flex; gap: 8px; margin-bottom: 8px;">
       <button id="vmkpal-ss-clipboard" style="flex: 1; padding: 10px; border: none; border-radius: 8px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; font-weight: 500; cursor: pointer; font-size: 12px;">📋 Clipboard</button>
@@ -1474,6 +1489,18 @@ function showScreenshotModal(dataUrl, isRegionSelect = false) {
   `
 
   document.body.appendChild(modal)
+
+  // Close button
+  const closeBtn = document.getElementById('vmkpal-ss-close')
+  closeBtn.onmouseenter = () => {
+    closeBtn.style.background = 'rgba(255,255,255,0.2)'
+    closeBtn.style.color = 'white'
+  }
+  closeBtn.onmouseleave = () => {
+    closeBtn.style.background = 'rgba(255,255,255,0.1)'
+    closeBtn.style.color = 'rgba(255,255,255,0.7)'
+  }
+  closeBtn.onclick = () => modal.remove()
 
   // Clipboard button
   document.getElementById('vmkpal-ss-clipboard').onclick = async () => {
@@ -1866,7 +1893,40 @@ function createToolbar() {
     <div style="flex: 1;">
       <div style="color: white; font-weight: 600; font-size: 16px;">MyVMK Genie</div>
     </div>
+    <button id="vmkpal-minimize-btn" style="
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.7);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    " title="Minimize">−</button>
   `
+
+  // Add minimize button functionality
+  setTimeout(() => {
+    const minimizeBtn = document.getElementById('vmkpal-minimize-btn')
+    if (minimizeBtn) {
+      minimizeBtn.onmouseenter = () => {
+        minimizeBtn.style.background = 'rgba(255,255,255,0.2)'
+        minimizeBtn.style.color = 'white'
+      }
+      minimizeBtn.onmouseleave = () => {
+        minimizeBtn.style.background = 'rgba(255,255,255,0.1)'
+        minimizeBtn.style.color = 'rgba(255,255,255,0.7)'
+      }
+      minimizeBtn.onclick = (e) => {
+        e.stopPropagation()
+        panel.style.display = 'none'
+      }
+    }
+  }, 0)
 
   // Panel content wrapper
   const contentWrapper = document.createElement('div')
@@ -1959,7 +2019,7 @@ function createToolbar() {
 
   // Screenshot helper text (use Alt+S keyboard shortcut)
   const screenshotHelper = document.createElement('div')
-  screenshotHelper.innerHTML = '📸 <span style="opacity:0.7">Alt+S</span>'
+  screenshotHelper.innerHTML = '📸 <span style="opacity:0.7">Ctrl+Shift+S</span>'
   screenshotHelper.style.cssText = `
     flex: 1;
     padding: 12px;
@@ -5852,6 +5912,15 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.0.7',
+    date: '2025-03-17',
+    changes: [
+      'Added minimize button to panel header',
+      'Added close button to screenshot popup',
+      'Screenshot shortcut changed to Ctrl+Shift+S (Cmd+Shift+S on Mac)'
+    ]
+  },
   {
     version: '2.0.6',
     date: '2025-03-17',

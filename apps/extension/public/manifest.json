@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyVMK Genie",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
   "permissions": [
     "storage",
@@ -54,7 +54,7 @@
   ],
   "commands": {
     "take-screenshot": {
-      "suggested_key": { "default": "Alt+S" },
+      "suggested_key": { "default": "Ctrl+Shift+S" },
       "description": "Take screenshot"
     }
   },

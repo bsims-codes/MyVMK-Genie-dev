@@ -1,5 +1,12 @@
 # MyVMK Genie Changelog
 
+## 2.0.7
+
+### Changes
+- Added minimize button to panel header
+- Added close button (X) to screenshot popup
+- Screenshot shortcut changed from Alt+S to Ctrl+Shift+S (avoids VMK magnifier conflict)
+
 ## 2.0.6
 
 ### Features
