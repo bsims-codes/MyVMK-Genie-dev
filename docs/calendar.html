@@ -316,11 +316,14 @@
         </div>
       ` : '';
 
+      // Support both 'title' and 'name' fields for event title
+      const eventTitle = event.title || event.name || 'Untitled Event';
+
       return `
         <div class="event-card ${isPast ? 'past' : ''} ${isActive ? 'active' : ''}">
           <div class="event-header">
             <div class="event-title">
-              ${event.type === 'genie' ? '🧞' : '👥'} ${event.name || 'Untitled Event'}
+              ${event.type === 'genie' ? '🧞' : '👥'} ${eventTitle}
               ${isActive ? '<span class="live-badge">LIVE</span>' : ''}
             </div>
             <span class="event-type ${event.type}">${event.type === 'genie' ? 'Genie Event' : 'Community'}</span>
