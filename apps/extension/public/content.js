@@ -5662,9 +5662,15 @@ function createSettingsPanel() {
   }
   div.appendChild(refreshEventsBtn)
 
+  // Credits
+  const credits = document.createElement('div')
+  credits.style.cssText = 'text-align: center; color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 16px; line-height: 1.5;'
+  credits.innerHTML = 'Created by bsims<br>Designs and Creative by Bib and alphablue'
+  div.appendChild(credits)
+
   // Version info (reads from manifest.json)
   const versionInfo = document.createElement('div')
-  versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 12px;'
+  versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 8px;'
   const manifestVersion = chrome.runtime.getManifest().version
   versionInfo.textContent = `MyVMK Genie v${manifestVersion}`
   div.appendChild(versionInfo)
