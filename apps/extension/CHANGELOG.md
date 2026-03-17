@@ -15,6 +15,7 @@
 ### Bug Fixes
 - Fixed Genie events not appearing in ticker scroller
 - Fixed effects re-enabling after manually disabling during an event
+- Fixed "event in progress" notification showing on every room change
 
 ## 2.0.1
 

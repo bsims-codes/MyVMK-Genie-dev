@@ -337,6 +337,7 @@ let activeGenieEvent = null
 let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
 let notifiedUpcomingEvents = new Set() // Track events we've already shown "starting shortly" for
+let notifiedActiveEvents = new Set() // Track events we've already shown "starting/in progress" for
 let activeCommunityEventRoomId = null
 let genieEventCheckInterval = null
 
@@ -4803,9 +4804,12 @@ function startGenieEvent(event) {
     playAudio(event.audioUrl, true, isLateJoin ? elapsedSeconds : 0)
   }
 
-  // Show notification with bee image
-  const beeIconUrl = chrome.runtime.getURL('bee-static.png')
-  showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success', 2000, true)
+  // Show notification with bee image (only once per event, not on every room change)
+  if (!notifiedActiveEvents.has(event.id)) {
+    notifiedActiveEvents.add(event.id)
+    const beeIconUrl = chrome.runtime.getURL('bee-static.png')
+    showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success', 2000, true)
+  }
 }
 
 function stopGenieEvent() {
@@ -4815,6 +4819,7 @@ function stopGenieEvent() {
   activeGenieEvent = null
   activeGenieEventRoomId = null
   manuallyDisabledEffects.clear() // Reset for next event
+  notifiedActiveEvents.delete(event.id) // Allow notification again if event restarts
 
   // Stop effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
@@ -4853,16 +4858,21 @@ function startCommunityEvent(event) {
     playAudio(event.audioUrl, true, isLateJoin ? elapsedSeconds : 0)
   }
 
-  // Show notification with bee image
-  const beeIconUrl = chrome.runtime.getURL('bee-static.png')
-  showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'info', 2000, true)
+  // Show notification with bee image (only once per event, not on every room change)
+  if (!notifiedActiveEvents.has(event.id)) {
+    notifiedActiveEvents.add(event.id)
+    const beeIconUrl = chrome.runtime.getURL('bee-static.png')
+    showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'info', 2000, true)
+  }
 }
 
 function stopCommunityEvent() {
   if (!activeCommunityEvent) return
 
+  const event = activeCommunityEvent
   activeCommunityEvent = null
   activeCommunityEventRoomId = null
+  notifiedActiveEvents.delete(event.id) // Allow notification again if event restarts
 
   // Stop audio (restores game audio)
   stopAudio()
