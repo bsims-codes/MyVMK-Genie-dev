@@ -9,6 +9,7 @@
 - Slowed down ticker scroll speed for better readability
 - Version display now reads dynamically from manifest
 - Added public event calendar page
+- Fireworks fade faster during high-intensity moments to reduce screen coverage
 
 ### Bug Fixes
 - Fixed Genie events not appearing in ticker scroller
