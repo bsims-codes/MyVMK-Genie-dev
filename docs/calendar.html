@@ -105,10 +105,26 @@
       border-radius: 20px;
       background: rgba(139, 92, 246, 0.2);
       color: #a78bfa;
+      white-space: nowrap;
     }
     .event-type.community {
-      background: rgba(59, 130, 246, 0.2);
-      color: #60a5fa;
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+    .event-type.host {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+    }
+    .event-type.double-credits {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fcd34d;
+    }
+
+    .event-description {
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      margin: 10px 0;
+      line-height: 1.5;
     }
 
     .event-details {
@@ -211,7 +227,8 @@
 
   <script>
     const BIN_ID = '69b4de67aa77b81da9e28bfe';
-    const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}/latest`;
+    const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}/latest`;
+    const ICS_URL = 'https://bsims-codes.github.io/myvmk-ics/myvmk.ics';
 
     const EFFECT_ICONS = {
       fireworks: '🎆',
@@ -223,74 +240,174 @@
       stars: '✨',
       tinkerbell: '🧚',
       butterflies: '🦋',
-      spotlight: '🔦'
+      spotlight: '🔦',
+      happilyEverAfter: '🏰'
     };
+
+    const TYPE_ICONS = {
+      host: '🎪',
+      genie: '🧞',
+      community: '👥',
+      'double-credits': '💰'
+    };
+
+    // Parse ICS file to extract events
+    function parseICS(icsText) {
+      const events = [];
+      const lines = icsText.split('\n').map(l => l.trim());
+      let currentEvent = null;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (line === 'BEGIN:VEVENT') {
+          currentEvent = {};
+        } else if (line === 'END:VEVENT' && currentEvent) {
+          if (currentEvent.startTime) {
+            events.push(currentEvent);
+          }
+          currentEvent = null;
+        } else if (currentEvent) {
+          if (line.startsWith('SUMMARY:')) {
+            currentEvent.title = line.substring(8);
+          } else if (line.startsWith('DTSTART:')) {
+            const dtStr = line.substring(8);
+            currentEvent.startTime = parseICSDate(dtStr);
+          } else if (line.startsWith('DTEND:')) {
+            const dtStr = line.substring(6);
+            currentEvent.endTime = parseICSDate(dtStr);
+          } else if (line.startsWith('LOCATION:')) {
+            currentEvent.roomName = line.substring(9);
+          } else if (line.startsWith('DESCRIPTION:')) {
+            currentEvent.description = line.substring(12).replace(/\\n/g, '\n').replace(/\\,/g, ',');
+          }
+        }
+      }
+
+      // Calculate duration from start/end times
+      events.forEach(e => {
+        if (e.startTime && e.endTime) {
+          e.durationMinutes = Math.round((new Date(e.endTime) - new Date(e.startTime)) / 60000);
+        } else {
+          e.durationMinutes = 60; // Default 1 hour for host events
+        }
+      });
+
+      return events;
+    }
+
+    function parseICSDate(dtStr) {
+      // Format: 20250316T210000Z or 20250316T210000
+      const year = parseInt(dtStr.substring(0, 4));
+      const month = parseInt(dtStr.substring(4, 6)) - 1;
+      const day = parseInt(dtStr.substring(6, 8));
+      const hour = parseInt(dtStr.substring(9, 11)) || 0;
+      const minute = parseInt(dtStr.substring(11, 13)) || 0;
+      const second = parseInt(dtStr.substring(13, 15)) || 0;
+
+      if (dtStr.endsWith('Z')) {
+        return new Date(Date.UTC(year, month, day, hour, minute, second)).toISOString();
+      } else {
+        return new Date(year, month, day, hour, minute, second).toISOString();
+      }
+    }
 
     async function loadEvents() {
       const container = document.getElementById('events-container');
       const btn = document.querySelector('.refresh-btn');
-
       btn.classList.add('spinning');
 
+      const allEvents = [];
+      const now = new Date();
+
       try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error('Failed to fetch');
+        // Fetch JSONBin events (Genie + Community)
+        const jsonResponse = await fetch(JSONBIN_URL);
+        if (jsonResponse.ok) {
+          const data = await jsonResponse.json();
+          const record = data.record || data;
 
-        const data = await response.json();
-        const record = data.record || data;
+          const genieEvents = (record.genieEvents || []).filter(e => e.enabled !== false);
+          const communityEvents = (record.communityEvents || []).filter(e => e.enabled !== false);
 
-        const genieEvents = record.genieEvents || [];
-        const communityEvents = record.communityEvents || [];
+          genieEvents.forEach(e => {
+            allEvents.push({ ...e, type: 'genie' });
+          });
 
-        // Combine and sort all events
-        const allEvents = [
-          ...genieEvents.map(e => ({ ...e, type: 'genie' })),
-          ...communityEvents.map(e => ({ ...e, type: 'community' }))
-        ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-
-        if (allEvents.length === 0) {
-          container.innerHTML = '<div class="empty">No events scheduled</div>';
-          return;
+          communityEvents.forEach(e => {
+            allEvents.push({ ...e, type: 'community' });
+          });
         }
-
-        const now = new Date();
-        const upcoming = allEvents.filter(e => {
-          const endTime = new Date(new Date(e.startTime).getTime() + (e.durationMinutes || 5) * 60 * 1000);
-          return endTime > now;
-        });
-        const past = allEvents.filter(e => {
-          const endTime = new Date(new Date(e.startTime).getTime() + (e.durationMinutes || 5) * 60 * 1000);
-          return endTime <= now;
-        }).reverse().slice(0, 5); // Only show last 5 past events
-
-        let html = '';
-
-        if (upcoming.length > 0) {
-          html += `
-            <div class="events-section">
-              <h2 class="section-title upcoming">📅 Upcoming Events</h2>
-              ${upcoming.map(e => renderEvent(e, now)).join('')}
-            </div>
-          `;
-        }
-
-        if (past.length > 0) {
-          html += `
-            <div class="events-section">
-              <h2 class="section-title past">📜 Recent Events</h2>
-              ${past.map(e => renderEvent(e, now, true)).join('')}
-            </div>
-          `;
-        }
-
-        container.innerHTML = html;
-
       } catch (err) {
-        container.innerHTML = `<div class="error">Failed to load events. Please try again.</div>`;
-        console.error(err);
-      } finally {
-        btn.classList.remove('spinning');
+        console.error('Failed to fetch JSONBin events:', err);
       }
+
+      try {
+        // Fetch ICS events (Host events)
+        const icsResponse = await fetch(ICS_URL + '?t=' + Date.now());
+        if (icsResponse.ok) {
+          const icsText = await icsResponse.text();
+          const hostEvents = parseICS(icsText);
+
+          hostEvents.forEach(e => {
+            // Check if it's a Double Credits event
+            const isDoubleCredits = e.title && e.title.toLowerCase().includes('double credits');
+            allEvents.push({
+              ...e,
+              type: isDoubleCredits ? 'double-credits' : 'host'
+            });
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch ICS events:', err);
+      }
+
+      // Sort by start time
+      allEvents.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+      if (allEvents.length === 0) {
+        container.innerHTML = '<div class="empty">No events scheduled</div>';
+        btn.classList.remove('spinning');
+        return;
+      }
+
+      // Filter upcoming and past events
+      const upcoming = allEvents.filter(e => {
+        const endTime = new Date(new Date(e.startTime).getTime() + (e.durationMinutes || 5) * 60 * 1000);
+        return endTime > now;
+      });
+
+      const past = allEvents.filter(e => {
+        const endTime = new Date(new Date(e.startTime).getTime() + (e.durationMinutes || 5) * 60 * 1000);
+        return endTime <= now;
+      }).reverse().slice(0, 5);
+
+      let html = '';
+
+      if (upcoming.length > 0) {
+        html += `
+          <div class="events-section">
+            <h2 class="section-title upcoming">📅 Upcoming Events</h2>
+            ${upcoming.map(e => renderEvent(e, now)).join('')}
+          </div>
+        `;
+      }
+
+      if (past.length > 0) {
+        html += `
+          <div class="events-section">
+            <h2 class="section-title past">📜 Recent Events</h2>
+            ${past.map(e => renderEvent(e, now, true)).join('')}
+          </div>
+        `;
+      }
+
+      if (html === '') {
+        html = '<div class="empty">No events scheduled</div>';
+      }
+
+      container.innerHTML = html;
+      btn.classList.remove('spinning');
     }
 
     function renderEvent(event, now, isPast = false) {
@@ -309,6 +426,7 @@
         hour12: true
       });
 
+      // Effects
       const effects = event.effects || [];
       const effectsHtml = effects.length > 0 ? `
         <div class="effects-list">
@@ -316,27 +434,57 @@
         </div>
       ` : '';
 
-      // Support both 'title' and 'name' fields for event title
+      // Title and description
       const eventTitle = event.title || event.name || 'Untitled Event';
+      const description = event.description ? `<div class="event-description">${escapeHtml(event.description)}</div>` : '';
+
+      // Type label
+      let typeLabel, typeClass;
+      switch (event.type) {
+        case 'genie':
+          typeLabel = 'Genie Event';
+          typeClass = 'genie';
+          break;
+        case 'community':
+          typeLabel = 'Community';
+          typeClass = 'community';
+          break;
+        case 'double-credits':
+          typeLabel = 'Double Credits';
+          typeClass = 'double-credits';
+          break;
+        default:
+          typeLabel = 'Host Event';
+          typeClass = 'host';
+      }
+
+      const icon = TYPE_ICONS[event.type] || '🎪';
 
       return `
         <div class="event-card ${isPast ? 'past' : ''} ${isActive ? 'active' : ''}">
           <div class="event-header">
             <div class="event-title">
-              ${event.type === 'genie' ? '🧞' : '👥'} ${eventTitle}
+              ${icon} ${escapeHtml(eventTitle)}
               ${isActive ? '<span class="live-badge">LIVE</span>' : ''}
             </div>
-            <span class="event-type ${event.type}">${event.type === 'genie' ? 'Genie Event' : 'Community'}</span>
+            <span class="event-type ${typeClass}">${typeLabel}</span>
           </div>
+          ${description}
           <div class="event-details">
             <span class="event-detail">📆 ${dateStr}</span>
             <span class="event-detail">🕐 ${timeStr}</span>
             <span class="event-detail">⏱️ ${event.durationMinutes || 5} min</span>
-            ${event.roomName ? `<span class="event-detail">📍 ${event.roomName}</span>` : ''}
+            ${event.roomName ? `<span class="event-detail">📍 ${escapeHtml(event.roomName)}</span>` : ''}
           </div>
           ${effectsHtml}
         </div>
       `;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     // Load events on page load
