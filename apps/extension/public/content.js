@@ -5675,6 +5675,16 @@ function createSettingsPanel() {
 // Changelog data
 const CHANGELOG = [
   {
+    version: '2.0.2',
+    date: '2025-03-16',
+    changes: [
+      'Ticker shows all events (Host, Genie, Community) in continuous scroll',
+      'Events stay visible until they end with LIVE badge',
+      'Slowed ticker scroll for better readability',
+      'Added public event calendar page'
+    ]
+  },
+  {
     version: '2.0.1',
     date: '2025-03-16',
     changes: [

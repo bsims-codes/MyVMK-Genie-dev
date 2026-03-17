@@ -1,5 +1,18 @@
 # MyVMK Genie Changelog
 
+## 2.0.2 (Upcoming)
+
+### Improvements
+- Ticker now shows all event types (Host, Genie, Community) in one continuous scroll
+- Events stay visible in dropdown until they end (not just until they start)
+- Live events show "LIVE" badge in events list
+- Slowed down ticker scroll speed for better readability
+- Version display now reads dynamically from manifest
+- Added public event calendar page
+
+### Bug Fixes
+- Fixed Genie events not appearing in ticker scroller
+
 ## 2.0.1
 
 ### Permissions & Security
