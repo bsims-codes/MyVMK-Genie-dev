@@ -1,5 +1,17 @@
 # MyVMK Genie Changelog
 
+## 2.0.8
+
+### Features
+- Snow overlay auto-enables when entering Matterhorn (user can disable, preference respected)
+- Bee banner notifications for all event types (Genie, Community, Host) at 1 hour and 1 minute before start
+
+### Bug Fixes
+- Fixed ICS events (like Double Credits) disappearing when they start instead of when they end
+
+### Changes
+- Increased max event duration to 24 hours in admin panel
+
 ## 2.0.7
 
 ### Changes

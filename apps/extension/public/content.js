@@ -324,6 +324,10 @@ let isButterflyActive = false
 let butterflyAnimationId = null
 let butterflySpawnTimer = null
 
+// Snow Effect for Matterhorn
+const MATTERHORN_ID = 33
+let matterhornSnowDisabledByUser = false // Track if user manually disabled snow in Matterhorn
+
 // Genie Events System - remote scheduled events via JSONBin.io
 // >>> EDIT THESE TWO VALUES <<<
 const GENIE_EVENTS_BIN_ID = '69b4de67aa77b81da9e28bfe'
@@ -338,8 +342,10 @@ let customTickerIcon = ''          // Custom ticker icon URL from admin panel
 let activeGenieEvent = null
 let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
-let notifiedUpcomingEvents = new Set() // Track events we've already shown "starting shortly" for
+let notifiedUpcomingEvents = new Set() // Track events we've already shown "starting in 1 minute" for
+let notifiedHourBeforeEvents = new Set() // Track events we've already shown "begins in 1 hour" for
 let notifiedActiveEvents = new Set() // Track events we've already shown "starting/in progress" for
+let cachedIcsEvents = [] // Cache ICS events for notifications
 let activeCommunityEventRoomId = null
 let genieEventCheckInterval = null
 
@@ -855,6 +861,7 @@ function monitorNetworkForRooms() {
           checkGhostEffectRoom()
           checkTinkerbellRoom()
           checkButterflyRoom()
+          checkMatterhornRoom()
           checkGenieEvents()
         }
 
@@ -903,6 +910,7 @@ function monitorNetworkForRooms() {
             checkGhostEffectRoom() // Check if ghost effect should change
             checkTinkerbellRoom()
           checkButterflyRoom()
+          checkMatterhornRoom()
             checkGenieEvents()
           }
         }
@@ -3224,9 +3232,17 @@ function toggleSnowOverlay() {
   isSnowEnabled = !isSnowEnabled
 
   if (isSnowEnabled) {
+    // User manually enabled snow - reset the Matterhorn preference
+    if (currentRoomId === MATTERHORN_ID) {
+      matterhornSnowDisabledByUser = false
+    }
     startSnowEffect()
     showNotification('❄️ Snow enabled', 'success')
   } else {
+    // User manually disabled snow - track preference if in Matterhorn
+    if (currentRoomId === MATTERHORN_ID) {
+      matterhornSnowDisabledByUser = true
+    }
     stopSnowEffect()
     showNotification('☀️ Snow disabled', 'info')
   }
@@ -4043,6 +4059,24 @@ function checkButterflyRoom() {
   }
 }
 
+function checkMatterhornRoom() {
+  // Auto-enable snow in Matterhorn (unless user manually disabled it)
+  if (currentRoomId === MATTERHORN_ID) {
+    if (!isSnowEnabled && !matterhornSnowDisabledByUser) {
+      isSnowEnabled = true
+      startSnowEffect()
+    }
+    return
+  }
+
+  // Reset user preference when leaving Matterhorn (so snow auto-enables next visit)
+  if (matterhornSnowDisabledByUser) {
+    matterhornSnowDisabledByUser = false
+  }
+
+  // Don't auto-disable snow when leaving - let user keep it if they want
+}
+
 // ============================================
 // SCREEN SHAKE EFFECT
 // ============================================
@@ -4537,32 +4571,63 @@ function checkGenieEvents() {
     stopCommunityEvent()
   }
 
-  // Check for events starting in the next minute (show "starting shortly" notification)
-  const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000)
-  const allEvents = [...scheduledGenieEvents, ...scheduledCommunityEvents]
+  // Check for event notifications (1 hour and 1 minute before)
+  // Combine all event types: Genie, Community, and Host (ICS)
+  const allEventsForNotification = [
+    ...scheduledGenieEvents.map(e => ({
+      id: e.id,
+      title: e.title,
+      startTimeMs: new Date(e.startTime).getTime(),
+      roomName: e.roomName,
+      durationMinutes: e.durationMinutes || 5,
+      test: e.test
+    })),
+    ...scheduledCommunityEvents.map(e => ({
+      id: e.id,
+      title: e.title,
+      startTimeMs: new Date(e.startTime).getTime(),
+      roomName: e.roomName,
+      durationMinutes: e.durationMinutes || 5,
+      test: e.test
+    })),
+    ...cachedIcsEvents.map(e => ({
+      id: e.title + '_' + e.timestamp, // ICS events don't have IDs, create one
+      title: e.title,
+      startTimeMs: e.timestamp,
+      roomName: e.location,
+      durationMinutes: e.endTimestamp ? Math.round((e.endTimestamp - e.timestamp) / 60000) : 60,
+      test: false
+    }))
+  ]
 
-  for (const event of allEvents) {
+  for (const event of allEventsForNotification) {
     // Skip test events unless test mode is enabled
     if (event.test && !isTestModeEnabled) continue
 
-    const startTime = new Date(event.startTime)
-    const timeUntilStart = startTime.getTime() - now.getTime()
+    const timeUntilStart = event.startTimeMs - now.getTime()
 
-    // If event starts within the next minute and we haven't notified yet
-    if (timeUntilStart > 0 && timeUntilStart <= 60 * 1000 && !notifiedUpcomingEvents.has(event.id)) {
+    // 1 hour notification: "[event name] begins in 1 hour"
+    const oneHourMs = 60 * 60 * 1000
+    if (timeUntilStart > 0 && timeUntilStart <= oneHourMs && timeUntilStart > oneHourMs - 30000 && !notifiedHourBeforeEvents.has(event.id)) {
+      notifiedHourBeforeEvents.add(event.id)
+      showBeeBanner(`${event.title} begins in 1 hour`)
+    }
+
+    // 1 minute notification: "[event name] starting in 1 minute in [room]"
+    const oneMinuteMs = 60 * 1000
+    if (timeUntilStart > 0 && timeUntilStart <= oneMinuteMs && !notifiedUpcomingEvents.has(event.id)) {
       notifiedUpcomingEvents.add(event.id)
-
       const message = event.roomName
-        ? `Event starting shortly in ${event.roomName}!`
-        : 'Event starting shortly!'
-
+        ? `${event.title} starting in 1 minute in ${event.roomName}`
+        : `${event.title} starting in 1 minute`
       showBeeBanner(message)
     }
 
     // Clean up old notifications (events that have already ended)
-    const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
-    if (now > endTime) {
+    const endTimeMs = event.startTimeMs + event.durationMinutes * 60 * 1000
+    if (now.getTime() > endTimeMs) {
       notifiedUpcomingEvents.delete(event.id)
+      notifiedHourBeforeEvents.delete(event.id)
     }
   }
 }
@@ -5912,6 +5977,16 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.0.8',
+    date: '2025-03-17',
+    changes: [
+      'Snow auto-enables in Matterhorn (can be manually disabled)',
+      'Bee banner notifications for all events at 1 hour and 1 minute before',
+      'Fixed ICS events (Double Credits, etc.) staying visible until they end',
+      'Increased max event duration to 24 hours in admin panel'
+    ]
+  },
   {
     version: '2.0.7',
     date: '2025-03-17',
@@ -8062,13 +8137,21 @@ async function loadTodaysEvents() {
     const events = parseICSSimple(icsText)
     console.log('MyVMK Genie: Parsed', events.length, 'events from ICS')
 
-    // Filter to upcoming events only
+    // Filter to upcoming or currently active events (show until they END)
+    const upcomingIcsEvents = []
     events.forEach(event => {
-      if (event.timestamp > now) {
+      // Use endTimestamp if available, otherwise just check start time
+      const endTime = event.endTimestamp || event.timestamp
+      if (endTime > now) {
         event.type = 'host' // Mark as host event
+        // Mark as live if currently happening
+        event.isLive = event.endTimestamp && now >= event.timestamp && now <= event.endTimestamp
+        upcomingIcsEvents.push(event)
         allUpcomingEvents.push(event)
       }
     })
+    // Cache ICS events for notification system
+    cachedIcsEvents = upcomingIcsEvents
   } catch (err) {
     console.error('MyVMK Genie: Failed to fetch ICS:', err)
   }
@@ -8161,6 +8244,7 @@ function parseICSSimple(icsText) {
         events.push({
           title: currentEvent.title,
           timestamp: currentEvent.timestamp,
+          endTimestamp: currentEvent.endTimestamp || null,
           location: currentEvent.location || null,
           dateStr: currentEvent.dateStr,
           timeStr: currentEvent.timeStr,
@@ -8181,6 +8265,11 @@ function parseICSSimple(icsText) {
           currentEvent.timestamp = parsed.timestamp
           currentEvent.dateStr = parsed.dateStr
           currentEvent.timeStr = parsed.timeStr
+        }
+      } else if (key.startsWith('DTEND')) {
+        const parsed = parseICSDateSimple(value)
+        if (parsed) {
+          currentEvent.endTimestamp = parsed.timestamp
         }
       } else if (key === 'SUMMARY') {
         currentEvent.title = value.replace(/\\,/g, ',').replace(/\\n/g, ' ').trim()
@@ -8275,7 +8364,8 @@ function updateRoomInfoDisplay() {
   // Check for room-specific effects (like Haunted Mansion ghosts, Tinkerbell)
   checkGhostEffectRoom()
   checkTinkerbellRoom()
-          checkButterflyRoom()
+  checkButterflyRoom()
+  checkMatterhornRoom()
   checkGenieEvents()
 }
 
@@ -8535,7 +8625,8 @@ async function init() {
         updateRoomInfoDisplay()
         checkGhostEffectRoom()
         checkTinkerbellRoom()
-          checkButterflyRoom()
+        checkButterflyRoom()
+        checkMatterhornRoom()
         checkGenieEvents()
       }
     }
@@ -8549,7 +8640,8 @@ async function init() {
       updateRoomInfoDisplay()
       checkGhostEffectRoom()
       checkTinkerbellRoom()
-          checkButterflyRoom()
+      checkButterflyRoom()
+      checkMatterhornRoom()
       checkGenieEvents()
     }
 
@@ -8562,7 +8654,8 @@ async function init() {
       updateRoomInfoDisplay()
       checkGhostEffectRoom()
       checkTinkerbellRoom()
-          checkButterflyRoom()
+      checkButterflyRoom()
+      checkMatterhornRoom()
       checkGenieEvents()
     }
   })
