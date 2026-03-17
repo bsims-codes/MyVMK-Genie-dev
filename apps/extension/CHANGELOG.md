@@ -1,6 +1,6 @@
 # MyVMK Genie Changelog
 
-## 2.0.2 (Upcoming)
+## 2.0.2
 
 ### Improvements
 - Ticker now shows all event types (Host, Genie, Community) in one continuous scroll
