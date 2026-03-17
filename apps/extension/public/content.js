@@ -333,6 +333,7 @@ const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
 let scheduledCommunityEvents = []  // Player events - audio only
 let customTickerText = ''          // Custom ticker text from admin panel
+let customTickerIcon = ''          // Custom ticker icon URL from admin panel
 let activeGenieEvent = null
 let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
@@ -4408,6 +4409,12 @@ async function fetchGenieEvents() {
       console.log('MyVMK Genie: Custom ticker text:', customTickerText || '(default)')
     }
 
+    // Custom ticker icon from admin panel
+    if (data && typeof data.tickerIcon === 'string') {
+      customTickerIcon = data.tickerIcon
+      console.log('MyVMK Genie: Custom ticker icon:', customTickerIcon || '(default)')
+    }
+
     // Re-render ticker to include newly loaded events
     renderTickerContent()
   } catch (e) {
@@ -8157,14 +8164,15 @@ async function renderTickerContent() {
   try {
     const { allUpcomingEvents } = await loadTodaysEvents()
 
-    // Build continuous ticker content - use custom text if set, otherwise default
+    // Build continuous ticker content - use custom text/icon if set, otherwise default
     const welcomeMessage = customTickerText || 'Welcome to MyVMK Genie'
-    let tickerContent = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">${welcomeMessage}`
+    const welcomeIconUrl = customTickerIcon || genieLogoUrl
+    let tickerContent = `<img src="${welcomeIconUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">${welcomeMessage}`
 
     // Add upcoming events (up to 3)
     const eventsToShow = allUpcomingEvents.slice(0, 3)
     if (eventsToShow.length > 0) {
-      tickerContent += '   —   '
+      tickerContent += '   •   '
 
       eventsToShow.forEach((event, index) => {
         const eventDate = new Date(event.timestamp)

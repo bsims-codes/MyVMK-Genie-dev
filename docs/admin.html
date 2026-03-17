@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="bee-static.png">
   <title>MyVMK Genie - Event Admin</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -811,9 +812,16 @@
               Leave empty to use default "Welcome to MyVMK Genie". Events will still appear after this text.
             </div>
           </div>
+          <div class="form-group">
+            <label>Custom Ticker Icon URL</label>
+            <input type="url" id="ticker-icon" placeholder="https://example.com/icon.png">
+            <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px;">
+              Leave empty to use the default Genie lamp icon. Use a direct image URL (PNG, JPG, GIF).
+            </div>
+          </div>
           <div class="btn-group">
-            <button class="btn-primary" onclick="saveTickerText()">Save Ticker</button>
-            <button class="btn-secondary" onclick="clearTickerText()">Reset to Default</button>
+            <button class="btn-primary" onclick="saveTickerSettings()">Save Ticker</button>
+            <button class="btn-secondary" onclick="clearTickerSettings()">Reset to Default</button>
           </div>
         </div>
       </div>
@@ -900,6 +908,7 @@
     let genieEvents = [];
     let communityEvents = [];
     let tickerText = '';
+    let tickerIcon = '';
     let hasUnsavedChanges = false;
 
     // Initialize
@@ -991,7 +1000,9 @@
         genieEvents = record.genieEvents || [];
         communityEvents = record.communityEvents || [];
         tickerText = record.tickerText || '';
+        tickerIcon = record.tickerIcon || '';
         document.getElementById('ticker-text').value = tickerText;
+        document.getElementById('ticker-icon').value = tickerIcon;
         renderEvents();
 
         const banner = document.getElementById('config-banner');
@@ -1023,16 +1034,19 @@
       }
     }
 
-    function saveTickerText() {
+    function saveTickerSettings() {
       tickerText = document.getElementById('ticker-text').value.trim();
+      tickerIcon = document.getElementById('ticker-icon').value.trim();
       hasUnsavedChanges = true;
       updateUnsavedIndicator();
       setStatus('Ticker updated - click Publish to go live', 'success');
     }
 
-    function clearTickerText() {
+    function clearTickerSettings() {
       tickerText = '';
+      tickerIcon = '';
       document.getElementById('ticker-text').value = '';
+      document.getElementById('ticker-icon').value = '';
       hasUnsavedChanges = true;
       updateUnsavedIndicator();
       setStatus('Ticker reset to default - click Publish to go live', 'success');
@@ -1044,7 +1058,8 @@
         version: 1,
         lastUpdated: new Date().toISOString(),
         genieEvents, communityEvents,
-        tickerText: tickerText || undefined
+        tickerText: tickerText || undefined,
+        tickerIcon: tickerIcon || undefined
       };
       try {
         const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
