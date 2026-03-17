@@ -169,7 +169,6 @@ let recordedChunks = []
 let isRecording = false
 let recordBtn = null
 let currentStream = null
-let lastCaptchaCode = null
 let isRainEnabled = false
 let isStarsOverlayEnabled = false
 let isNightOverlayEnabled = false
@@ -333,6 +332,7 @@ const GENIE_EVENTS_URL = `https://api.jsonbin.io/v3/b/${GENIE_EVENTS_BIN_ID}/lat
 const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
 let scheduledCommunityEvents = []  // Player events - audio only
+let customTickerText = ''          // Custom ticker text from admin panel
 let activeGenieEvent = null
 let activeGenieEventRoomId = null  // Track which room the event effects are running in
 let activeCommunityEvent = null
@@ -595,124 +595,6 @@ function captureCanvas() {
 //     return null
 //   }
 // }
-
-// Scan canvas for captcha code using OCR
-async function scanForCaptcha() {
-  // Capture screen via background script (avoids tainted canvas)
-  const imageData = await captureScreen()
-  if (!imageData) {
-    showNotification('Could not capture game screen', 'error')
-    return null
-  }
-
-  // Initialize OCR if needed
-  if (!isOcrReady) {
-    showNotification('Starting OCR engine...', 'info')
-    const ready = await initOCR()
-    if (!ready) {
-      showNotification('OCR failed to initialize', 'error')
-      return null
-    }
-  }
-
-  try {
-    console.log('MyVMK Genie: Scanning for captcha...')
-
-    const result = await tesseractWorker.recognize(imageData)
-    const text = result.data.text
-    console.log('MyVMK Genie: OCR result for captcha:', text)
-
-    // Look for captcha patterns - typically 4-digit numbers
-    // The captcha popup shows "Captcha Code" header and a number below
-    const patterns = [
-      /captcha[:\s]*code[:\s]*(\d{4,6})/i,
-      /captcha[:\s]*(\d{4,6})/i,
-      /code[:\s]*(\d{4,6})/i,
-      // Also look for standalone 4-6 digit numbers near captcha text
-      /(\d{4,6})/g
-    ]
-
-    // First, check if "captcha" is mentioned in the text
-    const hasCaptchaContext = text.toLowerCase().includes('captcha') || text.toLowerCase().includes('code')
-
-    for (const pattern of patterns) {
-      const matches = text.match(pattern)
-      if (matches) {
-        // For the global pattern, find the best match
-        if (pattern.global) {
-          for (const match of matches) {
-            const code = match
-            // Prefer 4-digit codes (most common captcha length)
-            if (code.length >= 4 && code.length <= 6) {
-              console.log('MyVMK Genie: Captcha code found:', code)
-              handleCaptchaCode(code)
-              return code
-            }
-          }
-        } else if (matches[1]) {
-          const code = matches[1]
-          console.log('MyVMK Genie: Captcha code found:', code)
-          handleCaptchaCode(code)
-          return code
-        }
-      }
-    }
-
-    // If we found captcha context but no code, let user know
-    if (hasCaptchaContext) {
-      console.log('MyVMK Genie: Captcha popup detected but code not readable')
-      showNotification('Captcha detected but code unclear', 'info')
-    }
-
-    return null
-  } catch (err) {
-    console.error('MyVMK Genie: Captcha OCR scan failed:', err)
-    return null
-  }
-}
-
-// Handle detected captcha code
-function handleCaptchaCode(code) {
-  if (code === lastCaptchaCode) return // Avoid duplicate notifications
-
-  lastCaptchaCode = code
-  console.log('MyVMK Genie: Captcha code detected:', code)
-
-  // Copy to clipboard
-  navigator.clipboard.writeText(code).then(() => {
-    showNotification(`📋 Captcha: ${code} (copied!)`, 'success')
-    // Play a quick notification sound
-    playCaptchaSound()
-  }).catch(err => {
-    showNotification(`🔢 Captcha: ${code}`, 'success')
-  })
-
-  // Reset after a few seconds to allow detecting a new captcha
-  setTimeout(() => {
-    lastCaptchaCode = null
-  }, 5000)
-}
-
-// Play a quick sound for captcha detection
-function playCaptchaSound() {
-  try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-
-    oscillator.frequency.value = 600
-    oscillator.type = 'sine'
-    gainNode.gain.value = 0.2
-
-    oscillator.start()
-    oscillator.stop(audioContext.currentTime + 0.1)
-  } catch (e) {
-    // Silent fail
-  }
-}
 
 // Start automatic queue scanning - commented out for future reference
 // function startAutoScan(intervalMs = 5000) {
@@ -1133,7 +1015,7 @@ function loadPhrases() {
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
 const modifierKey = isMac ? 'Ctrl' : 'Alt'
 
-// Listen for keyboard shortcuts (Alt/Ctrl + 1-0 for phrases, Alt/Ctrl+C for captcha)
+// Listen for keyboard shortcuts (Alt/Ctrl + 1-0 for phrases)
 // Use capture phase to catch events before Canvas consumes them
 document.addEventListener('keydown', (e) => {
   // Check for the correct modifier key (Ctrl on Mac, Alt on Windows/Linux)
@@ -1145,20 +1027,6 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (!modifierPressed) return
-
-  // Modifier + C = Scan captcha
-  if (e.key.toLowerCase() === 'c') {
-    e.preventDefault()
-    e.stopPropagation()
-    console.log('MyVMK Genie - Scanning captcha...')
-    showNotification('Scanning captcha...', 'info')
-    scanForCaptcha().then(result => {
-      if (result === null) {
-        showNotification('No captcha found', 'info')
-      }
-    })
-    return
-  }
 
   // Modifier + 1-9 = slots 1-9, Modifier + 0 = slot 10
   const keyToSlot = {
@@ -4534,6 +4402,12 @@ async function fetchGenieEvents() {
       console.log('MyVMK Genie: Loaded', scheduledCommunityEvents.length, 'community events')
     }
 
+    // Custom ticker text from admin panel
+    if (data && typeof data.tickerText === 'string') {
+      customTickerText = data.tickerText
+      console.log('MyVMK Genie: Custom ticker text:', customTickerText || '(default)')
+    }
+
     // Re-render ticker to include newly loaded events
     renderTickerContent()
   } catch (e) {
@@ -5947,6 +5821,13 @@ function createSettingsPanel() {
 // Changelog data
 const CHANGELOG = [
   {
+    version: '2.0.3',
+    date: '2025-03-16',
+    changes: [
+      'Removed erroneous testing feature'
+    ]
+  },
+  {
     version: '2.0.2',
     date: '2025-03-16',
     changes: [
@@ -7226,53 +7107,6 @@ function createQueueAlertsPanel() {
 
   div.appendChild(ocrSection)
 
-  // Captcha Scanner section
-  const captchaSection = document.createElement('div')
-  captchaSection.style.cssText = `
-    padding: 12px;
-    background: rgba(16, 185, 129, 0.1);
-    border-radius: 8px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  `
-
-  const captchaTitle = document.createElement('div')
-  captchaTitle.style.cssText = 'color: #6ee7b7; font-size: 12px; font-weight: 500; margin-bottom: 8px;'
-  captchaTitle.textContent = '🔢 Captcha Reader'
-  captchaSection.appendChild(captchaTitle)
-
-  const captchaDesc = document.createElement('p')
-  captchaDesc.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 10px; margin-bottom: 8px;'
-  captchaDesc.innerHTML = `Scan and auto-copy captcha codes to clipboard<br><span style="color: #6ee7b7;">Shortcut: ${modifierKey}+C</span>`
-  captchaSection.appendChild(captchaDesc)
-
-  const captchaScanBtn = document.createElement('button')
-  captchaScanBtn.textContent = '📷 Scan Captcha'
-  captchaScanBtn.style.cssText = `
-    width: 100%;
-    padding: 10px;
-    border-radius: 8px;
-    border: none;
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: white;
-    font-weight: 500;
-    cursor: pointer;
-    font-size: 12px;
-  `
-  captchaScanBtn.onclick = async () => {
-    captchaScanBtn.textContent = '⏳ Scanning...'
-    captchaScanBtn.disabled = true
-    const result = await scanForCaptcha()
-    captchaScanBtn.textContent = '📷 Scan Captcha'
-    captchaScanBtn.disabled = false
-    if (result === null) {
-      showNotification('No captcha found - is the popup visible?', 'info')
-    }
-  }
-  captchaSection.appendChild(captchaScanBtn)
-
-  div.appendChild(captchaSection)
-
   // Test alert button
   const testBtn = document.createElement('button')
   testBtn.textContent = '🔔 Test Alert Sound'
@@ -8312,8 +8146,8 @@ function updateRoomInfoDisplay() {
 
 // Render the ticker as one continuous scroll: Welcome + all upcoming events
 async function renderTickerContent() {
-  const tickerText = document.getElementById('vmkpal-ticker-text')
-  if (!tickerText) return
+  const tickerTextEl = document.getElementById('vmkpal-ticker-text')
+  if (!tickerTextEl) return
 
   const hostIconUrl = chrome.runtime.getURL('genie-host-events.png')
   const genieLogoUrl = chrome.runtime.getURL('genie-genie-events.png')
@@ -8323,8 +8157,9 @@ async function renderTickerContent() {
   try {
     const { allUpcomingEvents } = await loadTodaysEvents()
 
-    // Build continuous ticker content
-    let tickerContent = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">Welcome to MyVMK Genie`
+    // Build continuous ticker content - use custom text if set, otherwise default
+    const welcomeMessage = customTickerText || 'Welcome to MyVMK Genie'
+    let tickerContent = `<img src="${genieLogoUrl}" style="height: 22px; width: auto; vertical-align: -5px; margin-right: 6px;">${welcomeMessage}`
 
     // Add upcoming events (up to 3)
     const eventsToShow = allUpcomingEvents.slice(0, 3)
@@ -8361,11 +8196,11 @@ async function renderTickerContent() {
 
     tickerContent += '   •   '
     // Duplicate for seamless loop
-    tickerText.innerHTML = tickerContent + tickerContent
+    tickerTextEl.innerHTML = tickerContent + tickerContent
 
   } catch (err) {
     console.error('Failed to update ticker:', err)
-    tickerText.innerHTML = '📅 Check events calendar for updates   •   '
+    tickerTextEl.innerHTML = '📅 Check events calendar for updates   •   '
   }
 }
 

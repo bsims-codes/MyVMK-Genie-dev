@@ -11,9 +11,13 @@ When the user asks to "create a package", "build the extension", or similar:
    - Major version bumps for breaking changes or significant features
 
 2. **Update BOTH changelog locations** (keep them in sync!):
+
+   **WARNING: NEVER update one without the other! The in-app changelog is separate from the markdown file.**
+
    - `apps/extension/CHANGELOG.md` - User-facing changelog file
    - `apps/extension/public/content.js` - In-app CHANGELOG array (search for `const CHANGELOG = [`)
-   - Add a new entry at the TOP of the array with:
+
+   For the in-app changelog in content.js, add a new entry at the TOP of the array with:
      - `version`: matching the manifest version
      - `date`: current date in YYYY-MM-DD format
      - `changes`: array of bullet points describing what changed

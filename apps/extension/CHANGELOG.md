@@ -1,5 +1,10 @@
 # MyVMK Genie Changelog
 
+## 2.0.3
+
+### Changes
+- Removed erroneous testing feature
+
 ## 2.0.2
 
 ### Improvements
