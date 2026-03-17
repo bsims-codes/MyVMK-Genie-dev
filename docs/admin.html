@@ -382,6 +382,10 @@
       background: rgba(107, 114, 128, 0.2);
       color: #9ca3af;
     }
+    .event-badge.test {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
     .event-meta {
       font-size: 12px;
       color: rgba(255,255,255,0.5);
@@ -687,6 +691,14 @@
                 <span class="checkbox-label">Event Enabled</span>
               </label>
             </div>
+
+            <div class="form-group">
+              <label class="checkbox-group">
+                <input type="checkbox" id="genie-test">
+                <span class="checkbox-label">Test Event</span>
+                <span class="checkbox-hint">Hidden from calendar & public ticker</span>
+              </label>
+            </div>
           </div>
 
           <input type="hidden" id="genie-edit-index" value="-1">
@@ -767,6 +779,14 @@
               <label class="checkbox-group">
                 <input type="checkbox" id="community-enabled" checked>
                 <span class="checkbox-label">Event Enabled</span>
+              </label>
+            </div>
+
+            <div class="form-group span-2">
+              <label class="checkbox-group">
+                <input type="checkbox" id="community-test">
+                <span class="checkbox-label">Test Event</span>
+                <span class="checkbox-hint">Hidden from calendar & public ticker</span>
               </label>
             </div>
           </div>
@@ -1126,6 +1146,7 @@
                 <div class="event-title">
                   ${e.title}
                   <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
+                  ${e.test ? '<span class="event-badge test">TEST</span>' : ''}
                 </div>
                 <div class="event-meta">
                   <span>📅 ${formatDateTime(e.startTime)}</span>
@@ -1162,6 +1183,7 @@
                 <div class="event-title">
                   ${e.title}
                   <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
+                  ${e.test ? '<span class="event-badge test">TEST</span>' : ''}
                 </div>
                 <div class="event-meta">
                   <span>📅 ${formatDateTime(e.startTime)}</span>
@@ -1235,6 +1257,7 @@
       document.getElementById('genie-audio').value = event.audioUrl || '';
       document.getElementById('genie-tinkerbell').checked = event.includeTinkerbell === true;
       document.getElementById('genie-enabled').checked = event.enabled !== false;
+      document.getElementById('genie-test').checked = event.test === true;
       document.getElementById('genie-edit-index').value = index;
       document.getElementById('genie-submit-btn').textContent = 'Update Event';
       document.getElementById('genie-cancel-btn').style.display = 'inline-block';
@@ -1248,6 +1271,7 @@
       document.getElementById('genie-cancel-btn').style.display = 'none';
       document.getElementById('genie-tinkerbell').checked = false;
       document.getElementById('genie-enabled').checked = true;
+      document.getElementById('genie-test').checked = false;
       // Reset effect checkbox styles
       document.querySelectorAll('#genie-effects-grid .effect-checkbox').forEach(label => {
         label.classList.remove('selected');
@@ -1264,6 +1288,8 @@
       const selectedEffects = getSelectedEffects();
       const includeTinkerbell = document.getElementById('genie-tinkerbell').checked;
 
+      const isTest = document.getElementById('genie-test').checked;
+
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
         title: document.getElementById('genie-title').value,
@@ -1275,7 +1301,8 @@
         effects: selectedEffects.length > 0 ? selectedEffects : undefined,
         includeTinkerbell: includeTinkerbell || undefined,
         audioUrl: document.getElementById('genie-audio').value || undefined,
-        enabled: document.getElementById('genie-enabled').checked
+        enabled: document.getElementById('genie-enabled').checked,
+        test: isTest || undefined
       };
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 
@@ -1304,6 +1331,7 @@
       document.getElementById('community-room').value = event.roomId || '';
       document.getElementById('community-audio').value = event.audioUrl || '';
       document.getElementById('community-enabled').checked = event.enabled !== false;
+      document.getElementById('community-test').checked = event.test === true;
       document.getElementById('community-edit-index').value = index;
       document.getElementById('community-submit-btn').textContent = 'Update Event';
       document.getElementById('community-cancel-btn').style.display = 'inline-block';
@@ -1316,6 +1344,7 @@
       document.getElementById('community-submit-btn').textContent = 'Add Event';
       document.getElementById('community-cancel-btn').style.display = 'none';
       document.getElementById('community-enabled').checked = true;
+      document.getElementById('community-test').checked = false;
     }
 
     document.getElementById('community-form').addEventListener('submit', (e) => {
@@ -1325,6 +1354,7 @@
       const roomId = document.getElementById('community-room').value;
       const editIndex = parseInt(document.getElementById('community-edit-index').value);
       const isEditing = editIndex >= 0;
+      const isTest = document.getElementById('community-test').checked;
 
       const event = {
         id: isEditing ? communityEvents[editIndex].id : generateId('community'),
@@ -1336,7 +1366,8 @@
         durationMinutes: parseInt(document.getElementById('community-duration').value) || 30,
         audioUrl: document.getElementById('community-audio').value || undefined,
         submittedBy: document.getElementById('community-submitter').value || undefined,
-        enabled: document.getElementById('community-enabled').checked
+        enabled: document.getElementById('community-enabled').checked,
+        test: isTest || undefined
       };
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 

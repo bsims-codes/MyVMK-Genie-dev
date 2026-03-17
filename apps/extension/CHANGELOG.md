@@ -1,5 +1,30 @@
 # MyVMK Genie Changelog
 
+## 2.0.6
+
+### Features
+- Test Events: Create events that only you can see and trigger (for testing)
+  - Add "Test Event" checkbox in admin panel when creating events
+  - Enable "Test Mode" in extension Settings to see/trigger test events
+  - Test events are hidden from public calendar and other users
+
+### Improvements
+- Custom ticker icon support via admin panel
+
+## 2.0.5
+
+### Improvements
+- Removed unnecessary `scripting` permission to reduce "all websites" warning
+- Removed room entry notification popup
+
+## 2.0.4
+
+### Features
+- Custom ticker icon support - set a custom image URL in admin panel to replace the default Genie lamp
+
+### Improvements
+- Ticker separator changed from dash to bullet for visual consistency
+
 ## 2.0.3
 
 ### Changes

@@ -336,8 +336,8 @@
           const data = await jsonResponse.json();
           const record = data.record || data;
 
-          const genieEvents = (record.genieEvents || []).filter(e => e.enabled !== false);
-          const communityEvents = (record.communityEvents || []).filter(e => e.enabled !== false);
+          const genieEvents = (record.genieEvents || []).filter(e => e.enabled !== false && e.test !== true);
+          const communityEvents = (record.communityEvents || []).filter(e => e.enabled !== false && e.test !== true);
 
           genieEvents.forEach(e => {
             allEvents.push({ ...e, type: 'genie' });

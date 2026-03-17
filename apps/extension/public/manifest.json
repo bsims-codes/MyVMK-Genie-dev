@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "MyVMK Genie",
-  "version": "2.0.3",
+  "version": "2.0.6",
   "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting",
     "downloads",
     "tabCapture"
   ],

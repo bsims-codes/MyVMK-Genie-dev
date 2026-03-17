@@ -183,6 +183,7 @@ let isPositionLocked = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
+let isTestModeEnabled = false // Show and trigger test events (admin only)
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
 let manuallyDisabledEffects = new Set() // Track effects user manually disabled during an event
 
@@ -988,9 +989,6 @@ function setRoomFromNetwork(roomId, roomName) {
     currentRoom: roomName,
     currentRoomId: roomId
   })
-
-  // Show notification
-  showNotification(`📍 ${roomName}`, 'info')
 
   // Trigger room change handler
   onRoomChange(oldRoom, currentRoom)
@@ -4428,6 +4426,9 @@ function checkGenieEvents() {
   // Check Genie events (admin - overlays + audio)
   let foundActiveGenieEvent = false
   for (const event of scheduledGenieEvents) {
+    // Skip test events unless test mode is enabled
+    if (event.test && !isTestModeEnabled) continue
+
     const startTime = new Date(event.startTime)
     const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
     const isTimeActive = now >= startTime && now <= endTime
@@ -4452,6 +4453,9 @@ function checkGenieEvents() {
   // Check Community events (player - audio only)
   let foundActiveCommunityEvent = false
   for (const event of scheduledCommunityEvents) {
+    // Skip test events unless test mode is enabled
+    if (event.test && !isTestModeEnabled) continue
+
     const startTime = new Date(event.startTime)
     const endTime = new Date(startTime.getTime() + (event.durationMinutes || 5) * 60 * 1000)
     const isTimeActive = now >= startTime && now <= endTime
@@ -4478,6 +4482,9 @@ function checkGenieEvents() {
   const allEvents = [...scheduledGenieEvents, ...scheduledCommunityEvents]
 
   for (const event of allEvents) {
+    // Skip test events unless test mode is enabled
+    if (event.test && !isTestModeEnabled) continue
+
     const startTime = new Date(event.startTime)
     const timeUntilStart = startTime.getTime() - now.getTime()
 
@@ -5616,6 +5623,20 @@ function createSettingsPanel() {
   )
   div.appendChild(pinkThemeToggle.element)
 
+  // Test Mode Toggle (admin only - shows test events)
+  const testModeToggle = createSettingToggle(
+    '🧪',
+    'Test Mode',
+    'Show and trigger test events',
+    () => isTestModeEnabled,
+    () => {
+      isTestModeEnabled = !isTestModeEnabled
+      chrome.storage.local.set({ isTestModeEnabled })
+      renderTickerContent() // Re-render ticker to show/hide test events
+    }
+  )
+  div.appendChild(testModeToggle.element)
+
   // Background Color Section
   const bgSection = document.createElement('div')
   bgSection.style.cssText = `
@@ -5741,7 +5762,7 @@ function createSettingsPanel() {
   div.appendChild(bgSection)
 
   // Load saved settings to update UI
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isTestModeEnabled'], (result) => {
     if (result.isSmallIconEnabled !== undefined) {
       isSmallIconEnabled = result.isSmallIconEnabled
       smallIconToggle.updateState()
@@ -5749,6 +5770,10 @@ function createSettingsPanel() {
     if (result.isPinkTheme !== undefined) {
       isPinkTheme = result.isPinkTheme
       pinkThemeToggle.updateState()
+    }
+    if (result.isTestModeEnabled !== undefined) {
+      isTestModeEnabled = result.isTestModeEnabled
+      testModeToggle.updateState()
     }
     if (result.customBackgroundColor) {
       customBackgroundColor = result.customBackgroundColor
@@ -5827,6 +5852,31 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.0.6',
+    date: '2025-03-17',
+    changes: [
+      'Test Events: Create private test events via admin panel',
+      'Test Mode toggle in Settings to see/trigger test events',
+      'Custom ticker icon support via admin panel'
+    ]
+  },
+  {
+    version: '2.0.5',
+    date: '2025-03-17',
+    changes: [
+      'Reduced permission warnings (removed unused scripting permission)',
+      'Removed room entry notification popup'
+    ]
+  },
+  {
+    version: '2.0.4',
+    date: '2025-03-17',
+    changes: [
+      'Custom ticker icon support via admin panel',
+      'Ticker separator changed to bullet for consistency'
+    ]
+  },
   {
     version: '2.0.3',
     date: '2025-03-16',
@@ -6607,7 +6657,7 @@ function applyBackgroundColor() {
 
 // Load settings on startup
 function loadSettings() {
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isTestModeEnabled'], (result) => {
     if (result.isSmallIconEnabled) {
       isSmallIconEnabled = result.isSmallIconEnabled
       setTimeout(applyIconSize, 100)
@@ -6619,6 +6669,9 @@ function loadSettings() {
     if (result.customBackgroundColor) {
       customBackgroundColor = result.customBackgroundColor
       setTimeout(applyBackgroundColor, 100)
+    }
+    if (result.isTestModeEnabled) {
+      isTestModeEnabled = result.isTestModeEnabled
     }
   })
 }
@@ -7954,6 +8007,9 @@ async function loadTodaysEvents() {
   // Also include scheduled Genie events (admin)
   // Show events until they END (not just until they start)
   scheduledGenieEvents.forEach(event => {
+    // Skip test events unless test mode is enabled
+    if (event.test && !isTestModeEnabled) return
+
     const startTime = new Date(event.startTime).getTime()
     const endTime = startTime + (event.durationMinutes || 5) * 60 * 1000
     if (endTime > now) {
@@ -7973,6 +8029,9 @@ async function loadTodaysEvents() {
   // Also include scheduled Community events (player)
   // Show events until they END (not just until they start)
   scheduledCommunityEvents.forEach(event => {
+    // Skip test events unless test mode is enabled
+    if (event.test && !isTestModeEnabled) return
+
     const startTime = new Date(event.startTime).getTime()
     const endTime = startTime + (event.durationMinutes || 5) * 60 * 1000
     if (endTime > now) {
