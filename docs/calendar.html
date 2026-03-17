@@ -270,12 +270,20 @@
         } else if (currentEvent) {
           if (line.startsWith('SUMMARY:')) {
             currentEvent.title = line.substring(8);
-          } else if (line.startsWith('DTSTART:')) {
-            const dtStr = line.substring(8);
-            currentEvent.startTime = parseICSDate(dtStr);
-          } else if (line.startsWith('DTEND:')) {
-            const dtStr = line.substring(6);
-            currentEvent.endTime = parseICSDate(dtStr);
+          } else if (line.startsWith('DTSTART')) {
+            // Handle both DTSTART:... and DTSTART;TZID=...:...
+            const colonIndex = line.indexOf(':');
+            if (colonIndex !== -1) {
+              const dtStr = line.substring(colonIndex + 1);
+              currentEvent.startTime = parseICSDate(dtStr);
+            }
+          } else if (line.startsWith('DTEND')) {
+            // Handle both DTEND:... and DTEND;TZID=...:...
+            const colonIndex = line.indexOf(':');
+            if (colonIndex !== -1) {
+              const dtStr = line.substring(colonIndex + 1);
+              currentEvent.endTime = parseICSDate(dtStr);
+            }
           } else if (line.startsWith('LOCATION:')) {
             currentEvent.roomName = line.substring(9);
           } else if (line.startsWith('DESCRIPTION:')) {
