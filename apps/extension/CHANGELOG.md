@@ -5,7 +5,7 @@
 ### Features
 - **Room Collectibles**: Hidden clickable items in rooms that unlock themes when found!
 - Admin panel: New "Collectibles" tab to configure room-based theme unlocks
-- Audio player now supports WatchParty.me room URLs (embeds as iframe)
+- Audio player now supports WatchParty.me room URLs (opens in popup window)
 - Audio player now supports direct MP3/audio file URLs with visual player controls
 - Visual audio player includes play/pause, seek bar, volume control, and loop toggle
 
@@ -14,6 +14,7 @@
 - Fixed room detection not triggering ambient effects (snow, etc.) properly
 
 ### Improvements
+- Redesigned theme selector with visual icons instead of toggle switches
 - Added backup room detection via fetch/XHR interception for more reliable detection
 - Added room detection for JSON config files (fixes rooms like Fantasyland in the Sky)
 - Room detection now works for both audio files and JSON config patterns
