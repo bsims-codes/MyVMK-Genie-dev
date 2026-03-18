@@ -1,5 +1,13 @@
 # MyVMK Genie Changelog
 
+## 2.1.0
+
+### Features
+- Firefox extension now available
+- Added Pirate Treasure Room audio detection (Room Audio panel now recognizes PTR)
+- Prize Tracker panel with embedded compact view (IN PROGRESS)
+- Prize Tracker data syncs between extension and main website via chrome.storage bridge
+
 ## 2.0.8
 
 ### Features
@@ -8,6 +16,7 @@
 
 ### Bug Fixes
 - Fixed ICS events (like Double Credits) disappearing when they start instead of when they end
+- Fixed room-specific effects (Tinkerbell, butterflies, Beadie ghost) sometimes following user to other rooms
 
 ### Changes
 - Increased max event duration to 24 hours in admin panel

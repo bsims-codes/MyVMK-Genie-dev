@@ -30,6 +30,7 @@ let currentRoomId = null
 let currentLand = null
 let detectedAudioUrl = null
 let audioRoomMappings = {} // Maps audio URL patterns to room IDs
+let hasDetectedRoomThisSession = false // Track if we've detected a room via audio this session
 
 // Find room info by matching audio URL
 // Returns { id, land } object or null
@@ -770,6 +771,10 @@ function onRoomChange(oldRoom, newRoom) {
   // Update room display in toolbar
   updateRoomDisplay()
 
+  // Check room-specific ambient effects (Tinkerbell, butterflies, ghost, snow)
+  // These functions check currentRoomId and start/stop effects as needed
+  checkRoomAmbientEffects()
+
   // Auto-play room audio if configured
   chrome.storage.local.get(['roomAudio'], (result) => {
     const roomAudioMap = result.roomAudio || {}
@@ -782,6 +787,30 @@ function onRoomChange(oldRoom, newRoom) {
       stopAudio()
     }
   })
+}
+
+// Check all room-specific ambient effects and start/stop as needed
+function checkRoomAmbientEffects() {
+  // Small delay to ensure currentRoomId is updated
+  setTimeout(() => {
+    checkGhostEffectRoom()
+    checkTinkerbellRoom()
+    checkButterflyRoom()
+    checkMatterhornRoom()
+  }, 100)
+}
+
+// Periodic watcher to ensure ambient effects match current room
+// This serves as a safety net in case room changes are missed
+let ambientEffectWatcherInterval = null
+function startAmbientEffectWatcher() {
+  // Check every 5 seconds as a backup
+  ambientEffectWatcherInterval = setInterval(() => {
+    checkGhostEffectRoom()
+    checkTinkerbellRoom()
+    checkButterflyRoom()
+    checkMatterhornRoom()
+  }, 5000)
 }
 
 // Update room display in the toolbar
@@ -2098,6 +2127,7 @@ function createToolbar() {
   featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
   if (DEV_MODE) {
+    featureGrid.appendChild(createActionButton('🏆', 'Prizes', createPrizeTrackerPanel))
     featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
     featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
   }
@@ -4060,6 +4090,12 @@ function checkButterflyRoom() {
 }
 
 function checkMatterhornRoom() {
+  // Only check if we've actually detected a room via audio this session
+  // This prevents snow from auto-enabling due to stale room data from storage
+  if (!hasDetectedRoomThisSession) {
+    return
+  }
+
   // Auto-enable snow in Matterhorn (unless user manually disabled it)
   if (currentRoomId === MATTERHORN_ID) {
     if (!isSnowEnabled && !matterhornSnowDisabledByUser) {
@@ -5978,12 +6014,23 @@ function createSettingsPanel() {
 // Changelog data
 const CHANGELOG = [
   {
+    version: '2.1.0',
+    date: '2025-03-17',
+    changes: [
+      'Firefox extension now available',
+      'Added Pirate Treasure Room audio detection',
+      'Prize Tracker panel with compact embed view (IN PROGRESS)',
+      'Prize Tracker data syncs between extension and main website'
+    ]
+  },
+  {
     version: '2.0.8',
     date: '2025-03-17',
     changes: [
       'Snow auto-enables in Matterhorn (can be manually disabled)',
       'Bee banner notifications for all events at 1 hour and 1 minute before',
       'Fixed ICS events (Double Credits, etc.) staying visible until they end',
+      'Fixed room effects (Tinkerbell, butterflies, ghost) following to other rooms',
       'Increased max event duration to 24 hours in admin panel'
     ]
   },
@@ -6854,6 +6901,43 @@ function createFeatureButton(icon, label, contentFn) {
     // Open a modal/panel with the content
     openFeaturePanel(icon, label, contentFn)
     // Blur to prevent spacebar from re-triggering
+    btn.blur()
+  }
+  return btn
+}
+
+// Create a button that triggers a direct action (not a panel)
+function createActionButton(icon, label, actionFn) {
+  const btn = document.createElement('button')
+  btn.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  `
+  btn.innerHTML = `
+    <span style="font-size: 20px;">${icon}</span>
+    <span style="color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 500;">${label}</span>
+  `
+  btn.onmouseover = () => {
+    btn.style.background = 'rgba(255,255,255,0.1)'
+    btn.style.borderColor = 'rgba(255,255,255,0.2)'
+    btn.style.transform = 'scale(1.05)'
+  }
+  btn.onmouseout = () => {
+    btn.style.background = 'rgba(255,255,255,0.05)'
+    btn.style.borderColor = 'rgba(255,255,255,0.1)'
+    btn.style.transform = 'scale(1)'
+  }
+  btn.onclick = () => {
+    actionFn()
     btn.blur()
   }
   return btn
@@ -8022,6 +8106,320 @@ function stopAudio(restoreGameAudio = true) {
   }
 }
 
+// ============================================
+// PRIZE TRACKER PANEL (iframe with chrome.storage sync)
+// ============================================
+
+const PRIZE_TRACKER_URL = 'https://bsims-codes.github.io/myvmk-monthly-prize-tracker/'
+const PRIZE_TRACKER_EMBED_URL = PRIZE_TRACKER_URL + '?embed=true'
+let prizeTrackerContainer = null
+let prizeTrackerSize = { width: 380, height: 500 }
+
+function createPrizeTrackerPanel() {
+  // Toggle panel visibility if it exists
+  if (prizeTrackerContainer) {
+    const isVisible = prizeTrackerContainer.style.display !== 'none'
+    prizeTrackerContainer.style.display = isVisible ? 'none' : 'block'
+    return
+  }
+
+  // Create the persistent container
+  prizeTrackerContainer = document.createElement('div')
+  prizeTrackerContainer.id = 'vmkpal-prize-tracker'
+  prizeTrackerContainer.style.cssText = `
+    position: fixed;
+    top: 50px;
+    left: 50px;
+    width: ${prizeTrackerSize.width}px;
+    height: ${prizeTrackerSize.height}px;
+    min-width: 300px;
+    min-height: 250px;
+    max-width: 90vw;
+    max-height: 90vh;
+    z-index: 2147483645;
+    background: #1a1a2e;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  `
+
+  // Create header
+  const header = document.createElement('div')
+  header.id = 'vmkpal-prize-tracker-header'
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%);
+    cursor: move;
+    user-select: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  `
+
+  const title = document.createElement('span')
+  title.textContent = '🏆 Prize Tracker'
+  title.style.cssText = 'color: #fff; font-size: 13px; font-weight: 500;'
+
+  const headerButtons = document.createElement('div')
+  headerButtons.style.cssText = 'display: flex; gap: 6px;'
+
+  const btnStyle = `
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #fff;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
+
+  // Open in new tab button
+  const openBtn = document.createElement('button')
+  openBtn.innerHTML = '↗'
+  openBtn.title = 'Open in new tab'
+  openBtn.style.cssText = btnStyle
+  openBtn.onclick = () => window.open(PRIZE_TRACKER_URL, '_blank')
+
+  // Refresh button
+  const refreshBtn = document.createElement('button')
+  refreshBtn.innerHTML = '↻'
+  refreshBtn.title = 'Refresh'
+  refreshBtn.style.cssText = btnStyle
+  refreshBtn.onclick = () => {
+    const iframe = prizeTrackerContainer.querySelector('iframe')
+    if (iframe) iframe.src = iframe.src
+  }
+
+  // Save button - force sync to chrome.storage
+  const saveBtn = document.createElement('button')
+  saveBtn.innerHTML = '💾'
+  saveBtn.title = 'Save changes to sync'
+  saveBtn.style.cssText = btnStyle
+  saveBtn.onclick = () => {
+    const iframe = prizeTrackerContainer.querySelector('iframe')
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'PRIZE_TRACKER_SAVE' }, '*')
+      saveBtn.innerHTML = '✓'
+      saveBtn.style.background = 'rgba(0, 200, 100, 0.3)'
+      setTimeout(() => {
+        saveBtn.innerHTML = '💾'
+        saveBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+      }, 1500)
+    }
+  }
+
+  // Minimize button
+  let isMinimized = false
+  let savedHeight = prizeTrackerSize.height
+  const minimizeBtn = document.createElement('button')
+  minimizeBtn.innerHTML = '−'
+  minimizeBtn.title = 'Minimize'
+  minimizeBtn.style.cssText = btnStyle
+  minimizeBtn.onclick = () => {
+    const contentEl = prizeTrackerContainer.querySelector('#vmkpal-prize-tracker-content')
+    const resizeHandle = prizeTrackerContainer.querySelector('#vmkpal-prize-tracker-resize')
+    const resizeBorder = prizeTrackerContainer.querySelector('div[style*="pointer-events: none"]')
+
+    if (isMinimized) {
+      // Restore
+      contentEl.style.display = 'flex'
+      if (resizeHandle) resizeHandle.style.display = 'block'
+      if (resizeBorder) resizeBorder.style.display = 'block'
+      prizeTrackerContainer.style.height = savedHeight + 'px'
+      minimizeBtn.innerHTML = '−'
+      minimizeBtn.title = 'Minimize'
+      isMinimized = false
+    } else {
+      // Save current height before minimizing
+      savedHeight = prizeTrackerContainer.offsetHeight
+      // Minimize
+      contentEl.style.display = 'none'
+      if (resizeHandle) resizeHandle.style.display = 'none'
+      if (resizeBorder) resizeBorder.style.display = 'none'
+      prizeTrackerContainer.style.height = 'auto'
+      minimizeBtn.innerHTML = '□'
+      minimizeBtn.title = 'Restore'
+      isMinimized = true
+    }
+  }
+
+  // Close button
+  const closeBtn = document.createElement('button')
+  closeBtn.innerHTML = '×'
+  closeBtn.title = 'Close'
+  closeBtn.style.cssText = btnStyle
+  closeBtn.onclick = () => {
+    prizeTrackerContainer.style.display = 'none'
+  }
+
+  headerButtons.appendChild(openBtn)
+  headerButtons.appendChild(refreshBtn)
+  headerButtons.appendChild(saveBtn)
+  headerButtons.appendChild(minimizeBtn)
+  headerButtons.appendChild(closeBtn)
+  header.appendChild(title)
+  header.appendChild(headerButtons)
+
+  // Create content area with iframe
+  const content = document.createElement('div')
+  content.id = 'vmkpal-prize-tracker-content'
+  content.style.cssText = 'flex: 1; display: flex; overflow: hidden;'
+
+  const iframe = document.createElement('iframe')
+  iframe.src = PRIZE_TRACKER_EMBED_URL
+  iframe.style.cssText = `
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #0b0d12;
+  `
+  content.appendChild(iframe)
+
+  // Create resize handle (bottom-right corner)
+  const resizeHandle = document.createElement('div')
+  resizeHandle.id = 'vmkpal-prize-tracker-resize'
+  resizeHandle.style.cssText = `
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    z-index: 10;
+  `
+  // Add grip lines SVG
+  resizeHandle.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 16 16" style="display:block;">
+      <path d="M14 14L14 8M14 14L8 14M10 14L14 10M14 14L6 14M14 6L6 14"
+            stroke="rgba(255,255,255,0.5)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </svg>
+  `
+
+  // Add resize border effect on all edges
+  const resizeBorder = document.createElement('div')
+  resizeBorder.style.cssText = `
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    transition: border-color 0.2s;
+  `
+  prizeTrackerContainer.appendChild(resizeBorder)
+
+  // Show resize border on hover near edges
+  prizeTrackerContainer.addEventListener('mousemove', (e) => {
+    const rect = prizeTrackerContainer.getBoundingClientRect()
+    const edgeThreshold = 8
+    const nearEdge = (
+      e.clientX - rect.left < edgeThreshold ||
+      rect.right - e.clientX < edgeThreshold ||
+      e.clientY - rect.top < edgeThreshold ||
+      rect.bottom - e.clientY < edgeThreshold
+    )
+    resizeBorder.style.borderColor = nearEdge ? 'rgba(122, 162, 255, 0.5)' : 'transparent'
+  })
+  prizeTrackerContainer.addEventListener('mouseleave', () => {
+    resizeBorder.style.borderColor = 'transparent'
+  })
+
+  prizeTrackerContainer.appendChild(header)
+  prizeTrackerContainer.appendChild(content)
+  prizeTrackerContainer.appendChild(resizeHandle)
+  document.body.appendChild(prizeTrackerContainer)
+
+  // Load saved position and size
+  chrome.storage.local.get(['prizeTrackerPosition', 'prizeTrackerSize'], (result) => {
+    if (result.prizeTrackerPosition) {
+      const pos = result.prizeTrackerPosition
+      prizeTrackerContainer.style.left = pos.x + 'px'
+      prizeTrackerContainer.style.top = pos.y + 'px'
+    }
+    if (result.prizeTrackerSize) {
+      prizeTrackerSize = result.prizeTrackerSize
+      prizeTrackerContainer.style.width = prizeTrackerSize.width + 'px'
+      prizeTrackerContainer.style.height = prizeTrackerSize.height + 'px'
+    }
+  })
+
+  // Make draggable
+  let isDragging = false
+  let dragOffset = { x: 0, y: 0 }
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.tagName === 'BUTTON') return
+    isDragging = true
+    const rect = prizeTrackerContainer.getBoundingClientRect()
+    dragOffset.x = e.clientX - rect.left
+    dragOffset.y = e.clientY - rect.top
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const x = e.clientX - dragOffset.x
+      const y = e.clientY - dragOffset.y
+      const maxX = window.innerWidth - prizeTrackerContainer.offsetWidth
+      const maxY = window.innerHeight - prizeTrackerContainer.offsetHeight
+      prizeTrackerContainer.style.left = Math.max(0, Math.min(x, maxX)) + 'px'
+      prizeTrackerContainer.style.top = Math.max(0, Math.min(y, maxY)) + 'px'
+    }
+  })
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false
+      const rect = prizeTrackerContainer.getBoundingClientRect()
+      chrome.storage.local.set({
+        prizeTrackerPosition: { x: rect.left, y: rect.top }
+      })
+    }
+  })
+
+  // Make resizable
+  let isResizing = false
+  let resizeStart = { x: 0, y: 0, width: 0, height: 0 }
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true
+    resizeStart = {
+      x: e.clientX,
+      y: e.clientY,
+      width: prizeTrackerContainer.offsetWidth,
+      height: prizeTrackerContainer.offsetHeight
+    }
+    e.preventDefault()
+    e.stopPropagation()
+  })
+
+  document.addEventListener('mousemove', (e) => {
+    if (isResizing) {
+      const deltaX = e.clientX - resizeStart.x
+      const deltaY = e.clientY - resizeStart.y
+      const newWidth = Math.max(280, Math.min(1200, resizeStart.width + deltaX))
+      const newHeight = Math.max(300, Math.min(1000, resizeStart.height + deltaY))
+      prizeTrackerContainer.style.width = newWidth + 'px'
+      prizeTrackerContainer.style.height = newHeight + 'px'
+      prizeTrackerSize = { width: newWidth, height: newHeight }
+    }
+  })
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false
+      chrome.storage.local.set({ prizeTrackerSize })
+    }
+  })
+}
+
 // Events Panel - Shows upcoming events from ICS
 function createEventsPanel() {
   const div = document.createElement('div')
@@ -8619,6 +9017,7 @@ async function init() {
       // Check if this audio matches a known room
       const matchedRoom = findRoomByAudio(detectedAudioUrl)
       if (matchedRoom !== null) {
+        hasDetectedRoomThisSession = true
         currentRoomId = matchedRoom.id
         currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
         currentLand = matchedRoom.land
@@ -8633,6 +9032,7 @@ async function init() {
 
     // Detect HM LOBBY audio playing (HML-*) - resets game state
     if (event.data && event.data.type === 'vmkgenie-hm-lobby-audio') {
+      hasDetectedRoomThisSession = true
       isInHMGame = false
       currentRoomId = HAUNTED_MANSION_LOBBY_ID
       currentRoom = ROOM_MAP[HAUNTED_MANSION_LOBBY_ID] || 'Haunted Mansion Lobby'
@@ -8647,6 +9047,7 @@ async function init() {
 
     // Detect HM GAME entered via stage data fetch
     if (event.data && event.data.type === 'vmkgenie-hm-game-entered') {
+      hasDetectedRoomThisSession = true
       isInHMGame = true
       currentRoomId = HAUNTED_MANSION_GAME_ID
       currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
@@ -8664,6 +9065,7 @@ async function init() {
   setTimeout(() => {
     startRoomWatcher()
     startGenieEventSystem()
+    startAmbientEffectWatcher()
     // Queue monitoring commented out for future reference
     // if (DEV_MODE) {
     //   startQueueMonitor()

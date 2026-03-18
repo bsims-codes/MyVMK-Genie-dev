@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyVMK Genie",
-  "version": "2.0.8",
+  "version": "2.1.0",
   "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
   "permissions": [
     "storage",
@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://www.myvmk.com/*",
-    "https://myvmk.com/*"
+    "https://myvmk.com/*",
+    "https://bsims-codes.github.io/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -49,6 +50,14 @@
       ],
       "js": ["tesseract.min.js", "rooms.js", "audio-room-map.js", "content.js"],
       "run_at": "document_end",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://bsims-codes.github.io/*"
+      ],
+      "js": ["prize-tracker-bridge.js"],
+      "run_at": "document_start",
       "all_frames": true
     }
   ],

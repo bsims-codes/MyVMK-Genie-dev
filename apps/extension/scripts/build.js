@@ -3,8 +3,8 @@
  * MyVMK Genie Extension Build Script
  *
  * Usage:
- *   node scripts/build.js         - Development build (no minification)
- *   node scripts/build.js release - Release build (minified)
+ *   node scripts/build.js         - Development build (Chrome only)
+ *   node scripts/build.js release - Release build (Chrome + Firefox)
  */
 
 const fs = require('fs');
@@ -19,13 +19,7 @@ console.log(`\n🧞 Building MyVMK Genie (${isRelease ? 'RELEASE' : 'DEV'})...\n
 // Paths
 const rootDir = path.resolve(__dirname, '..');
 const sourceDir = path.join(rootDir, 'public');
-const outputDir = path.join(rootDir, '..', '..', 'dist', isRelease ? 'extension-release' : 'extension-dev');
-
-// Clean and create output directory
-if (fs.existsSync(outputDir)) {
-  fs.rmSync(outputDir, { recursive: true });
-}
-fs.mkdirSync(outputDir, { recursive: true });
+const distBase = path.join(rootDir, '..', '..', 'dist');
 
 // Files to process (JS files)
 const jsFiles = [
@@ -35,12 +29,12 @@ const jsFiles = [
   'audio-interceptor.js',
   'audio-interceptor-page.js',
   'audio-room-map.js',
-  'rooms.js'
+  'rooms.js',
+  'prize-tracker-bridge.js'
 ];
 
 // Files to copy as-is
 const staticFiles = [
-  'manifest.json',
   'popup.html',
   'tesseract.min.js',
   // Images
@@ -65,8 +59,40 @@ const staticFiles = [
   'Butterfly3.gif'
 ];
 
+// Transform Chrome manifest to Firefox manifest
+function transformManifestForFirefox(chromeManifest) {
+  const firefoxManifest = JSON.parse(JSON.stringify(chromeManifest));
+
+  // Add Firefox-specific settings
+  firefoxManifest.browser_specific_settings = {
+    gecko: {
+      id: 'myvmk-genie@bsims.codes',
+      strict_min_version: '140.0',
+      data_collection_permissions: {
+        required: ["none"]
+      }
+    }
+  };
+
+  // Convert service_worker to background scripts (Firefox MV3 uses different syntax)
+  if (firefoxManifest.background && firefoxManifest.background.service_worker) {
+    firefoxManifest.background = {
+      scripts: [firefoxManifest.background.service_worker]
+    };
+  }
+
+  // Remove tabCapture permission (not supported in Firefox)
+  if (firefoxManifest.permissions) {
+    firefoxManifest.permissions = firefoxManifest.permissions.filter(
+      p => p !== 'tabCapture'
+    );
+  }
+
+  return firefoxManifest;
+}
+
 // Process JavaScript files
-async function processJsFiles() {
+async function processJsFiles(outputDir, browser = 'chrome') {
   let esbuild;
 
   if (isRelease) {
@@ -121,7 +147,7 @@ async function processJsFiles() {
 }
 
 // Copy static files
-function copyStaticFiles() {
+function copyStaticFiles(outputDir) {
   for (const file of staticFiles) {
     const sourcePath = path.join(sourceDir, file);
     const outputPath = path.join(outputDir, file);
@@ -136,20 +162,60 @@ function copyStaticFiles() {
   }
 }
 
+// Build for a specific browser
+async function buildForBrowser(browser) {
+  const suffix = isRelease ? 'release' : 'dev';
+  const outputDir = path.join(distBase, `extension-${suffix}${browser === 'firefox' ? '-firefox' : ''}`);
+
+  console.log(`\n📁 Building for ${browser.toUpperCase()}...`);
+  console.log(`   Output: ${outputDir}\n`);
+
+  // Clean and create output directory
+  if (fs.existsSync(outputDir)) {
+    fs.rmSync(outputDir, { recursive: true });
+  }
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  // Copy static files
+  copyStaticFiles(outputDir);
+
+  // Process and copy manifest
+  const manifestPath = path.join(sourceDir, 'manifest.json');
+  let manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+  if (browser === 'firefox') {
+    manifest = transformManifestForFirefox(manifest);
+  }
+
+  fs.writeFileSync(
+    path.join(outputDir, 'manifest.json'),
+    JSON.stringify(manifest, null, 2)
+  );
+  console.log(`📄 manifest.json (${browser})`);
+
+  // Process JS files
+  await processJsFiles(outputDir, browser);
+
+  return outputDir;
+}
+
 // Main build function
 async function build() {
   try {
-    console.log(`📁 Output: ${outputDir}\n`);
+    // Always build Chrome version
+    const chromeDir = await buildForBrowser('chrome');
 
-    copyStaticFiles();
-    await processJsFiles();
+    // For release builds, also build Firefox version
+    if (isRelease) {
+      const firefoxDir = await buildForBrowser('firefox');
 
-    console.log(`\n✨ Build complete! Extension ready at:\n   ${outputDir}\n`);
-
-    if (!isRelease) {
-      console.log('💡 Load this folder as an unpacked extension in Chrome:\n   chrome://extensions > Developer mode > Load unpacked\n');
+      console.log(`\n✨ Build complete!`);
+      console.log(`   Chrome:  ${chromeDir}`);
+      console.log(`   Firefox: ${firefoxDir}\n`);
+      console.log('📦 Ready for packaging!\n   Use "npm run package" to create zip files.\n');
     } else {
-      console.log('📦 Ready for Chrome Web Store!\n   Use "pnpm ext:package" to create a zip file.\n');
+      console.log(`\n✨ Build complete! Extension ready at:\n   ${chromeDir}\n`);
+      console.log('💡 Load this folder as an unpacked extension in Chrome:\n   chrome://extensions > Developer mode > Load unpacked\n');
     }
   } catch (error) {
     console.error('❌ Build failed:', error);
