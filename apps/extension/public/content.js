@@ -2126,8 +2126,8 @@ function createToolbar() {
   // featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel)) // Hidden until feature is ready
   featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
+  featureGrid.appendChild(createActionButton('🏆', 'Prizes', createPrizeTrackerPanel))
   if (DEV_MODE) {
-    featureGrid.appendChild(createActionButton('🏆', 'Prizes', createPrizeTrackerPanel))
     featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
     featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
   }
