@@ -953,8 +953,9 @@ function monitorNetworkForRooms() {
         }
 
         // Check for room JSON config files (e.g., vmk_inthesky.json, vmk_snd_inthesky.json)
-        if (entry.name.includes('download.myvmk.com') && entry.name.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)) {
-          const jsonMatch = entry.name.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)
+        // Exclude non-room files like vmk_avatar_*, vmk_npc_*, etc.
+        if (entry.name.includes('download.myvmk.com') && entry.name.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)) {
+          const jsonMatch = entry.name.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)
           if (jsonMatch && jsonMatch[1]) {
             const roomKey = jsonMatch[1]
             console.log('MyVMK Genie: Detected room JSON:', roomKey)
@@ -5987,51 +5988,147 @@ function createSettingsPanel() {
   )
   div.appendChild(smallIconToggle.element)
 
-  // Pink Theme Toggle
-  const pinkThemeToggle = createSettingToggle(
-    '💖',
-    'Pink Theme',
-    'Switch to pink color theme',
-    () => isPinkTheme,
-    () => {
-      isPinkTheme = !isPinkTheme
-      if (isPinkTheme) {
-        isDarkTheme = false
-        chrome.storage.local.set({ isPinkTheme, isDarkTheme })
-        darkThemeToggle.updateState()
-      } else {
-        chrome.storage.local.set({ isPinkTheme })
-      }
-      applyTheme()
-    }
-  )
-  div.appendChild(pinkThemeToggle.element)
-
-  // Dark Theme Toggle - requires unlock via event attendance
+  // Theme Selector Section
   const isDarkUnlocked = unlockedThemes.includes('dark')
-  const darkThemeToggle = createSettingToggle(
-    isDarkUnlocked ? '🖤' : '🔒',
-    'Dark Theme',
-    isDarkUnlocked ? 'Switch to dark color theme' : 'Attend a Genie Event to unlock!',
-    () => isDarkTheme,
-    isDarkUnlocked ? () => {
-      isDarkTheme = !isDarkTheme
-      if (isDarkTheme) {
-        isPinkTheme = false
-        chrome.storage.local.set({ isDarkTheme, isPinkTheme })
-        pinkThemeToggle.updateState()
-      } else {
-        chrome.storage.local.set({ isDarkTheme })
-      }
-      applyTheme()
-    } : null
-  )
-  if (!isDarkUnlocked) {
-    darkThemeToggle.element.style.opacity = '0.5'
-    darkThemeToggle.element.style.pointerEvents = 'none'
-    darkThemeToggle.element.style.cursor = 'not-allowed'
+
+  const themeSection = document.createElement('div')
+  themeSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  `
+
+  const themeLabel = document.createElement('div')
+  themeLabel.textContent = 'THEME'
+  themeLabel.style.cssText = `
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #ec4899, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  `
+  themeSection.appendChild(themeLabel)
+
+  const themeGrid = document.createElement('div')
+  themeGrid.style.cssText = `
+    display: flex;
+    gap: 10px;
+    justify-content: flex-start;
+  `
+
+  // Helper to create theme option
+  function createThemeOption(id, imgSrc, isLocked = false) {
+    const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme) ||
+                       (id === 'pink' && isPinkTheme) ||
+                       (id === 'dark' && isDarkTheme)
+
+    const option = document.createElement('div')
+    option.dataset.themeId = id
+    option.style.cssText = `
+      position: relative;
+      width: 60px;
+      height: 60px;
+      border-radius: 12px;
+      cursor: ${isLocked ? 'not-allowed' : 'pointer'};
+      transition: all 0.2s ease;
+      border: 3px solid ${isSelected ? '#8b5cf6' : 'transparent'};
+      box-shadow: ${isSelected ? '0 0 15px rgba(139, 92, 246, 0.5)' : 'none'};
+      opacity: ${isLocked ? '0.4' : '1'};
+      overflow: hidden;
+    `
+
+    const img = document.createElement('img')
+    img.src = imgSrc
+    img.style.cssText = `
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 9px;
+    `
+    option.appendChild(img)
+
+    // Lock overlay for locked themes
+    if (isLocked) {
+      const lockOverlay = document.createElement('div')
+      lockOverlay.style.cssText = `
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 9px;
+        font-size: 24px;
+      `
+      lockOverlay.textContent = '🔒'
+      option.appendChild(lockOverlay)
+
+      // Tooltip for locked theme
+      option.title = 'Find the hidden item to unlock Dark Theme!'
+    }
+
+    // Hover effects
+    if (!isLocked) {
+      option.addEventListener('mouseenter', () => {
+        if (!isSelected) {
+          option.style.transform = 'scale(1.05)'
+          option.style.borderColor = 'rgba(139, 92, 246, 0.5)'
+        }
+      })
+      option.addEventListener('mouseleave', () => {
+        if (!isSelected) {
+          option.style.transform = 'scale(1)'
+          option.style.borderColor = 'transparent'
+        }
+      })
+
+      // Click to select theme
+      option.addEventListener('click', () => {
+        if (id === 'default') {
+          isPinkTheme = false
+          isDarkTheme = false
+        } else if (id === 'pink') {
+          isPinkTheme = true
+          isDarkTheme = false
+        } else if (id === 'dark') {
+          isPinkTheme = false
+          isDarkTheme = true
+        }
+        chrome.storage.local.set({ isPinkTheme, isDarkTheme })
+        applyTheme()
+        updateThemeSelection()
+      })
+    }
+
+    return option
   }
-  div.appendChild(darkThemeToggle.element)
+
+  // Update visual selection state
+  function updateThemeSelection() {
+    themeGrid.querySelectorAll('[data-theme-id]').forEach(opt => {
+      const id = opt.dataset.themeId
+      const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme) ||
+                         (id === 'pink' && isPinkTheme) ||
+                         (id === 'dark' && isDarkTheme)
+      opt.style.borderColor = isSelected ? '#8b5cf6' : 'transparent'
+      opt.style.boxShadow = isSelected ? '0 0 15px rgba(139, 92, 246, 0.5)' : 'none'
+    })
+  }
+
+  // Create theme options
+  const defaultTheme = createThemeOption('default', chrome.runtime.getURL('myvmk-genie.png'))
+  const pinkTheme = createThemeOption('pink', chrome.runtime.getURL('myvmk-genie-lamp-logo-pink.png'))
+  const darkTheme = createThemeOption('dark', chrome.runtime.getURL('myvmk-genie-lamp-logo-jafar.png'), !isDarkUnlocked)
+
+  themeGrid.appendChild(defaultTheme)
+  themeGrid.appendChild(pinkTheme)
+  themeGrid.appendChild(darkTheme)
+  themeSection.appendChild(themeGrid)
+  div.appendChild(themeSection)
 
   // Test Mode Toggle (admin only - shows test events)
   const testModeToggle = createSettingToggle(
@@ -6177,17 +6274,17 @@ function createSettingsPanel() {
       isSmallIconEnabled = result.isSmallIconEnabled
       smallIconToggle.updateState()
     }
-    if (result.isPinkTheme !== undefined) {
-      isPinkTheme = result.isPinkTheme
-      pinkThemeToggle.updateState()
-    }
     if (result.unlockedThemes) {
       unlockedThemes = result.unlockedThemes
     }
+    if (result.isPinkTheme !== undefined) {
+      isPinkTheme = result.isPinkTheme
+    }
     if (result.isDarkTheme !== undefined) {
       isDarkTheme = result.isDarkTheme
-      darkThemeToggle.updateState()
     }
+    // Update theme selection UI
+    updateThemeSelection()
     if (result.isTestModeEnabled !== undefined) {
       isTestModeEnabled = result.isTestModeEnabled
       testModeToggle.updateState()
@@ -8090,10 +8187,14 @@ function getYouTubeStartTime(url) {
 }
 
 // Check if URL is a WatchParty.me room
-function getWatchPartyRoomId(url) {
-  // Match watchparty.me room URLs like https://www.watchparty.me/ROOMID or https://watchparty.me/ROOMID
-  const match = url.match(/watchparty\.me\/([a-zA-Z0-9_-]+)/)
-  if (match && match[1] && match[1] !== 'create') return match[1]
+function getWatchPartyUrl(url) {
+  // Match watchparty.me room URLs like https://www.watchparty.me/watch/ROOMNAME
+  // Returns the full URL if it's a valid WatchParty room, null otherwise
+  const match = url.match(/watchparty\.me\/(watch\/[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+)/)
+  if (match && match[1] && !['create', 'login', 'about', 'faq'].includes(match[1])) {
+    // Return the full WatchParty URL
+    return url.match(/https?:\/\/(?:www\.)?watchparty\.me\/[^\s]+/)?.[0] || null
+  }
   return null
 }
 
@@ -8105,6 +8206,9 @@ function isDirectAudioUrl(url) {
 // Audio player
 let audioPlayer = null
 let youtubeIframe = null
+let watchPartyWindow = null // Track WatchParty popup window
+let watchPartyCurrentUrl = null // Store WatchParty URL for reopening
+let watchPartyWatcher = null // Interval to detect popup close
 let mutedElements = [] // Track elements we've muted
 let persistentPlayerContainer = null // Persistent container for YouTube player
 let isPlayerMinimized = false
@@ -8289,7 +8393,7 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
   const videoId = getYouTubeVideoId(url)
   const playlistId = getYouTubePlaylistId(url)
   const startTime = getYouTubeStartTime(url)
-  const watchPartyId = getWatchPartyRoomId(url)
+  const watchPartyUrl = getWatchPartyUrl(url)
   const isAudioFile = isDirectAudioUrl(url)
 
   if (videoId || playlistId) {
@@ -8384,58 +8488,46 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
     }
 
     showNotification(isPlaylist ? '🔇 Game muted • Playing playlist' : '🔇 Game muted • Playing YouTube', 'success')
-  } else if (watchPartyId) {
-    // WatchParty.me - embed as iframe
+  } else if (watchPartyUrl) {
+    // WatchParty.me - open in popup window (doesn't support iframe embedding)
+    const popupWidth = 900
+    const popupHeight = 600
+    const left = (screen.width - popupWidth) / 2
+    const top = (screen.height - popupHeight) / 2
+
+    // Store URL for reopening
+    watchPartyCurrentUrl = watchPartyUrl
+
+    // Open the popup
+    watchPartyWindow = window.open(
+      watchPartyUrl,
+      'vmkpal-watchparty',
+      `width=${popupWidth},height=${popupHeight},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    )
+
+    // Show control panel
     const container = ensurePersistentPlayerContainer()
-    isPlayerMinimized = startMinimized
+    updateWatchPartyControlPanel(container, true)
 
-    // WatchParty embed URL
-    const embedUrl = `https://www.watchparty.me/${watchPartyId}`
+    // Start watcher to detect when popup is closed externally
+    if (watchPartyWatcher) clearInterval(watchPartyWatcher)
+    watchPartyWatcher = setInterval(() => {
+      if (watchPartyWindow && watchPartyWindow.closed) {
+        // Popup was closed externally - restore game audio and update UI
+        watchPartyWindow = null
+        unmuteGameAudio()
+        showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+        // Update control panel to show "closed" state
+        const container = document.getElementById('vmkpal-persistent-player')
+        if (container) {
+          updateWatchPartyControlPanel(container, false)
+        }
+        clearInterval(watchPartyWatcher)
+        watchPartyWatcher = null
+      }
+    }, 500)
 
-    // Apply saved size (or minimized width)
-    container.style.width = startMinimized ? '200px' : playerSize.width + 'px'
-
-    container.innerHTML = `
-      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
-        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: ${startMinimized ? '0' : '8px'}; padding: 4px 2px; cursor: move;">
-          <span style="color: #f59e0b; font-size: 12px; font-weight: 500;">🎬 WatchParty</span>
-          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
-          <div style="margin-left: auto; display: flex; gap: 6px;">
-            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="${startMinimized ? 'Expand' : 'Minimize'}">${startMinimized ? '□' : '─'}</button>
-            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Stop & Close">✕</button>
-          </div>
-        </div>
-        <div id="vmkpal-player-content" style="display: ${startMinimized ? 'none' : 'block'};">
-          <iframe
-            id="vmkpal-watchparty-player"
-            width="100%"
-            height="${playerSize.height}"
-            src="${embedUrl}"
-            frameborder="0"
-            allow="autoplay; encrypted-media; fullscreen; camera; microphone"
-            allowfullscreen
-            style="border-radius: 8px; display: block;"
-          ></iframe>
-        </div>
-        <div id="vmkpal-resize-handle" style="position: absolute; bottom: 4px; right: 4px; width: 16px; height: 16px; cursor: se-resize; opacity: 0.5; display: ${startMinimized ? 'none' : 'block'};" title="Drag to resize">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="rgba(255,255,255,0.6)">
-            <path d="M14 14H10V12H12V10H14V14ZM14 8H12V6H14V8ZM8 14H6V12H8V14Z"/>
-          </svg>
-        </div>
-      </div>
-    `
-    youtubeIframe = container.querySelector('iframe') // Reuse same variable for iframe tracking
-
-    // Add stop button handler
-    const stopBtn = container.querySelector('#vmkpal-persistent-stop')
-    if (stopBtn) {
-      stopBtn.addEventListener('click', () => stopAudio())
-    }
-
-    // Add minimize/expand handler
-    setupPlayerMinimizeHandler(container)
-
-    showNotification('🔇 Game muted • Opening WatchParty', 'success')
+    showNotification('🔇 Game muted • WatchParty opened in popup', 'success')
   } else if (isAudioFile) {
     // Direct audio file - show visual player with controls
     const container = ensurePersistentPlayerContainer()
@@ -8587,6 +8679,97 @@ function setupPlayerMinimizeHandler(container) {
   }
 }
 
+// Update WatchParty control panel UI
+function updateWatchPartyControlPanel(container, isOpen) {
+  container.style.width = '240px'
+
+  if (isOpen) {
+    container.innerHTML = `
+      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: move;">
+          <span style="color: #f59e0b; font-size: 12px; font-weight: 500;">🎬 WatchParty</span>
+          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
+          <div style="margin-left: auto; display: flex; gap: 6px;">
+            <button id="vmkpal-watchparty-focus" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Focus WatchParty window">↗</button>
+            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Close WatchParty">✕</button>
+          </div>
+        </div>
+        <div id="vmkpal-watchparty-status" style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 6px; text-align: center;">
+          🔇 Playing in popup window
+        </div>
+      </div>
+    `
+  } else {
+    container.innerHTML = `
+      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: move;">
+          <span style="color: #f59e0b; font-size: 12px; font-weight: 500;">🎬 WatchParty</span>
+          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
+          <div style="margin-left: auto; display: flex; gap: 6px;">
+            <button id="vmkpal-watchparty-reopen" style="background: #10b981; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Reopen WatchParty">↗ Reopen</button>
+            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Dismiss">✕</button>
+          </div>
+        </div>
+        <div id="vmkpal-watchparty-status" style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 6px; text-align: center;">
+          🔊 Popup closed • Click Reopen to continue
+        </div>
+      </div>
+    `
+  }
+
+  // Add event handlers
+  const focusBtn = container.querySelector('#vmkpal-watchparty-focus')
+  const reopenBtn = container.querySelector('#vmkpal-watchparty-reopen')
+  const stopBtn = container.querySelector('#vmkpal-persistent-stop')
+
+  if (focusBtn) {
+    focusBtn.addEventListener('click', () => {
+      if (watchPartyWindow && !watchPartyWindow.closed) {
+        watchPartyWindow.focus()
+      }
+    })
+  }
+
+  if (reopenBtn) {
+    reopenBtn.addEventListener('click', () => {
+      if (watchPartyCurrentUrl) {
+        // Reopen and mute game audio again
+        muteGameAudio()
+        const popupWidth = 900
+        const popupHeight = 600
+        const left = (screen.width - popupWidth) / 2
+        const top = (screen.height - popupHeight) / 2
+        watchPartyWindow = window.open(
+          watchPartyCurrentUrl,
+          'vmkpal-watchparty',
+          `width=${popupWidth},height=${popupHeight},left=${left},top=${top},resizable=yes,scrollbars=yes`
+        )
+        updateWatchPartyControlPanel(container, true)
+        // Restart watcher
+        if (watchPartyWatcher) clearInterval(watchPartyWatcher)
+        watchPartyWatcher = setInterval(() => {
+          if (watchPartyWindow && watchPartyWindow.closed) {
+            watchPartyWindow = null
+            unmuteGameAudio()
+            showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+            const container = document.getElementById('vmkpal-persistent-player')
+            if (container) {
+              updateWatchPartyControlPanel(container, false)
+            }
+            clearInterval(watchPartyWatcher)
+            watchPartyWatcher = null
+          }
+        }, 500)
+        showNotification('🔇 Game muted • WatchParty reopened', 'success')
+      }
+    })
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener('click', () => stopAudio())
+  }
+}
+
 function stopAudio(restoreGameAudio = true) {
   if (audioPlayer) {
     audioPlayer.pause()
@@ -8598,6 +8781,23 @@ function stopAudio(restoreGameAudio = true) {
       persistentPlayerContainer.innerHTML = ''
     }
     youtubeIframe = null
+  }
+  if (watchPartyWindow || watchPartyCurrentUrl) {
+    // Close WatchParty popup window
+    if (watchPartyWindow && !watchPartyWindow.closed) {
+      watchPartyWindow.close()
+    }
+    watchPartyWindow = null
+    watchPartyCurrentUrl = null
+    // Clear watcher
+    if (watchPartyWatcher) {
+      clearInterval(watchPartyWatcher)
+      watchPartyWatcher = null
+    }
+    // Clear the control panel
+    if (persistentPlayerContainer) {
+      persistentPlayerContainer.innerHTML = ''
+    }
   }
 
   // Restore game audio
@@ -9606,7 +9806,7 @@ async function init() {
     // Detect room JSON config files (backup detection via fetch/XHR interception)
     if (event.data && event.data.type === 'vmkgenie-room-json-detected' && event.data.url) {
       const url = event.data.url
-      const jsonMatch = url.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)
+      const jsonMatch = url.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)
       if (jsonMatch && jsonMatch[1]) {
         const roomKey = jsonMatch[1]
         console.log('MyVMK Genie: Room JSON detected (interceptor):', roomKey)
