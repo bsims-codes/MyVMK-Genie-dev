@@ -6370,15 +6370,14 @@ const CHANGELOG = [
   {
     version: '2.1.2',
     date: '2025-03-18',
-    inProgress: true,
     changes: [
       'Room Collectibles: Hidden clickable items in rooms that unlock themes!',
-      'Audio player now supports WatchParty.me and direct MP3/audio URLs',
+      'Redesigned theme selector with visual icons',
+      'Collectibles float within game canvas with gentle movement',
+      'Audio player supports WatchParty.me and direct MP3/audio URLs',
       'Visual audio player with play/pause, seek, volume, and loop controls',
       'Fixed Matterhorn snow not auto-disabling when leaving the room',
-      'Fixed potential idle crashes by pausing effects when tab is hidden',
-      'Improved room detection reliability with backup detection',
-      'Added room detection for JSON config files (e.g., Fantasyland in the Sky)'
+      'Improved room detection reliability with backup detection'
     ]
   },
   {
@@ -6386,7 +6385,7 @@ const CHANGELOG = [
     date: '2025-03-18',
     changes: [
       'Theme Unlocks: Attend Genie Events to unlock exclusive themes!',
-      'Added Dark Theme (Jafar) - unlockable via event attendance',
+      'Added Dark Theme (Jafar) - unlockable by collecting hidden item',
       'Fixed Prize Tracker minimize/restore not working properly'
     ]
   },

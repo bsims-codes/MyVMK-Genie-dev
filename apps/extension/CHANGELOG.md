@@ -1,6 +1,6 @@
 # MyVMK Genie Changelog
 
-## 2.1.2 (In Progress)
+## 2.1.2
 
 ### Features
 - **Room Collectibles**: Hidden clickable items in rooms that unlock themes when found!
