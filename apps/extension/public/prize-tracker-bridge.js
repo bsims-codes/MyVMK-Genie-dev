@@ -201,8 +201,11 @@
     const indicator = document.createElement('div')
     indicator.id = 'prize-tracker-sync-indicator'
     indicator.innerHTML = `
-      <button id="prize-tracker-sync-btn" title="Sync with extension">
-        🔄 Sync
+      <div id="prize-tracker-sync-tooltip">
+        💡 Click after adding prizes to sync with extension
+      </div>
+      <button id="prize-tracker-sync-btn" title="Sync with MyVMK Genie extension">
+        🔄 Sync with Extension
       </button>
     `
     indicator.style.cssText = `
@@ -210,15 +213,36 @@
       bottom: 20px;
       right: 20px;
       z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
     `
 
     const style = document.createElement('style')
     style.textContent = `
+      #prize-tracker-sync-tooltip {
+        background: rgba(0, 0, 0, 0.85);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        max-width: 200px;
+        text-align: right;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s ease;
+        pointer-events: none;
+      }
+      #prize-tracker-sync-indicator:hover #prize-tracker-sync-tooltip {
+        opacity: 1;
+        transform: translateY(0);
+      }
       #prize-tracker-sync-btn {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
-        padding: 10px 16px;
+        padding: 12px 20px;
         border-radius: 25px;
         cursor: pointer;
         font-size: 14px;
