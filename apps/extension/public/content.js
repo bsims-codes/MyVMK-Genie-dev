@@ -184,6 +184,8 @@ let isPositionLocked = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
+let isDarkTheme = false // Dark theme toggle
+let unlockedThemes = [] // Themes unlocked by attending events: ['dark']
 let isTestModeEnabled = false // Show and trigger test events (admin only)
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
 let manuallyDisabledEffects = new Set() // Track effects user manually disabled during an event
@@ -882,6 +884,7 @@ function monitorNetworkForRooms() {
       for (const entry of list.getEntries()) {
         // Detect HM GAME by stage data JSON files
         if (entry.name.includes('/hm_stage_data/')) {
+          hasDetectedRoomThisSession = true
           isInHMGame = true
           currentRoomId = HAUNTED_MANSION_GAME_ID
           currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
@@ -931,6 +934,7 @@ function monitorNetworkForRooms() {
           // Check if this audio matches a known room
           const matchedRoom = findRoomByAudio(entry.name)
           if (matchedRoom !== null) {
+            hasDetectedRoomThisSession = true
             currentRoomId = matchedRoom.id
             currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
             currentLand = matchedRoom.land
@@ -4110,7 +4114,12 @@ function checkMatterhornRoom() {
     matterhornSnowDisabledByUser = false
   }
 
-  // Don't auto-disable snow when leaving - let user keep it if they want
+  // Auto-disable snow when leaving Matterhorn
+  if (isSnowEnabled) {
+    isSnowEnabled = false
+    stopSnowEffect()
+    console.log('MyVMK Genie: Auto-disabled snow (left Matterhorn)')
+  }
 }
 
 // ============================================
@@ -4858,6 +4867,16 @@ function startGenieEvent(event) {
     notifiedActiveEvents.add(event.id)
     const beeIconUrl = chrome.runtime.getURL('bee-static.png')
     showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success', 2000, true)
+  }
+
+  // Check for theme unlock
+  if (event.unlockTheme && !unlockedThemes.includes(event.unlockTheme)) {
+    unlockedThemes.push(event.unlockTheme)
+    chrome.storage.local.set({ unlockedThemes })
+    const themeName = event.unlockTheme === 'dark' ? 'Dark' : event.unlockTheme === 'pink' ? 'Pink' : event.unlockTheme
+    setTimeout(() => {
+      showNotification(`🎁 You unlocked the ${themeName} theme!`, 'success', 4000, true)
+    }, 2500) // Delay so it doesn't overlap with event notification
   }
 }
 
@@ -5778,11 +5797,43 @@ function createSettingsPanel() {
     () => isPinkTheme,
     () => {
       isPinkTheme = !isPinkTheme
-      chrome.storage.local.set({ isPinkTheme })
+      if (isPinkTheme) {
+        isDarkTheme = false
+        chrome.storage.local.set({ isPinkTheme, isDarkTheme })
+        darkThemeToggle.updateState()
+      } else {
+        chrome.storage.local.set({ isPinkTheme })
+      }
       applyTheme()
     }
   )
   div.appendChild(pinkThemeToggle.element)
+
+  // Dark Theme Toggle - requires unlock via event attendance
+  const isDarkUnlocked = unlockedThemes.includes('dark')
+  const darkThemeToggle = createSettingToggle(
+    isDarkUnlocked ? '🖤' : '🔒',
+    'Dark Theme',
+    isDarkUnlocked ? 'Switch to dark color theme' : 'Attend a Genie Event to unlock!',
+    () => isDarkTheme,
+    isDarkUnlocked ? () => {
+      isDarkTheme = !isDarkTheme
+      if (isDarkTheme) {
+        isPinkTheme = false
+        chrome.storage.local.set({ isDarkTheme, isPinkTheme })
+        pinkThemeToggle.updateState()
+      } else {
+        chrome.storage.local.set({ isDarkTheme })
+      }
+      applyTheme()
+    } : null
+  )
+  if (!isDarkUnlocked) {
+    darkThemeToggle.element.style.opacity = '0.5'
+    darkThemeToggle.element.style.pointerEvents = 'none'
+    darkThemeToggle.element.style.cursor = 'not-allowed'
+  }
+  div.appendChild(darkThemeToggle.element)
 
   // Test Mode Toggle (admin only - shows test events)
   const testModeToggle = createSettingToggle(
@@ -5923,7 +5974,7 @@ function createSettingsPanel() {
   div.appendChild(bgSection)
 
   // Load saved settings to update UI
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isTestModeEnabled'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled'], (result) => {
     if (result.isSmallIconEnabled !== undefined) {
       isSmallIconEnabled = result.isSmallIconEnabled
       smallIconToggle.updateState()
@@ -5931,6 +5982,13 @@ function createSettingsPanel() {
     if (result.isPinkTheme !== undefined) {
       isPinkTheme = result.isPinkTheme
       pinkThemeToggle.updateState()
+    }
+    if (result.unlockedThemes) {
+      unlockedThemes = result.unlockedThemes
+    }
+    if (result.isDarkTheme !== undefined) {
+      isDarkTheme = result.isDarkTheme
+      darkThemeToggle.updateState()
     }
     if (result.isTestModeEnabled !== undefined) {
       isTestModeEnabled = result.isTestModeEnabled
@@ -6013,6 +6071,15 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.1',
+    date: '2025-03-18',
+    changes: [
+      'Theme Unlocks: Attend Genie Events to unlock exclusive themes!',
+      'Added Dark Theme (Jafar) - unlockable via event attendance',
+      'Fixed Prize Tracker minimize/restore not working properly'
+    ]
+  },
   {
     version: '2.1.0',
     date: '2025-03-17',
@@ -6754,6 +6821,16 @@ function updateIconState() {
 
 // Get current theme colors
 function getThemeColors() {
+  if (isDarkTheme) {
+    return {
+      gradient: 'linear-gradient(135deg, #1a1a1a, #2d2d2d)',
+      gradientRgba: 'linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98))',
+      glow: '0 0 15px 5px rgba(180, 0, 0, 0.5), 0 0 30px 10px rgba(180, 0, 0, 0.3)',
+      bgImage: chrome.runtime.getURL('gene-background-jafar2.png'),
+      logo: chrome.runtime.getURL('myvmk-genie-lamp-logo-jafar.png'),
+      bgGradient: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #1a1a1a 100%)'
+    }
+  }
   if (isPinkTheme) {
     return {
       gradient: 'linear-gradient(135deg, #4b1437, #78284f)',
@@ -6849,7 +6926,7 @@ function applyBackgroundColor() {
 
 // Load settings on startup
 function loadSettings() {
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isTestModeEnabled'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled'], (result) => {
     if (result.isSmallIconEnabled) {
       isSmallIconEnabled = result.isSmallIconEnabled
       setTimeout(applyIconSize, 100)
@@ -6857,6 +6934,13 @@ function loadSettings() {
     if (result.isPinkTheme) {
       isPinkTheme = result.isPinkTheme
       setTimeout(applyTheme, 100)
+    }
+    if (result.isDarkTheme) {
+      isDarkTheme = result.isDarkTheme
+      setTimeout(applyTheme, 100)
+    }
+    if (result.unlockedThemes) {
+      unlockedThemes = result.unlockedThemes
     }
     if (result.customBackgroundColor) {
       customBackgroundColor = result.customBackgroundColor
@@ -8231,20 +8315,22 @@ function createPrizeTrackerPanel() {
 
     if (isMinimized) {
       // Restore
+      prizeTrackerContainer.style.minHeight = '250px'
+      prizeTrackerContainer.style.height = savedHeight + 'px'
       contentEl.style.display = 'flex'
       if (resizeHandle) resizeHandle.style.display = 'block'
       if (resizeBorder) resizeBorder.style.display = 'block'
-      prizeTrackerContainer.style.height = savedHeight + 'px'
       minimizeBtn.innerHTML = '−'
       minimizeBtn.title = 'Minimize'
       isMinimized = false
     } else {
       // Save current height before minimizing
       savedHeight = prizeTrackerContainer.offsetHeight
-      // Minimize
+      // Minimize - remove min-height constraint to allow collapse
       contentEl.style.display = 'none'
       if (resizeHandle) resizeHandle.style.display = 'none'
       if (resizeBorder) resizeBorder.style.display = 'none'
+      prizeTrackerContainer.style.minHeight = '0'
       prizeTrackerContainer.style.height = 'auto'
       minimizeBtn.innerHTML = '□'
       minimizeBtn.title = 'Restore'
@@ -9059,6 +9145,46 @@ async function init() {
       checkButterflyRoom()
       checkMatterhornRoom()
       checkGenieEvents()
+    }
+
+    // Detect NPC sound files (backup detection via fetch/XHR interception)
+    if (event.data && event.data.type === 'vmkgenie-npc-audio-detected' && event.data.url) {
+      const url = event.data.url
+      const match = url.match(/\/npcs\/([^\/]+)\//)
+      if (match && match[1]) {
+        const npcFolder = match[1]
+        console.log('MyVMK Genie: NPC audio detected (interceptor):', npcFolder)
+
+        // Check our mapping
+        if (NPC_ROOM_MAP[npcFolder]) {
+          const roomInfo = NPC_ROOM_MAP[npcFolder]
+          if (roomInfo.id !== currentRoomId) {
+            hasDetectedRoomThisSession = true
+            setRoomFromNetwork(roomInfo.id, roomInfo.name)
+          }
+        }
+      }
+    }
+
+    // Detect room_sound files (backup detection via fetch/XHR interception)
+    if (event.data && event.data.type === 'vmkgenie-room-audio-detected' && event.data.url) {
+      const url = event.data.url
+      console.log('MyVMK Genie: Room audio detected (interceptor):', url)
+
+      const matchedRoom = findRoomByAudio(url)
+      if (matchedRoom !== null && matchedRoom.id !== currentRoomId) {
+        hasDetectedRoomThisSession = true
+        currentRoomId = matchedRoom.id
+        currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
+        currentLand = matchedRoom.land
+        console.log('MyVMK Genie: Auto-detected room (interceptor):', currentRoom, currentLand ? `(${currentLand})` : '')
+        updateRoomInfoDisplay()
+        checkGhostEffectRoom()
+        checkTinkerbellRoom()
+        checkButterflyRoom()
+        checkMatterhornRoom()
+        checkGenieEvents()
+      }
     }
   })
 

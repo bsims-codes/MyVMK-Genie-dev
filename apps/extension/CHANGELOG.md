@@ -1,5 +1,16 @@
 # MyVMK Genie Changelog
 
+## 2.1.1
+
+### Features
+- **Theme Unlocks**: Attend Genie Events to unlock exclusive themes!
+- Added Dark Theme (Jafar) - unlockable via event attendance
+- Admin panel: New "Theme Unlock" dropdown when creating events
+
+### Bug Fixes
+- Fixed Prize Tracker minimize button not collapsing panel properly
+- Fixed Prize Tracker restore showing cut-off content after minimizing
+
 ## 2.1.0
 
 ### Features

@@ -40,8 +40,10 @@ const staticFiles = [
   // Images
   'myvmk-genie.png',
   'myvmk-genie-lamp-logo-pink.png',
+  'myvmk-genie-lamp-logo-jafar.png',
   'genie-background.png',
   'genie-background-smoky-pink.png',
+  'gene-background-jafar2.png',
   'genie-host-events.png',
   'genie-genie-events.png',
   'genie-community-events.png',

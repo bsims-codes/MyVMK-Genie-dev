@@ -699,6 +699,17 @@
                 <span class="checkbox-hint">Hidden from calendar & public ticker</span>
               </label>
             </div>
+
+            <div class="form-group">
+              <label>Theme Unlock</label>
+              <select id="genie-unlock-theme">
+                <option value="">None</option>
+                <option value="dark">Dark Theme (Jafar)</option>
+              </select>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px;">
+                Attendees will permanently unlock this theme
+              </div>
+            </div>
           </div>
 
           <input type="hidden" id="genie-edit-index" value="-1">
@@ -1147,6 +1158,7 @@
                   ${e.title}
                   <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
                   ${e.test ? '<span class="event-badge test">TEST</span>' : ''}
+                  ${e.unlockTheme ? `<span class="event-badge" style="background: rgba(139, 92, 246, 0.2); color: #a78bfa;">🎁 UNLOCK</span>` : ''}
                 </div>
                 <div class="event-meta">
                   <span>📅 ${formatDateTime(e.startTime)}</span>
@@ -1258,6 +1270,7 @@
       document.getElementById('genie-tinkerbell').checked = event.includeTinkerbell === true;
       document.getElementById('genie-enabled').checked = event.enabled !== false;
       document.getElementById('genie-test').checked = event.test === true;
+      document.getElementById('genie-unlock-theme').value = event.unlockTheme || '';
       document.getElementById('genie-edit-index').value = index;
       document.getElementById('genie-submit-btn').textContent = 'Update Event';
       document.getElementById('genie-cancel-btn').style.display = 'inline-block';
@@ -1272,6 +1285,7 @@
       document.getElementById('genie-tinkerbell').checked = false;
       document.getElementById('genie-enabled').checked = true;
       document.getElementById('genie-test').checked = false;
+      document.getElementById('genie-unlock-theme').value = '';
       // Reset effect checkbox styles
       document.querySelectorAll('#genie-effects-grid .effect-checkbox').forEach(label => {
         label.classList.remove('selected');
@@ -1289,6 +1303,7 @@
       const includeTinkerbell = document.getElementById('genie-tinkerbell').checked;
 
       const isTest = document.getElementById('genie-test').checked;
+      const unlockTheme = document.getElementById('genie-unlock-theme').value;
 
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
@@ -1302,7 +1317,8 @@
         includeTinkerbell: includeTinkerbell || undefined,
         audioUrl: document.getElementById('genie-audio').value || undefined,
         enabled: document.getElementById('genie-enabled').checked,
-        test: isTest || undefined
+        test: isTest || undefined,
+        unlockTheme: unlockTheme || undefined
       };
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 
