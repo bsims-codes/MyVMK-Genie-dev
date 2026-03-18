@@ -6377,6 +6377,7 @@ const CHANGELOG = [
       'Audio player supports WatchParty.me and direct MP3/audio URLs',
       'Visual audio player with play/pause, seek, volume, and loop controls',
       'Fixed Matterhorn snow not auto-disabling when leaving the room',
+      'Fixed potential idle crashes by pausing effects when tab is hidden',
       'Improved room detection reliability with backup detection'
     ]
   },
