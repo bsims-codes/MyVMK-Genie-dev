@@ -12,9 +12,11 @@
 ### Bug Fixes
 - Fixed Matterhorn snow not auto-disabling when leaving the room
 - Fixed room detection not triggering ambient effects (snow, etc.) properly
+- Fixed potential idle crashes by pausing effects when tab is hidden
 
 ### Improvements
 - Redesigned theme selector with visual icons instead of toggle switches
+- Collectibles now float within game canvas (not entire window) with gentle Tinkerbell-style movement
 - Added backup room detection via fetch/XHR interception for more reliable detection
 - Added room detection for JSON config files (fixes rooms like Fantasyland in the Sky)
 - Room detection now works for both audio files and JSON config patterns

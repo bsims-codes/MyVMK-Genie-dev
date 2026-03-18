@@ -4956,7 +4956,9 @@ function checkRoomCollectibles() {
   }
 
   // Check if there's a collectible for the current room
-  const collectible = roomCollectibles.find(c => c.roomId === currentRoomId)
+  // Use parseInt to handle string/number type mismatch from JSONBin
+  const collectible = roomCollectibles.find(c => parseInt(c.roomId) === currentRoomId)
+  console.log('MyVMK Genie: Checking collectibles for room', currentRoomId, '- found:', collectible ? collectible.name : 'none', '- available:', roomCollectibles.map(c => ({ name: c.name, roomId: c.roomId })))
   if (collectible && !activeCollectible) {
     spawnCollectible(collectible)
   }
@@ -5018,54 +5020,57 @@ function spawnCollectible(collectible) {
 }
 
 function animateCollectible(el, speed) {
-  const speedMap = { slow: 0.5, medium: 1, fast: 2 }
-  const baseSpeed = speedMap[speed] || 1
+  const speedMap = { slow: 0.008, medium: 0.015, fast: 0.025 }
+  const easingSpeed = speedMap[speed] || 0.015
 
-  // Random starting position (off-screen left or right)
-  const startFromLeft = Math.random() > 0.5
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const size = el.offsetWidth
+  const bounds = getGameCanvasBounds()
+  const size = el.offsetWidth || 60
 
-  let x = startFromLeft ? -size : viewportWidth
-  let y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1) // Keep in middle 60%
-  let directionX = startFromLeft ? 1 : -1
-  let directionY = (Math.random() - 0.5) * 0.5 // Slight vertical drift
-  let moveSpeed = baseSpeed * (1 + Math.random() * 0.5) // Vary speed slightly
-
-  function move() {
-    if (!activeCollectible || activeCollectible !== el) return
-
-    x += directionX * moveSpeed * 2
-    y += directionY * moveSpeed
-
-    // Bounce off top/bottom
-    if (y < 50) {
-      y = 50
-      directionY = Math.abs(directionY)
-    }
-    if (y > viewportHeight - size - 50) {
-      y = viewportHeight - size - 50
-      directionY = -Math.abs(directionY)
-    }
-
-    // Wrap around horizontally
-    if (x > viewportWidth) {
-      x = -size
-      y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1)
-    }
-    if (x < -size) {
-      x = viewportWidth
-      y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1)
-    }
-
-    el.style.left = x + 'px'
-    el.style.top = y + 'px'
-
-    requestAnimationFrame(move)
+  // Initialize floating data (like Tinkerbell)
+  const data = {
+    x: bounds.left + 40 + Math.random() * (bounds.width - 80),
+    y: bounds.top + 40 + Math.random() * (bounds.height - 80),
+    targetX: bounds.left + 40 + Math.random() * (bounds.width - 80),
+    targetY: bounds.top + 40 + Math.random() * (bounds.height - 80),
+    lastTargetChange: performance.now(),
+    targetChangeInterval: 2000 + Math.random() * 3000 // 2-5 seconds between targets
   }
 
-  move()
+  // Set initial position
+  el.style.left = data.x + 'px'
+  el.style.top = data.y + 'px'
+
+  function float() {
+    if (!activeCollectible || activeCollectible !== el) return
+
+    const now = performance.now()
+    const currentBounds = getGameCanvasBounds()
+
+    // Change target position periodically for wandering behavior
+    if (now - data.lastTargetChange > data.targetChangeInterval) {
+      data.targetX = currentBounds.left + 40 + Math.random() * (currentBounds.width - 80)
+      data.targetY = currentBounds.top + 40 + Math.random() * (currentBounds.height - 80)
+      data.targetChangeInterval = 2000 + Math.random() * 3000
+      data.lastTargetChange = now
+    }
+
+    // Smooth easing toward target (gentle floating movement)
+    const dx = data.targetX - data.x
+    const dy = data.targetY - data.y
+    data.x += dx * easingSpeed
+    data.y += dy * easingSpeed
+
+    // Keep within game canvas bounds
+    data.x = Math.max(currentBounds.left + 20, Math.min(data.x, currentBounds.left + currentBounds.width - size - 20))
+    data.y = Math.max(currentBounds.top + 20, Math.min(data.y, currentBounds.top + currentBounds.height - size - 20))
+
+    el.style.left = data.x + 'px'
+    el.style.top = data.y + 'px'
+
+    requestAnimationFrame(float)
+  }
+
+  float()
 }
 
 function handleCollectibleClick(collectible) {
@@ -6006,10 +6011,7 @@ function createSettingsPanel() {
     font-weight: 700;
     letter-spacing: 1px;
     margin-bottom: 12px;
-    background: linear-gradient(135deg, #ec4899, #8b5cf6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: white;
   `
   themeSection.appendChild(themeLabel)
 
@@ -6375,6 +6377,7 @@ const CHANGELOG = [
       'Audio player now supports WatchParty.me and direct MP3/audio URLs',
       'Visual audio player with play/pause, seek, volume, and loop controls',
       'Fixed Matterhorn snow not auto-disabling when leaving the room',
+      'Fixed potential idle crashes by pausing effects when tab is hidden',
       'Improved room detection reliability with backup detection',
       'Added room detection for JSON config files (e.g., Fantasyland in the Sky)'
     ]
@@ -9847,6 +9850,38 @@ async function init() {
   // Handle resize to update overlay positions to match game canvas
   window.addEventListener('resize', () => {
     updateOverlayBounds()
+  })
+
+  // Handle visibility change - pause/resume effects when tab is hidden/visible
+  // This prevents memory issues and timing problems when tab is backgrounded for long periods
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // Tab is hidden - pause canvas-based effects to save resources
+      console.log('MyVMK Genie: Tab hidden - pausing effects')
+      if (rainAnimationId) { cancelAnimationFrame(rainAnimationId); rainAnimationId = null }
+      if (snowAnimationId) { cancelAnimationFrame(snowAnimationId); snowAnimationId = null }
+      if (fireworksAnimationId) { cancelAnimationFrame(fireworksAnimationId); fireworksAnimationId = null }
+      if (moneyAnimationId) { cancelAnimationFrame(moneyAnimationId); moneyAnimationId = null }
+      if (spotlightAnimationId) { cancelAnimationFrame(spotlightAnimationId); spotlightAnimationId = null }
+      if (emojiAnimationId) { cancelAnimationFrame(emojiAnimationId); emojiAnimationId = null }
+      if (raveAnimationId) { cancelAnimationFrame(raveAnimationId); raveAnimationId = null }
+      if (ghostAnimationId) { cancelAnimationFrame(ghostAnimationId); ghostAnimationId = null }
+      if (tinkerbellAnimationId) { cancelAnimationFrame(tinkerbellAnimationId); tinkerbellAnimationId = null }
+      if (butterflyAnimationId) { cancelAnimationFrame(butterflyAnimationId); butterflyAnimationId = null }
+    } else {
+      // Tab is visible - resume effects that were active
+      console.log('MyVMK Genie: Tab visible - resuming effects')
+      if (isRainEnabled && !rainAnimationId) renderRain()
+      if (isSnowEnabled && !snowAnimationId) renderSnow()
+      if (isFireworksEnabled && !fireworksAnimationId) renderFireworks()
+      if (isMoneyRainEnabled && !moneyAnimationId) renderMoney()
+      if (isSpotlightsEnabled && !spotlightAnimationId) renderSpotlights()
+      if (isEmojiRainEnabled && !emojiAnimationId) renderEmojiRain()
+      if (isRaveEnabled && !raveAnimationId) renderRave()
+      if (isGhostEffectActive && !ghostAnimationId) updateGhosts()
+      if (isTinkerbellActive && !tinkerbellAnimationId) updateTinkerbell()
+      if (isButterflyActive && !butterflyAnimationId) updateButterflies()
+    }
   })
 
   // Debug only in internal mode
