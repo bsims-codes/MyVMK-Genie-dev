@@ -584,6 +584,7 @@
     <div class="tabs">
       <button class="tab active" onclick="showTab('genie')">Genie Events</button>
       <button class="tab" onclick="showTab('community')">Community Events</button>
+      <button class="tab" onclick="showTab('collectibles')">Collectibles</button>
       <button class="tab" onclick="showTab('settings')">Settings</button>
     </div>
 
@@ -824,6 +825,90 @@
       </div>
     </div>
 
+    <!-- Collectibles Tab -->
+    <div id="tab-collectibles" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Create Room Collectible</div>
+            <div class="card-subtitle">Clickable items that unlock themes when found</div>
+          </div>
+        </div>
+
+        <form id="collectible-form">
+          <div class="form-grid">
+            <div class="form-group span-2">
+              <label>Collectible Name *</label>
+              <input type="text" id="collectible-name" required placeholder="e.g., Jafar's Curse">
+            </div>
+
+            <div class="form-group">
+              <label>Room Location *</label>
+              <select id="collectible-room" required>
+                <option value="">Select a room</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Theme to Unlock *</label>
+              <select id="collectible-theme" required>
+                <option value="">Select a theme</option>
+                <option value="dark">Dark Theme (Jafar)</option>
+              </select>
+            </div>
+
+            <div class="form-group span-2">
+              <label>Image URL *</label>
+              <input type="url" id="collectible-image" required placeholder="https://example.com/curse.png">
+              <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px;">
+                Direct link to image (PNG with transparency recommended). Use chrome.runtime.getURL for extension assets.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Movement Speed</label>
+              <select id="collectible-speed">
+                <option value="slow">Slow (easy to click)</option>
+                <option value="medium" selected>Medium</option>
+                <option value="fast">Fast (challenging)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Size (pixels)</label>
+              <input type="number" id="collectible-size" value="60" min="30" max="150">
+            </div>
+
+            <div class="form-group span-2">
+              <label class="checkbox-group">
+                <input type="checkbox" id="collectible-enabled" checked>
+                <span class="checkbox-label">Collectible Enabled</span>
+              </label>
+            </div>
+          </div>
+
+          <input type="hidden" id="collectible-edit-index" value="-1">
+          <div class="btn-group">
+            <button type="submit" class="btn-primary" id="collectible-submit-btn">Add Collectible</button>
+            <button type="button" class="btn-secondary" id="collectible-cancel-btn" onclick="cancelCollectibleEdit()" style="display: none;">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="event-list-header">
+          <div class="event-list-title">Active Collectibles</div>
+          <div class="event-count" id="collectible-count">0 collectibles</div>
+        </div>
+        <div id="collectibles-list">
+          <div class="no-events">
+            <div class="no-events-icon">🎁</div>
+            <div>No collectibles configured yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings Tab -->
     <div id="tab-settings" class="tab-content">
       <!-- Ticker Customization -->
@@ -938,6 +1023,7 @@
     let apiKey = localStorage.getItem('jsonbin_key') || '';
     let genieEvents = [];
     let communityEvents = [];
+    let collectibles = [];
     let tickerText = '';
     let tickerIcon = '';
     let hasUnsavedChanges = false;
@@ -956,10 +1042,11 @@
     }
 
     function initRoomSelects() {
-      const selects = ['genie-room', 'community-room'];
+      const selects = ['genie-room', 'community-room', 'collectible-room'];
       const sortedRooms = Object.entries(ROOMS).sort((a, b) => a[1].localeCompare(b[1]));
       selects.forEach(id => {
         const select = document.getElementById(id);
+        if (!select) return;
         sortedRooms.forEach(([roomId, name]) => {
           const option = document.createElement('option');
           option.value = roomId;
@@ -1030,11 +1117,13 @@
         const record = data.record;
         genieEvents = record.genieEvents || [];
         communityEvents = record.communityEvents || [];
+        collectibles = record.collectibles || [];
         tickerText = record.tickerText || '';
         tickerIcon = record.tickerIcon || '';
         document.getElementById('ticker-text').value = tickerText;
         document.getElementById('ticker-icon').value = tickerIcon;
         renderEvents();
+        renderCollectibles();
 
         const banner = document.getElementById('config-banner');
         banner.classList.add('connected');
@@ -1045,7 +1134,7 @@
           </p>
         `;
         document.getElementById('publish-btn').disabled = false;
-        setStatus(`Connected • ${genieEvents.length} genie, ${communityEvents.length} community events`, 'success');
+        setStatus(`Connected • ${genieEvents.length} genie, ${communityEvents.length} community, ${collectibles.length} collectibles`, 'success');
       } catch (err) {
         setStatus('Connection failed: ' + err.message, 'error');
         document.getElementById('publish-btn').disabled = true;
@@ -1088,7 +1177,7 @@
       const data = {
         version: 1,
         lastUpdated: new Date().toISOString(),
-        genieEvents, communityEvents,
+        genieEvents, communityEvents, collectibles,
         tickerText: tickerText || undefined,
         tickerIcon: tickerIcon || undefined
       };
@@ -1417,6 +1506,113 @@
       hasUnsavedChanges = true;
       updateUnsavedIndicator();
       setStatus('Event deleted - click Publish to go live', 'success');
+    }
+
+    // === COLLECTIBLES ===
+
+    function renderCollectibles() {
+      const list = document.getElementById('collectibles-list');
+      document.getElementById('collectible-count').textContent = `${collectibles.length} collectible${collectibles.length !== 1 ? 's' : ''}`;
+
+      if (collectibles.length === 0) {
+        list.innerHTML = `<div class="no-events"><div class="no-events-icon">🎁</div><div>No collectibles configured yet</div></div>`;
+      } else {
+        list.innerHTML = collectibles.map((c, index) => `
+          <div class="event-item ${c.enabled === false ? 'disabled' : ''}" style="border-left-color: #a78bfa;">
+            <div class="event-info">
+              <div class="event-title">
+                ${c.name}
+                <span class="event-badge" style="background: rgba(139, 92, 246, 0.2); color: #a78bfa;">🎁 ${c.unlockTheme.toUpperCase()}</span>
+              </div>
+              <div class="event-meta">
+                <span>📍 ${c.roomName || ROOMS[c.roomId] || 'Unknown'}</span>
+                <span>⚡ ${c.speed || 'medium'}</span>
+                <span>📐 ${c.size || 60}px</span>
+              </div>
+              <div class="event-audio" style="background: rgba(139, 92, 246, 0.1);">
+                <img src="${c.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;"> ${c.imageUrl.split('/').pop()}
+              </div>
+            </div>
+            <div class="event-actions">
+              <button class="btn-edit" onclick="editCollectible(${index})">Edit</button>
+              <button class="btn-secondary" onclick="toggleCollectible(${index})">${c.enabled === false ? 'Enable' : 'Disable'}</button>
+              <button class="btn-danger" onclick="deleteCollectible(${index})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function editCollectible(index) {
+      const c = collectibles[index];
+      document.getElementById('collectible-name').value = c.name || '';
+      document.getElementById('collectible-room').value = c.roomId || '';
+      document.getElementById('collectible-theme').value = c.unlockTheme || '';
+      document.getElementById('collectible-image').value = c.imageUrl || '';
+      document.getElementById('collectible-speed').value = c.speed || 'medium';
+      document.getElementById('collectible-size').value = c.size || 60;
+      document.getElementById('collectible-enabled').checked = c.enabled !== false;
+      document.getElementById('collectible-edit-index').value = index;
+      document.getElementById('collectible-submit-btn').textContent = 'Update Collectible';
+      document.getElementById('collectible-cancel-btn').style.display = 'inline-block';
+      document.getElementById('collectible-form').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function cancelCollectibleEdit() {
+      document.getElementById('collectible-form').reset();
+      document.getElementById('collectible-edit-index').value = -1;
+      document.getElementById('collectible-submit-btn').textContent = 'Add Collectible';
+      document.getElementById('collectible-cancel-btn').style.display = 'none';
+      document.getElementById('collectible-enabled').checked = true;
+      document.getElementById('collectible-speed').value = 'medium';
+    }
+
+    document.getElementById('collectible-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const roomId = document.getElementById('collectible-room').value;
+      const editIndex = parseInt(document.getElementById('collectible-edit-index').value);
+      const isEditing = editIndex >= 0;
+
+      const collectible = {
+        id: isEditing ? collectibles[editIndex].id : generateId('collectible'),
+        name: document.getElementById('collectible-name').value,
+        roomId: parseInt(roomId),
+        roomName: ROOMS[roomId],
+        unlockTheme: document.getElementById('collectible-theme').value,
+        imageUrl: document.getElementById('collectible-image').value,
+        speed: document.getElementById('collectible-speed').value,
+        size: parseInt(document.getElementById('collectible-size').value) || 60,
+        enabled: document.getElementById('collectible-enabled').checked
+      };
+
+      if (isEditing) {
+        collectibles[editIndex] = collectible;
+        setStatus('Collectible updated - click Publish to go live', 'success');
+      } else {
+        collectibles.push(collectible);
+        setStatus('Collectible added - click Publish to go live', 'success');
+      }
+      renderCollectibles();
+      hasUnsavedChanges = true;
+      updateUnsavedIndicator();
+      cancelCollectibleEdit();
+    });
+
+    function toggleCollectible(index) {
+      collectibles[index].enabled = collectibles[index].enabled === false;
+      renderCollectibles();
+      hasUnsavedChanges = true;
+      updateUnsavedIndicator();
+      setStatus('Collectible updated - click Publish to go live', 'success');
+    }
+
+    function deleteCollectible(index) {
+      if (!confirm('Delete this collectible?')) return;
+      collectibles.splice(index, 1);
+      renderCollectibles();
+      hasUnsavedChanges = true;
+      updateUnsavedIndicator();
+      setStatus('Collectible deleted - click Publish to go live', 'success');
     }
 
     window.addEventListener('beforeunload', (e) => {

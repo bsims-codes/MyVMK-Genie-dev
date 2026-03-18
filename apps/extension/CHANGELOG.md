@@ -1,5 +1,23 @@
 # MyVMK Genie Changelog
 
+## 2.1.2 (In Progress)
+
+### Features
+- **Room Collectibles**: Hidden clickable items in rooms that unlock themes when found!
+- Admin panel: New "Collectibles" tab to configure room-based theme unlocks
+- Audio player now supports WatchParty.me room URLs (embeds as iframe)
+- Audio player now supports direct MP3/audio file URLs with visual player controls
+- Visual audio player includes play/pause, seek bar, volume control, and loop toggle
+
+### Bug Fixes
+- Fixed Matterhorn snow not auto-disabling when leaving the room
+- Fixed room detection not triggering ambient effects (snow, etc.) properly
+
+### Improvements
+- Added backup room detection via fetch/XHR interception for more reliable detection
+- Added room detection for JSON config files (fixes rooms like Fantasyland in the Sky)
+- Room detection now works for both audio files and JSON config patterns
+
 ## 2.1.1
 
 ### Features

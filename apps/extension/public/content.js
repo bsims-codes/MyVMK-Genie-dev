@@ -340,6 +340,8 @@ const GENIE_EVENTS_URL = `https://api.jsonbin.io/v3/b/${GENIE_EVENTS_BIN_ID}/lat
 const GENIE_EVENTS_FETCH_INTERVAL = 5 * 60 * 1000 // Fetch every 5 minutes
 let scheduledGenieEvents = []      // Admin events - can trigger overlays + audio
 let scheduledCommunityEvents = []  // Player events - audio only
+let roomCollectibles = []          // Clickable items in rooms that unlock themes
+let activeCollectible = null       // Currently displayed collectible element
 let customTickerText = ''          // Custom ticker text from admin panel
 let customTickerIcon = ''          // Custom ticker icon URL from admin panel
 let activeGenieEvent = null
@@ -799,6 +801,7 @@ function checkRoomAmbientEffects() {
     checkTinkerbellRoom()
     checkButterflyRoom()
     checkMatterhornRoom()
+    checkRoomCollectibles()
   }, 100)
 }
 
@@ -812,6 +815,7 @@ function startAmbientEffectWatcher() {
     checkTinkerbellRoom()
     checkButterflyRoom()
     checkMatterhornRoom()
+    checkRoomCollectibles()
   }, 5000)
 }
 
@@ -945,6 +949,34 @@ function monitorNetworkForRooms() {
           checkButterflyRoom()
           checkMatterhornRoom()
             checkGenieEvents()
+          }
+        }
+
+        // Check for room JSON config files (e.g., vmk_inthesky.json, vmk_snd_inthesky.json)
+        if (entry.name.includes('download.myvmk.com') && entry.name.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)) {
+          const jsonMatch = entry.name.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)
+          if (jsonMatch && jsonMatch[1]) {
+            const roomKey = jsonMatch[1]
+            console.log('MyVMK Genie: Detected room JSON:', roomKey)
+
+            // Try to find matching room in AUDIO_ROOM_MAP
+            const sndKey = `vmk_snd_${roomKey}`
+            if (typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[sndKey]) {
+              const roomInfo = AUDIO_ROOM_MAP[sndKey]
+              if (roomInfo.id !== currentRoomId) {
+                hasDetectedRoomThisSession = true
+                currentRoomId = roomInfo.id
+                currentRoom = ROOM_MAP[roomInfo.id] || `Room ${roomInfo.id}`
+                currentLand = roomInfo.land
+                console.log('MyVMK Genie: Auto-detected room from JSON:', currentRoom, currentLand ? `(${currentLand})` : '')
+                updateRoomInfoDisplay()
+                checkGhostEffectRoom()
+                checkTinkerbellRoom()
+                checkButterflyRoom()
+                checkMatterhornRoom()
+                checkGenieEvents()
+              }
+            }
           }
         }
 
@@ -4552,6 +4584,14 @@ async function fetchGenieEvents() {
       console.log('MyVMK Genie: Custom ticker icon:', customTickerIcon || '(default)')
     }
 
+    // Room collectibles
+    if (data && Array.isArray(data.collectibles)) {
+      roomCollectibles = data.collectibles.filter(c => c.enabled !== false)
+      console.log('MyVMK Genie: Loaded', roomCollectibles.length, 'room collectibles')
+      // Check if we need to spawn a collectible for current room
+      checkRoomCollectibles()
+    }
+
     // Re-render ticker to include newly loaded events
     renderTickerContent()
   } catch (e) {
@@ -4900,6 +4940,164 @@ function stopGenieEvent() {
 
   // Stop audio (restores game audio)
   stopAudio()
+}
+
+// === ROOM COLLECTIBLES ===
+// Clickable items that appear in specific rooms and unlock themes when clicked
+
+function checkRoomCollectibles() {
+  // Remove existing collectible if we changed rooms
+  if (activeCollectible) {
+    const collectibleRoomId = parseInt(activeCollectible.dataset.roomId)
+    if (collectibleRoomId !== currentRoomId) {
+      removeCollectible()
+    }
+  }
+
+  // Check if there's a collectible for the current room
+  const collectible = roomCollectibles.find(c => c.roomId === currentRoomId)
+  if (collectible && !activeCollectible) {
+    spawnCollectible(collectible)
+  }
+}
+
+function spawnCollectible(collectible) {
+  if (activeCollectible) return // Already have one
+
+  console.log('MyVMK Genie: Spawning collectible:', collectible.name, 'in room', currentRoomId)
+
+  // Create the collectible element
+  const el = document.createElement('div')
+  el.id = 'vmkpal-collectible'
+  el.dataset.roomId = collectible.roomId
+  el.dataset.unlockTheme = collectible.unlockTheme
+  el.dataset.collectibleId = collectible.id
+
+  const size = collectible.size || 60
+  el.style.cssText = `
+    position: fixed;
+    width: ${size}px;
+    height: ${size}px;
+    z-index: 2147483640;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform 0.1s ease;
+    filter: drop-shadow(0 0 10px rgba(180, 0, 0, 0.8));
+  `
+
+  // Create the image
+  const img = document.createElement('img')
+  img.src = collectible.imageUrl
+  img.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  `
+  el.appendChild(img)
+
+  // Add hover effect
+  el.addEventListener('mouseenter', () => {
+    el.style.transform = 'scale(1.2)'
+    el.style.filter = 'drop-shadow(0 0 20px rgba(180, 0, 0, 1))'
+  })
+  el.addEventListener('mouseleave', () => {
+    el.style.transform = 'scale(1)'
+    el.style.filter = 'drop-shadow(0 0 10px rgba(180, 0, 0, 0.8))'
+  })
+
+  // Add click handler
+  el.addEventListener('click', () => handleCollectibleClick(collectible))
+
+  document.body.appendChild(el)
+  activeCollectible = el
+
+  // Start movement animation
+  animateCollectible(el, collectible.speed || 'medium')
+}
+
+function animateCollectible(el, speed) {
+  const speedMap = { slow: 0.5, medium: 1, fast: 2 }
+  const baseSpeed = speedMap[speed] || 1
+
+  // Random starting position (off-screen left or right)
+  const startFromLeft = Math.random() > 0.5
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const size = el.offsetWidth
+
+  let x = startFromLeft ? -size : viewportWidth
+  let y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1) // Keep in middle 60%
+  let directionX = startFromLeft ? 1 : -1
+  let directionY = (Math.random() - 0.5) * 0.5 // Slight vertical drift
+  let moveSpeed = baseSpeed * (1 + Math.random() * 0.5) // Vary speed slightly
+
+  function move() {
+    if (!activeCollectible || activeCollectible !== el) return
+
+    x += directionX * moveSpeed * 2
+    y += directionY * moveSpeed
+
+    // Bounce off top/bottom
+    if (y < 50) {
+      y = 50
+      directionY = Math.abs(directionY)
+    }
+    if (y > viewportHeight - size - 50) {
+      y = viewportHeight - size - 50
+      directionY = -Math.abs(directionY)
+    }
+
+    // Wrap around horizontally
+    if (x > viewportWidth) {
+      x = -size
+      y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1)
+    }
+    if (x < -size) {
+      x = viewportWidth
+      y = Math.random() * (viewportHeight * 0.6) + (viewportHeight * 0.1)
+    }
+
+    el.style.left = x + 'px'
+    el.style.top = y + 'px'
+
+    requestAnimationFrame(move)
+  }
+
+  move()
+}
+
+function handleCollectibleClick(collectible) {
+  const themeId = collectible.unlockTheme
+  const themeName = themeId === 'dark' ? 'Dark' : themeId === 'pink' ? 'Pink' : themeId
+
+  if (unlockedThemes.includes(themeId)) {
+    // Already unlocked - show message
+    showNotification(`✨ You already have the ${themeName} theme!`, 'success', 2000, true)
+  } else {
+    // Unlock the theme!
+    unlockedThemes.push(themeId)
+    chrome.storage.local.set({ unlockedThemes })
+
+    // Visual feedback - make collectible spin and fade
+    if (activeCollectible) {
+      activeCollectible.style.transition = 'all 0.5s ease'
+      activeCollectible.style.transform = 'scale(2) rotate(360deg)'
+      activeCollectible.style.opacity = '0'
+    }
+
+    // Show unlock notification
+    showNotification(`🎁 You unlocked the ${themeName} theme!`, 'success', 4000, true)
+
+    console.log('MyVMK Genie: Theme unlocked via collectible:', themeId)
+  }
+}
+
+function removeCollectible() {
+  if (activeCollectible) {
+    activeCollectible.remove()
+    activeCollectible = null
+  }
 }
 
 // Community Events - audio only, no overlays
@@ -6071,6 +6269,19 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.2',
+    date: '2025-03-18',
+    inProgress: true,
+    changes: [
+      'Room Collectibles: Hidden clickable items in rooms that unlock themes!',
+      'Audio player now supports WatchParty.me and direct MP3/audio URLs',
+      'Visual audio player with play/pause, seek, volume, and loop controls',
+      'Fixed Matterhorn snow not auto-disabling when leaving the room',
+      'Improved room detection reliability with backup detection',
+      'Added room detection for JSON config files (e.g., Fantasyland in the Sky)'
+    ]
+  },
   {
     version: '2.1.1',
     date: '2025-03-18',
@@ -7878,6 +8089,19 @@ function getYouTubeStartTime(url) {
   return null
 }
 
+// Check if URL is a WatchParty.me room
+function getWatchPartyRoomId(url) {
+  // Match watchparty.me room URLs like https://www.watchparty.me/ROOMID or https://watchparty.me/ROOMID
+  const match = url.match(/watchparty\.me\/([a-zA-Z0-9_-]+)/)
+  if (match && match[1] && match[1] !== 'create') return match[1]
+  return null
+}
+
+// Check if URL is a direct audio file
+function isDirectAudioUrl(url) {
+  return /\.(mp3|ogg|wav|m4a|aac|flac|webm)(\?|$)/i.test(url)
+}
+
 // Audio player
 let audioPlayer = null
 let youtubeIframe = null
@@ -8065,6 +8289,8 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
   const videoId = getYouTubeVideoId(url)
   const playlistId = getYouTubePlaylistId(url)
   const startTime = getYouTubeStartTime(url)
+  const watchPartyId = getWatchPartyRoomId(url)
+  const isAudioFile = isDirectAudioUrl(url)
 
   if (videoId || playlistId) {
     // YouTube - embed as iframe in PERSISTENT container (survives panel navigation)
@@ -8158,8 +8384,172 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
     }
 
     showNotification(isPlaylist ? '🔇 Game muted • Playing playlist' : '🔇 Game muted • Playing YouTube', 'success')
+  } else if (watchPartyId) {
+    // WatchParty.me - embed as iframe
+    const container = ensurePersistentPlayerContainer()
+    isPlayerMinimized = startMinimized
+
+    // WatchParty embed URL
+    const embedUrl = `https://www.watchparty.me/${watchPartyId}`
+
+    // Apply saved size (or minimized width)
+    container.style.width = startMinimized ? '200px' : playerSize.width + 'px'
+
+    container.innerHTML = `
+      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: ${startMinimized ? '0' : '8px'}; padding: 4px 2px; cursor: move;">
+          <span style="color: #f59e0b; font-size: 12px; font-weight: 500;">🎬 WatchParty</span>
+          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
+          <div style="margin-left: auto; display: flex; gap: 6px;">
+            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="${startMinimized ? 'Expand' : 'Minimize'}">${startMinimized ? '□' : '─'}</button>
+            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Stop & Close">✕</button>
+          </div>
+        </div>
+        <div id="vmkpal-player-content" style="display: ${startMinimized ? 'none' : 'block'};">
+          <iframe
+            id="vmkpal-watchparty-player"
+            width="100%"
+            height="${playerSize.height}"
+            src="${embedUrl}"
+            frameborder="0"
+            allow="autoplay; encrypted-media; fullscreen; camera; microphone"
+            allowfullscreen
+            style="border-radius: 8px; display: block;"
+          ></iframe>
+        </div>
+        <div id="vmkpal-resize-handle" style="position: absolute; bottom: 4px; right: 4px; width: 16px; height: 16px; cursor: se-resize; opacity: 0.5; display: ${startMinimized ? 'none' : 'block'};" title="Drag to resize">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="rgba(255,255,255,0.6)">
+            <path d="M14 14H10V12H12V10H14V14ZM14 8H12V6H14V8ZM8 14H6V12H8V14Z"/>
+          </svg>
+        </div>
+      </div>
+    `
+    youtubeIframe = container.querySelector('iframe') // Reuse same variable for iframe tracking
+
+    // Add stop button handler
+    const stopBtn = container.querySelector('#vmkpal-persistent-stop')
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => stopAudio())
+    }
+
+    // Add minimize/expand handler
+    setupPlayerMinimizeHandler(container)
+
+    showNotification('🔇 Game muted • Opening WatchParty', 'success')
+  } else if (isAudioFile) {
+    // Direct audio file - show visual player with controls
+    const container = ensurePersistentPlayerContainer()
+    isPlayerMinimized = startMinimized
+
+    // Extract filename for display
+    const filename = url.split('/').pop().split('?')[0] || 'Audio'
+
+    container.style.width = startMinimized ? '200px' : '320px'
+
+    container.innerHTML = `
+      <div id="vmkpal-player-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative;">
+        <div id="vmkpal-player-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: ${startMinimized ? '0' : '8px'}; padding: 4px 2px; cursor: move;">
+          <span style="color: #ec4899; font-size: 12px; font-weight: 500;">🎵 Audio</span>
+          <span style="color: rgba(255,255,255,0.4); font-size: 10px; margin-left: 4px;">⋮⋮ drag</span>
+          <div style="margin-left: auto; display: flex; gap: 6px;">
+            <button id="vmkpal-player-minimize" style="background: #6366f1; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="${startMinimized ? 'Expand' : 'Minimize'}">${startMinimized ? '□' : '─'}</button>
+            <button id="vmkpal-persistent-stop" style="background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 500;" title="Stop & Close">✕</button>
+          </div>
+        </div>
+        <div id="vmkpal-player-content" style="display: ${startMinimized ? 'none' : 'block'};">
+          <div style="color: rgba(255,255,255,0.8); font-size: 11px; margin-bottom: 8px; word-break: break-all; max-height: 32px; overflow: hidden;" title="${escapeHtml(filename)}">${escapeHtml(filename.length > 40 ? filename.substring(0, 40) + '...' : filename)}</div>
+          <audio id="vmkpal-audio-element" src="${escapeHtml(url)}" loop style="width: 100%; height: 36px; border-radius: 6px;"></audio>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+            <button id="vmkpal-audio-play" style="background: #10b981; border: none; color: white; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;">▶</button>
+            <input type="range" id="vmkpal-audio-seek" min="0" max="100" value="0" style="flex: 1; height: 6px; cursor: pointer; accent-color: #6366f1;">
+            <span id="vmkpal-audio-time" style="color: rgba(255,255,255,0.6); font-size: 10px; min-width: 70px; text-align: right;">0:00 / 0:00</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <span style="color: rgba(255,255,255,0.5); font-size: 10px;">🔊</span>
+            <input type="range" id="vmkpal-audio-volume" min="0" max="100" value="50" style="width: 80px; height: 4px; cursor: pointer; accent-color: #6366f1;">
+            <label style="color: rgba(255,255,255,0.5); font-size: 10px; display: flex; align-items: center; gap: 4px; margin-left: auto; cursor: pointer;">
+              <input type="checkbox" id="vmkpal-audio-loop" checked style="accent-color: #6366f1;"> Loop
+            </label>
+          </div>
+        </div>
+      </div>
+    `
+
+    const audioEl = container.querySelector('#vmkpal-audio-element')
+    const playBtn = container.querySelector('#vmkpal-audio-play')
+    const seekBar = container.querySelector('#vmkpal-audio-seek')
+    const timeDisplay = container.querySelector('#vmkpal-audio-time')
+    const volumeBar = container.querySelector('#vmkpal-audio-volume')
+    const loopCheckbox = container.querySelector('#vmkpal-audio-loop')
+
+    // Store reference
+    audioPlayer = audioEl
+
+    // Format time helper
+    const formatTime = (seconds) => {
+      if (isNaN(seconds)) return '0:00'
+      const mins = Math.floor(seconds / 60)
+      const secs = Math.floor(seconds % 60)
+      return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
+
+    // Play/pause button
+    playBtn.addEventListener('click', () => {
+      if (audioEl.paused) {
+        audioEl.play()
+        playBtn.textContent = '⏸'
+      } else {
+        audioEl.pause()
+        playBtn.textContent = '▶'
+      }
+    })
+
+    // Update time display and seek bar
+    audioEl.addEventListener('timeupdate', () => {
+      if (audioEl.duration) {
+        seekBar.value = (audioEl.currentTime / audioEl.duration) * 100
+        timeDisplay.textContent = `${formatTime(audioEl.currentTime)} / ${formatTime(audioEl.duration)}`
+      }
+    })
+
+    // Seek bar
+    seekBar.addEventListener('input', () => {
+      if (audioEl.duration) {
+        audioEl.currentTime = (seekBar.value / 100) * audioEl.duration
+      }
+    })
+
+    // Volume bar
+    volumeBar.addEventListener('input', () => {
+      audioEl.volume = volumeBar.value / 100
+    })
+
+    // Loop checkbox
+    loopCheckbox.addEventListener('change', () => {
+      audioEl.loop = loopCheckbox.checked
+    })
+
+    // Auto-play
+    audioEl.volume = 0.5
+    audioEl.play().then(() => {
+      playBtn.textContent = '⏸'
+    }).catch(err => {
+      console.log('Audio autoplay blocked:', err)
+      showNotification('Click play to start audio', 'info')
+    })
+
+    // Add stop button handler
+    const stopBtn = container.querySelector('#vmkpal-persistent-stop')
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => stopAudio())
+    }
+
+    // Add minimize/expand handler
+    setupPlayerMinimizeHandler(container)
+
+    showNotification('🔇 Game muted • Playing audio file', 'success')
   } else {
-    // Direct audio URL
+    // Unknown URL format - try as direct audio (legacy behavior)
     audioPlayer = new Audio(url)
     audioPlayer.loop = true
     audioPlayer.volume = 0.5
@@ -8168,6 +8558,32 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
       unmuteGameAudio() // Restore game audio if our audio fails
     })
     showNotification('🔇 Game muted • Playing audio', 'success')
+  }
+}
+
+// Helper to set up minimize/expand handler for player
+function setupPlayerMinimizeHandler(container) {
+  const minimizeBtn = container.querySelector('#vmkpal-player-minimize')
+  const playerContent = container.querySelector('#vmkpal-player-content')
+  const resizeHandle = container.querySelector('#vmkpal-resize-handle')
+  if (minimizeBtn && playerContent) {
+    minimizeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      isPlayerMinimized = !isPlayerMinimized
+      if (isPlayerMinimized) {
+        playerContent.style.display = 'none'
+        if (resizeHandle) resizeHandle.style.display = 'none'
+        minimizeBtn.textContent = '□'
+        minimizeBtn.title = 'Expand'
+        container.style.width = '200px'
+      } else {
+        playerContent.style.display = 'block'
+        if (resizeHandle) resizeHandle.style.display = 'block'
+        minimizeBtn.textContent = '─'
+        minimizeBtn.title = 'Minimize'
+        container.style.width = playerSize.width + 'px'
+      }
+    })
   }
 }
 
@@ -9184,6 +9600,35 @@ async function init() {
         checkButterflyRoom()
         checkMatterhornRoom()
         checkGenieEvents()
+      }
+    }
+
+    // Detect room JSON config files (backup detection via fetch/XHR interception)
+    if (event.data && event.data.type === 'vmkgenie-room-json-detected' && event.data.url) {
+      const url = event.data.url
+      const jsonMatch = url.match(/vmk_(?:snd_)?([^\/]+)\.json$/i)
+      if (jsonMatch && jsonMatch[1]) {
+        const roomKey = jsonMatch[1]
+        console.log('MyVMK Genie: Room JSON detected (interceptor):', roomKey)
+
+        // Try to find matching room in AUDIO_ROOM_MAP
+        const sndKey = `vmk_snd_${roomKey}`
+        if (typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[sndKey]) {
+          const roomInfo = AUDIO_ROOM_MAP[sndKey]
+          if (roomInfo.id !== currentRoomId) {
+            hasDetectedRoomThisSession = true
+            currentRoomId = roomInfo.id
+            currentRoom = ROOM_MAP[roomInfo.id] || `Room ${roomInfo.id}`
+            currentLand = roomInfo.land
+            console.log('MyVMK Genie: Auto-detected room from JSON (interceptor):', currentRoom, currentLand ? `(${currentLand})` : '')
+            updateRoomInfoDisplay()
+            checkGhostEffectRoom()
+            checkTinkerbellRoom()
+            checkButterflyRoom()
+            checkMatterhornRoom()
+            checkGenieEvents()
+          }
+        }
       }
     }
   })
