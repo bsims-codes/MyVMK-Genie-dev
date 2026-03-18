@@ -25,7 +25,7 @@
 
 ### Features
 - **Theme Unlocks**: Attend Genie Events to unlock exclusive themes!
-- Added Dark Theme (Jafar) - unlockable via event attendance
+- Added Dark Theme (Jafar) - unlockable by collecting hidden item
 - Admin panel: New "Theme Unlock" dropdown when creating events
 
 ### Bug Fixes

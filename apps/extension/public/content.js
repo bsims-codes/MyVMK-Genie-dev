@@ -4958,7 +4958,6 @@ function checkRoomCollectibles() {
   // Check if there's a collectible for the current room
   // Use parseInt to handle string/number type mismatch from JSONBin
   const collectible = roomCollectibles.find(c => parseInt(c.roomId) === currentRoomId)
-  console.log('MyVMK Genie: Checking collectibles for room', currentRoomId, '- found:', collectible ? collectible.name : 'none', '- available:', roomCollectibles.map(c => ({ name: c.name, roomId: c.roomId })))
   if (collectible && !activeCollectible) {
     spawnCollectible(collectible)
   }
