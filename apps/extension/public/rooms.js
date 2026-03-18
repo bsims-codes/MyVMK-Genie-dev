@@ -66,7 +66,7 @@ const ROOM_MAP = {
   67: "Splash Mountain Bayou",
   68: "Mark Twain Steamboat",
   69: "Briar Patch",
-  70: "Animal Kingdom Safari Lodge",
+  70: "Africa",
   71: "Expedition Everest",
   72: "Sci-Fi Dine-In",
   73: "Space Mountain Quest Deck",
