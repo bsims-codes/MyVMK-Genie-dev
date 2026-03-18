@@ -6019,8 +6019,9 @@ const CHANGELOG = [
     changes: [
       'Firefox extension now available',
       'Added Pirate Treasure Room audio detection',
-      'Prize Tracker panel with compact embed view (IN PROGRESS)',
-      'Prize Tracker data syncs between extension and main website'
+      'Prize Tracker panel with embedded compact view',
+      'Bidirectional sync between extension and main Prize Tracker site',
+      'Save/Sync buttons for manual data sync'
     ]
   },
   {

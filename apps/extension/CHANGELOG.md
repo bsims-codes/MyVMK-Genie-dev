@@ -5,8 +5,13 @@
 ### Features
 - Firefox extension now available
 - Added Pirate Treasure Room audio detection (Room Audio panel now recognizes PTR)
-- Prize Tracker panel with embedded compact view (IN PROGRESS)
-- Prize Tracker data syncs between extension and main website via chrome.storage bridge
+- Prize Tracker panel with embedded compact view
+- Bidirectional sync between extension Prize Tracker and main website
+
+### Improvements
+- Save button in Prize Tracker panel header for manual sync
+- Sync button on main Prize Tracker site when extension is installed
+- Sync instructions displayed in both embed and main site views
 
 ## 2.0.8
 
