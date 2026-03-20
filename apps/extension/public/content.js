@@ -137,7 +137,8 @@ function updateOverlayBounds() {
     { canvas: snowCanvas, ctx: snowCtx },
     { canvas: fireworksCanvas, ctx: fireworksCtx },
     { canvas: moneyCanvas, ctx: moneyCtx },
-    { canvas: emojiCanvas, ctx: emojiCtx }
+    { canvas: emojiCanvas, ctx: emojiCtx },
+    { canvas: fireflyCanvas, ctx: fireflyCtx }
   ]
 
   overlays.forEach(({ canvas, ctx }) => {
@@ -155,6 +156,34 @@ function updateOverlayBounds() {
   if (isNightOverlayEnabled) {
     updateNightOverlayBounds()
   }
+
+  // Update fog overlay if active
+  if (isFogActive && fogOverlay) {
+    fogOverlay.style.left = bounds.left + 'px'
+    fogOverlay.style.top = bounds.top + 'px'
+    fogOverlay.style.width = bounds.width + 'px'
+    fogOverlay.style.height = bounds.height + 'px'
+  }
+
+  // Update Kingdom Sync night overlay if active
+  const ksNight = document.getElementById('vmkpal-kingdomsync-night')
+  if (ksNight) {
+    ksNight.style.left = bounds.left + 'px'
+    ksNight.style.top = bounds.top + 'px'
+    ksNight.style.width = bounds.width + 'px'
+    ksNight.style.height = bounds.height + 'px'
+  }
+
+  // Update castle overlay if active
+  if (isCastleOverlayActive && castleOverlay) {
+    castleOverlay.style.left = bounds.left + 'px'
+    castleOverlay.style.top = bounds.top + 'px'
+    castleOverlay.style.width = bounds.width + 'px'
+    castleOverlay.style.height = bounds.height + 'px'
+  }
+
+  // Update map button overlay position
+  updateMapButtonOverlayPosition()
 }
 
 let currentAudio = null
@@ -189,6 +218,7 @@ let unlockedThemes = [] // Themes unlocked by attending events: ['dark']
 let isTestModeEnabled = false // Show and trigger test events (admin only)
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
 let manuallyDisabledEffects = new Set() // Track effects user manually disabled during an event
+let isCastleTestOverlayEnabled = false // DEV_MODE: Test fixed position overlay
 
 // Rain effect (canvas-based like The Swan game)
 let rainDrops = []
@@ -215,7 +245,7 @@ const MONEY_SPEED_MAX = 300
 const MONEY_SYMBOLS = ['💵', '💰', '💲', '🤑', '💸']
 const MONEY_SIZES = [20, 24, 28, 32]
 
-// Fireworks effect
+// Fireworks effect - Enhanced visuals
 let fireworksCanvas = null
 let fireworksCtx = null
 let fireworksAnimationId = null
@@ -224,21 +254,20 @@ let particles = []
 let lastFireworkTime = 0
 let nextLaunchTime = 0
 const FIREWORK_COLORS = [
-  ['255,68,68', '255,136,136', '255,204,204'], // Red
-  ['68,255,68', '136,255,136', '204,255,204'], // Green
-  ['68,68,255', '136,136,255', '204,204,255'], // Blue
-  ['255,255,68', '255,255,136', '255,255,204'], // Yellow
-  ['255,68,255', '255,136,255', '255,204,255'], // Magenta
-  ['68,255,255', '136,255,255', '204,255,255'], // Cyan
-  ['255,136,68', '255,170,102', '255,204,136'], // Orange
-  ['255,255,255', '238,238,238', '221,221,221'], // White
-  ['255,102,153', '255,153,187', '255,204,221'], // Pink
-  ['170,68,255', '204,136,255', '238,204,255'], // Purple
+  { core: '255,220,150', mid: '255,180,80', outer: '255,140,40' },   // Gold
+  { core: '150,255,150', mid: '80,220,80', outer: '40,180,40' },     // Green
+  { core: '255,150,150', mid: '255,80,80', outer: '200,40,40' },     // Red
+  { core: '150,200,255', mid: '80,150,255', outer: '40,100,220' },   // Blue
+  { core: '255,200,255', mid: '255,100,255', outer: '200,50,200' },  // Magenta
+  { core: '255,255,200', mid: '255,255,100', outer: '220,220,50' },  // Yellow
+  { core: '200,255,255', mid: '100,220,255', outer: '50,180,220' },  // Cyan
+  { core: '255,255,255', mid: '220,220,255', outer: '180,180,220' }, // White/Silver
 ]
-const PARTICLE_COUNT = 100
-const GRAVITY = 60
-const LAUNCH_INTERVAL_MIN = 600
-const LAUNCH_INTERVAL_MAX = 1500
+const PARTICLE_COUNT = 120
+const GRAVITY = 50
+const LAUNCH_INTERVAL_MIN = 800
+const LAUNCH_INTERVAL_MAX = 1800
+const EXPLOSION_TYPES = ['starburst', 'willow', 'peony', 'ring', 'crackle']
 
 // Neon Rave effect (DEV_MODE only)
 let raveCanvas = null
@@ -330,6 +359,47 @@ let butterflySpawnTimer = null
 // Snow Effect for Matterhorn
 const MATTERHORN_ID = 33
 let matterhornSnowDisabledByUser = false // Track if user manually disabled snow in Matterhorn
+
+// Kingdom Sync - enhanced ambient experience
+let isKingdomSyncEnabled = false
+let kingdomSyncFireflyRooms = new Map()  // Track which rooms got rare effect this session
+
+// Firefly effect (Kingdom Sync)
+let fireflyCanvas = null
+let fireflyCtx = null
+let fireflyAnimationId = null
+let fireflies = []
+let isFirefliesActive = false
+const FIREFLY_COUNT = 25
+
+// Fog effect (Kingdom Sync)
+let fogOverlay = null
+let isFogActive = false
+
+// Subtle night (Kingdom Sync)
+let isKingdomSyncNightActive = false
+
+// Castle overlay (Kingdom Sync)
+let castleOverlay = null
+let isCastleOverlayActive = false
+
+// Map button overlay - detects when user clicks globe icon
+let mapButtonOverlay = null
+let onMapButtonClick = null // Callback function when map is clicked
+let isMapOpen = false // Track if map is currently open
+let overlaysHiddenForMap = {} // Track which overlays were active before map opened
+
+// Room IDs for Kingdom Sync effects
+const KINGDOM_SYNC_ROOMS = {
+  FRONTIERLAND_DOCK: 59,
+  FRONTIERLAND_HUB: 58,
+  MARK_TWAIN_STEAMBOAT: 68,
+  AFRICA: [70, 299],
+  PIXAR_PIER: 300,
+  PIRATE_TREEHOUSE: 36,
+  EXPLORERS_TENT: 9,
+  CASTLE_GARDENS: 30
+}
 
 // Genie Events System - remote scheduled events via JSONBin.io
 // >>> EDIT THESE TWO VALUES <<<
@@ -797,11 +867,18 @@ function onRoomChange(oldRoom, newRoom) {
 function checkRoomAmbientEffects() {
   // Small delay to ensure currentRoomId is updated
   setTimeout(() => {
+    // If map was open, restore overlays now that we're in a room
+    if (isMapOpen) {
+      restoreOverlaysAfterMap()
+    }
+
     checkGhostEffectRoom()
     checkTinkerbellRoom()
     checkButterflyRoom()
     checkMatterhornRoom()
     checkRoomCollectibles()
+    checkKingdomSyncEffects()
+    checkCastleGardensRoom()
   }, 100)
 }
 
@@ -816,6 +893,8 @@ function startAmbientEffectWatcher() {
     checkButterflyRoom()
     checkMatterhornRoom()
     checkRoomCollectibles()
+    checkKingdomSyncEffects()
+    checkCastleGardensRoom()
   }, 5000)
 }
 
@@ -2571,30 +2650,51 @@ function toggleFireworks() {
 function createRocket() {
   const bounds = getGameCanvasBounds()
   const colorSet = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]
+  const explosionType = EXPLOSION_TYPES[Math.floor(Math.random() * EXPLOSION_TYPES.length)]
+
+  // In Castle Gardens, start rockets from behind the castle overlay
+  // Otherwise, start from the bottom of the screen
+  const inCastleGardens = currentRoomId === CASTLE_GARDENS_ID
+  const startY = inCastleGardens
+    ? bounds.height * 0.55 + Math.random() * (bounds.height * 0.1)
+    : bounds.height + 10
+  const speed = inCastleGardens ? 200 + Math.random() * 100 : 280 + Math.random() * 120
 
   return {
-    x: Math.random() * (bounds.width * 0.8) + bounds.width * 0.1, // Launch from middle 80% of screen
-    y: bounds.height,
-    targetY: bounds.height * 0.05 + Math.random() * (bounds.height * 0.25), // Explode in top ~30%
-    speed: 350 + Math.random() * 150,
+    x: Math.random() * (bounds.width * 0.7) + bounds.width * 0.15,
+    y: startY,
+    targetY: bounds.height * 0.08 + Math.random() * (bounds.height * 0.25),
+    speed: speed,
     colors: colorSet,
+    explosionType: explosionType,
     trail: [],
-    exploded: false
+    angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.25,
+    wobble: Math.random() * 0.015
   }
 }
 
-function createParticle(x, y, colors) {
-  const angle = Math.random() * Math.PI * 2
-  const speed = 100 + Math.random() * 200
-  const type = Math.random() // For variety in particle behavior
+function createParticle(x, y, colors, explosionType, angle, speed) {
+  // Adjust particle behavior based on explosion type
+  let trailLength = 8
+  let drag = 0.985
+  let baseDecay = 0.006 + Math.random() * 0.004
 
-  // At high intensity (2.0+), particles decay faster to prevent screen coverage
-  // Base decay: 0.004-0.01 (~100-250 frames lifetime)
-  // High intensity: up to 3x faster decay
-  let baseDecay = 0.004 + Math.random() * 0.006
+  if (explosionType === 'willow') {
+    trailLength = 15
+    drag = 0.975
+    baseDecay *= 0.7
+  } else if (explosionType === 'crackle') {
+    trailLength = 4
+    speed *= 1.3
+    baseDecay *= 1.5
+  } else if (explosionType === 'peony') {
+    trailLength = 10
+    drag = 0.98
+  }
+
+  // Intensity-based decay adjustment
   if (fireworksIntensity > 1.5) {
-    const intensityMultiplier = 1 + (fireworksIntensity - 1.5) * 0.8 // Scale up decay at high intensity
-    baseDecay *= intensityMultiplier
+    baseDecay *= 1 + (fireworksIntensity - 1.5) * 0.6
   }
 
   return {
@@ -2602,13 +2702,15 @@ function createParticle(x, y, colors) {
     y: y,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
-    color: colors[Math.floor(Math.random() * colors.length)], // Now in "r,g,b" format
+    colors: colors,
     life: 1.0,
     decay: baseDecay,
-    size: 2.5 + Math.random() * 2.5,
-    type: type,
-    sparkle: Math.random() > 0.7, // Some particles sparkle
-    trail: type > 0.6 ? [] : null // Some particles have trails
+    size: 2 + Math.random() * 2,
+    drag: drag,
+    trail: [],
+    trailLength: trailLength,
+    twinkle: Math.random() > 0.6,
+    twinkleSpeed: 5 + Math.random() * 10
   }
 }
 
@@ -2617,23 +2719,55 @@ function launchRocket() {
 }
 
 function explodeRocket(rocket) {
-  // Create explosion particles
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    particles.push(createParticle(rocket.x, rocket.y, rocket.colors))
+  const { x, y, colors, explosionType } = rocket
+  const count = explosionType === 'ring' ? 60 : PARTICLE_COUNT
+
+  if (explosionType === 'ring') {
+    // Ring explosion - particles in a circle
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2
+      const speed = 140 + Math.random() * 40
+      particles.push(createParticle(x, y, colors, explosionType, angle, speed))
+    }
+    // Inner ring
+    for (let i = 0; i < count / 2; i++) {
+      const angle = (i / (count / 2)) * Math.PI * 2
+      const speed = 80 + Math.random() * 30
+      particles.push(createParticle(x, y, colors, explosionType, angle, speed))
+    }
+  } else if (explosionType === 'starburst') {
+    // Starburst - radial lines with gaps
+    const arms = 8 + Math.floor(Math.random() * 6)
+    for (let arm = 0; arm < arms; arm++) {
+      const baseAngle = (arm / arms) * Math.PI * 2
+      for (let i = 0; i < 12; i++) {
+        const angle = baseAngle + (Math.random() - 0.5) * 0.15
+        const speed = 60 + i * 15 + Math.random() * 20
+        particles.push(createParticle(x, y, colors, explosionType, angle, speed))
+      }
+    }
+  } else {
+    // Starburst/willow/peony/crackle - spherical burst
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 80 + Math.random() * 140
+      particles.push(createParticle(x, y, colors, explosionType, angle, speed))
+    }
   }
 
-  // Create a secondary ring explosion sometimes
-  if (Math.random() > 0.5) {
+  // Secondary sparkle burst for some types
+  if (explosionType === 'peony' || explosionType === 'willow') {
     setTimeout(() => {
       if (!isFireworksEnabled) return
-      for (let i = 0; i < 30; i++) {
-        const p = createParticle(rocket.x, rocket.y, rocket.colors)
-        p.vx *= 0.5
-        p.vy *= 0.5
-        p.decay *= 1.5
+      for (let i = 0; i < 25; i++) {
+        const angle = Math.random() * Math.PI * 2
+        const speed = 40 + Math.random() * 60
+        const p = createParticle(x, y, colors, 'crackle', angle, speed)
+        p.decay *= 2
+        p.size *= 0.6
         particles.push(p)
       }
-    }, 100)
+    }, 150)
   }
 }
 
@@ -2642,14 +2776,15 @@ function updateFireworks(dt) {
   for (let i = rockets.length - 1; i >= 0; i--) {
     const rocket = rockets[i]
 
-    // Add trail
+    // Add trail point
     rocket.trail.push({ x: rocket.x, y: rocket.y, life: 1 })
-    if (rocket.trail.length > 10) rocket.trail.shift()
+    if (rocket.trail.length > 20) rocket.trail.shift()
 
-    // Move rocket up
-    rocket.y -= rocket.speed * dt
-    // Slight wobble
-    rocket.x += Math.sin(rocket.y * 0.05) * 0.5
+    // Move rocket with slight curve
+    const vx = Math.cos(rocket.angle) * rocket.speed
+    const vy = Math.sin(rocket.angle) * rocket.speed
+    rocket.x += vx * dt + Math.sin(rocket.y * rocket.wobble) * 0.8
+    rocket.y += vy * dt
 
     // Check if reached target
     if (rocket.y <= rocket.targetY) {
@@ -2659,7 +2794,7 @@ function updateFireworks(dt) {
 
     // Fade trail
     for (const t of rocket.trail) {
-      t.life -= dt * 3
+      t.life -= dt * 2.5
     }
   }
 
@@ -2667,11 +2802,13 @@ function updateFireworks(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i]
 
-    // Add trail for trailing particles
-    if (p.trail) {
-      p.trail.push({ x: p.x, y: p.y, life: p.life * 0.5 })
-      if (p.trail.length > 5) p.trail.shift()
+    // Add trail point
+    if (p.trail.length === 0 ||
+        Math.abs(p.x - p.trail[p.trail.length - 1].x) > 2 ||
+        Math.abs(p.y - p.trail[p.trail.length - 1].y) > 2) {
+      p.trail.push({ x: p.x, y: p.y, life: p.life })
     }
+    while (p.trail.length > p.trailLength) p.trail.shift()
 
     // Apply velocity
     p.x += p.vx * dt
@@ -2680,9 +2817,9 @@ function updateFireworks(dt) {
     // Apply gravity
     p.vy += GRAVITY * dt
 
-    // Apply air resistance
-    p.vx *= 0.99
-    p.vy *= 0.99
+    // Apply drag
+    p.vx *= p.drag
+    p.vy *= p.drag
 
     // Decay life
     p.life -= p.decay
@@ -2704,18 +2841,15 @@ function renderFireworks() {
   // Clear canvas completely (transparent)
   fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
 
-  // Launch new rockets (respects intensity)
+  // Launch new rockets
   if (now > nextLaunchTime && fireworksIntensity > 0) {
-    // Number of rockets based on intensity
     const baseRockets = Math.ceil(fireworksIntensity)
     for (let i = 0; i < baseRockets; i++) {
       if (Math.random() < fireworksIntensity) launchRocket()
     }
-    // Extra rockets at high intensity
     if (fireworksIntensity > 1.5 && Math.random() > 0.5) launchRocket()
     if (fireworksIntensity > 2 && Math.random() > 0.3) launchRocket()
 
-    // Faster launches at higher intensity
     const intervalMultiplier = Math.max(0.3, 1 / fireworksIntensity)
     nextLaunchTime = now + (LAUNCH_INTERVAL_MIN + Math.random() * (LAUNCH_INTERVAL_MAX - LAUNCH_INTERVAL_MIN)) * intervalMultiplier
   }
@@ -2723,22 +2857,32 @@ function renderFireworks() {
   // Update physics
   updateFireworks(dt)
 
-  // Draw rocket trails
+  // Draw rocket trails as streaking lines
   for (const rocket of rockets) {
-    for (let i = 0; i < rocket.trail.length; i++) {
-      const t = rocket.trail[i]
-      if (t.life > 0) {
-        const alpha = t.life * (i / rocket.trail.length)
-        fireworksCtx.beginPath()
-        fireworksCtx.arc(t.x, t.y, 2 * alpha + 1, 0, Math.PI * 2)
-        fireworksCtx.fillStyle = `rgba(255, 200, 100, ${alpha * 0.8})`
-        fireworksCtx.fill()
+    if (rocket.trail.length > 1) {
+      fireworksCtx.beginPath()
+      fireworksCtx.moveTo(rocket.trail[0].x, rocket.trail[0].y)
+      for (let i = 1; i < rocket.trail.length; i++) {
+        fireworksCtx.lineTo(rocket.trail[i].x, rocket.trail[i].y)
       }
+      fireworksCtx.lineTo(rocket.x, rocket.y)
+
+      const gradient = fireworksCtx.createLinearGradient(
+        rocket.trail[0].x, rocket.trail[0].y,
+        rocket.x, rocket.y
+      )
+      gradient.addColorStop(0, 'rgba(255, 200, 100, 0)')
+      gradient.addColorStop(0.5, 'rgba(255, 220, 150, 0.4)')
+      gradient.addColorStop(1, 'rgba(255, 255, 200, 0.9)')
+
+      fireworksCtx.strokeStyle = gradient
+      fireworksCtx.lineWidth = 2
+      fireworksCtx.stroke()
     }
 
-    // Draw rocket head with glow
-    fireworksCtx.shadowBlur = 10
-    fireworksCtx.shadowColor = '#ffcc66'
+    // Draw rocket head with bright glow
+    fireworksCtx.shadowBlur = 15
+    fireworksCtx.shadowColor = '#ffffcc'
     fireworksCtx.beginPath()
     fireworksCtx.arc(rocket.x, rocket.y, 3, 0, Math.PI * 2)
     fireworksCtx.fillStyle = '#fff'
@@ -2746,31 +2890,56 @@ function renderFireworks() {
     fireworksCtx.shadowBlur = 0
   }
 
-  // Draw particles
+  // Draw particles with trails
   for (const p of particles) {
-    // Draw trail
-    if (p.trail) {
-      for (let i = 0; i < p.trail.length; i++) {
-        const t = p.trail[i]
-        const alpha = t.life * (i / p.trail.length) * 0.5
-        fireworksCtx.beginPath()
-        fireworksCtx.arc(t.x, t.y, p.size * 0.5, 0, Math.PI * 2)
-        fireworksCtx.fillStyle = `rgba(${p.color}, ${alpha})`
-        fireworksCtx.fill()
+    const colors = p.colors
+
+    // Draw trail as gradient line
+    if (p.trail.length > 1) {
+      fireworksCtx.beginPath()
+      fireworksCtx.moveTo(p.trail[0].x, p.trail[0].y)
+      for (let i = 1; i < p.trail.length; i++) {
+        fireworksCtx.lineTo(p.trail[i].x, p.trail[i].y)
       }
+      fireworksCtx.lineTo(p.x, p.y)
+
+      const trailAlpha = p.life * 0.6
+      fireworksCtx.strokeStyle = `rgba(${colors.outer}, ${trailAlpha * 0.4})`
+      fireworksCtx.lineWidth = Math.max(1, p.size * p.life * 0.8)
+      fireworksCtx.lineCap = 'round'
+      fireworksCtx.stroke()
     }
 
-    // Sparkle effect
-    const size = p.sparkle ? p.size * (0.5 + Math.random() * 1) : p.size
-    const particleSize = Math.max(0.5, size * p.life)
+    // Twinkle effect
+    let twinkleMult = 1
+    if (p.twinkle) {
+      twinkleMult = 0.5 + 0.5 * Math.sin(now * p.twinkleSpeed * 0.001)
+    }
 
-    // Draw particle with glow
-    fireworksCtx.shadowBlur = 8
-    fireworksCtx.shadowColor = `rgba(${p.color}, ${p.life})`
+    const particleSize = Math.max(0.5, p.size * p.life * twinkleMult)
+    const alpha = p.life * twinkleMult
+
+    // Draw particle with layered glow
+    // Outer glow
+    fireworksCtx.shadowBlur = 12
+    fireworksCtx.shadowColor = `rgba(${colors.outer}, ${alpha * 0.8})`
+    fireworksCtx.beginPath()
+    fireworksCtx.arc(p.x, p.y, particleSize * 1.5, 0, Math.PI * 2)
+    fireworksCtx.fillStyle = `rgba(${colors.outer}, ${alpha * 0.3})`
+    fireworksCtx.fill()
+
+    // Mid layer
     fireworksCtx.beginPath()
     fireworksCtx.arc(p.x, p.y, particleSize, 0, Math.PI * 2)
-    fireworksCtx.fillStyle = `rgba(${p.color}, ${p.life})`
+    fireworksCtx.fillStyle = `rgba(${colors.mid}, ${alpha * 0.7})`
     fireworksCtx.fill()
+
+    // Core (brightest)
+    fireworksCtx.beginPath()
+    fireworksCtx.arc(p.x, p.y, particleSize * 0.5, 0, Math.PI * 2)
+    fireworksCtx.fillStyle = `rgba(${colors.core}, ${alpha})`
+    fireworksCtx.fill()
+
     fireworksCtx.shadowBlur = 0
   }
 
@@ -2812,9 +2981,12 @@ function stopFireworks() {
     cancelAnimationFrame(fireworksAnimationId)
     fireworksAnimationId = null
   }
-  if (fireworksCanvas) {
-    fireworksCanvas.style.display = 'none'
+  if (fireworksCanvas && fireworksCtx) {
+    // Clear with black first to remove fade trails, then clear to transparent
+    fireworksCtx.fillStyle = 'rgba(0, 0, 0, 1)'
+    fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
     fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height)
+    fireworksCanvas.style.display = 'none'
   }
   rockets = []
   particles = []
@@ -3367,8 +3539,41 @@ function updateSnowflakes(dt) {
   }
 }
 
+let snowOpacity = 1
+let snowFadeDirection = 0 // 0 = none, 1 = fading in, -1 = fading out
+let snowFadeCallback = null
+const SNOW_FADE_SPEED = 0.3 // Opacity change per second
+
 function renderSnow() {
-  if (!snowCtx || !isSnowEnabled) return
+  if (!snowCtx) return
+
+  // Handle fade in/out
+  if (snowFadeDirection !== 0) {
+    const fadeAmount = SNOW_FADE_SPEED / 60 // Assuming ~60fps
+    if (snowFadeDirection > 0) {
+      // Fading in
+      snowOpacity = Math.min(1, snowOpacity + fadeAmount)
+      if (snowOpacity >= 1) {
+        snowFadeDirection = 0
+      }
+    } else {
+      // Fading out
+      snowOpacity = Math.max(0, snowOpacity - fadeAmount)
+      if (snowOpacity <= 0) {
+        snowFadeDirection = 0
+        if (snowFadeCallback) {
+          snowFadeCallback()
+          snowFadeCallback = null
+          return // Stop rendering after fade out complete
+        }
+      }
+    }
+    if (snowCanvas) {
+      snowCanvas.style.opacity = snowOpacity
+    }
+  }
+
+  if (!isSnowEnabled && snowFadeDirection === 0) return
 
   const now = performance.now()
   const dt = Math.min((now - lastSnowTime) / 1000, 0.1)
@@ -3411,6 +3616,7 @@ function startSnowEffect() {
       position: fixed;
       pointer-events: none;
       z-index: 2147483643;
+      transition: opacity 0.1s linear;
     `
     snowCtx = snowCanvas.getContext('2d')
     document.body.appendChild(snowCanvas)
@@ -3423,17 +3629,45 @@ function startSnowEffect() {
   snowCanvas.height = bounds.height
 
   snowCanvas.style.display = 'block'
+
+  // Start with low opacity and fade in
+  snowOpacity = 0.1
+  snowCanvas.style.opacity = snowOpacity
+  snowFadeDirection = 1 // Fading in
+  snowFadeCallback = null
+
   initSnowflakes()
   renderSnow()
 }
 
-function stopSnowEffect() {
-  if (snowAnimationId) {
-    cancelAnimationFrame(snowAnimationId)
-    snowAnimationId = null
+function stopSnowEffect(immediate = false) {
+  if (immediate) {
+    // Immediate stop (for cleanup)
+    if (snowAnimationId) {
+      cancelAnimationFrame(snowAnimationId)
+      snowAnimationId = null
+    }
+    if (snowCanvas) {
+      snowCanvas.style.display = 'none'
+      snowCanvas.style.opacity = '0'
+    }
+    snowOpacity = 0
+    snowFadeDirection = 0
+    return
   }
-  if (snowCanvas) {
-    snowCanvas.style.display = 'none'
+
+  // Gradual fade out
+  snowFadeDirection = -1
+  snowFadeCallback = () => {
+    if (snowAnimationId) {
+      cancelAnimationFrame(snowAnimationId)
+      snowAnimationId = null
+    }
+    if (snowCanvas) {
+      snowCanvas.style.display = 'none'
+    }
+    snowOpacity = 0
+    snowFadeDirection = 0
   }
 }
 
@@ -4155,6 +4389,697 @@ function checkMatterhornRoom() {
   }
 }
 
+const CASTLE_GARDENS_ID = 30
+
+function checkCastleGardensRoom() {
+  if (!hasDetectedRoomThisSession) return
+
+  // Show castle overlay in Castle Gardens
+  if (currentRoomId === CASTLE_GARDENS_ID) {
+    if (!isCastleOverlayActive) {
+      startCastleOverlay()
+    }
+  } else {
+    // Stop castle overlay when leaving Castle Gardens
+    if (isCastleOverlayActive) {
+      stopCastleOverlay()
+    }
+  }
+}
+
+// ============================================
+// KINGDOM SYNC EFFECTS
+// ============================================
+
+// Firefly Effect - glowing dots that pulse/twinkle
+function initFireflies() {
+  const width = fireflyCanvas ? fireflyCanvas.width : 800
+  const height = fireflyCanvas ? fireflyCanvas.height : 600
+  fireflies = []
+  for (let i = 0; i < FIREFLY_COUNT; i++) {
+    fireflies.push({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      size: 2 + Math.random() * 2,
+      pulseSpeed: 0.5 + Math.random() * 1.5,
+      pulsePhase: Math.random() * Math.PI * 2,
+      driftX: (Math.random() - 0.5) * 0.3,
+      driftY: (Math.random() - 0.5) * 0.3
+    })
+  }
+}
+
+function startFireflyEffect() {
+  const bounds = getGameCanvasBounds()
+
+  if (!fireflyCanvas) {
+    fireflyCanvas = document.createElement('canvas')
+    fireflyCanvas.id = 'vmkpal-firefly-canvas'
+    fireflyCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483642;
+    `
+    fireflyCtx = fireflyCanvas.getContext('2d')
+    document.body.appendChild(fireflyCanvas)
+  }
+
+  // Apply bounds
+  fireflyCanvas.style.left = bounds.left + 'px'
+  fireflyCanvas.style.top = bounds.top + 'px'
+  fireflyCanvas.width = bounds.width
+  fireflyCanvas.height = bounds.height
+
+  fireflyCanvas.style.display = 'block'
+  isFirefliesActive = true
+  initFireflies()
+  renderFireflies()
+  console.log('MyVMK Genie: Started firefly effect')
+}
+
+function renderFireflies() {
+  if (!fireflyCtx || !isFirefliesActive) return
+
+  const now = performance.now() / 1000
+  const width = fireflyCanvas.width
+  const height = fireflyCanvas.height
+
+  fireflyCtx.clearRect(0, 0, width, height)
+
+  for (const fly of fireflies) {
+    // Pulse brightness using sine wave
+    const pulse = (Math.sin(now * fly.pulseSpeed + fly.pulsePhase) + 1) / 2
+    const alpha = 0.3 + pulse * 0.7
+
+    // Gentle drift
+    fly.x += fly.driftX
+    fly.y += fly.driftY
+
+    // Wrap around canvas bounds
+    if (fly.x < 0) fly.x = width
+    if (fly.x > width) fly.x = 0
+    if (fly.y < 0) fly.y = height
+    if (fly.y > height) fly.y = 0
+
+    // Draw glowing dot
+    const gradient = fireflyCtx.createRadialGradient(
+      fly.x, fly.y, 0,
+      fly.x, fly.y, fly.size * 3
+    )
+    gradient.addColorStop(0, `rgba(255, 255, 150, ${alpha})`)
+    gradient.addColorStop(0.3, `rgba(200, 255, 100, ${alpha * 0.6})`)
+    gradient.addColorStop(1, 'rgba(100, 200, 50, 0)')
+
+    fireflyCtx.beginPath()
+    fireflyCtx.arc(fly.x, fly.y, fly.size * 3, 0, Math.PI * 2)
+    fireflyCtx.fillStyle = gradient
+    fireflyCtx.fill()
+  }
+
+  fireflyAnimationId = requestAnimationFrame(renderFireflies)
+}
+
+function stopFireflyEffect() {
+  if (fireflyAnimationId) {
+    cancelAnimationFrame(fireflyAnimationId)
+    fireflyAnimationId = null
+  }
+  if (fireflyCanvas) {
+    fireflyCanvas.style.display = 'none'
+  }
+  isFirefliesActive = false
+  console.log('MyVMK Genie: Stopped firefly effect')
+}
+
+// Fog Effect - ambient fog overlay covering full canvas
+function startFogEffect(isLight = false) {
+  if (isFogActive) return
+  isFogActive = true
+
+  const bounds = getGameCanvasBounds()
+  const baseOpacity = isLight ? 0.15 : 0.25
+
+  // Add keyframes for cloud drift animation
+  if (!document.getElementById('vmkpal-fog-keyframes')) {
+    const style = document.createElement('style')
+    style.id = 'vmkpal-fog-keyframes'
+    style.textContent = `
+      @keyframes vmkpal-fog-drift-1 {
+        0% { transform: translateX(-60px) translateY(0); }
+        50% { transform: translateX(80px) translateY(-15px); }
+        100% { transform: translateX(-60px) translateY(0); }
+      }
+      @keyframes vmkpal-fog-drift-2 {
+        0% { transform: translateX(70px) translateY(10px); }
+        50% { transform: translateX(-90px) translateY(-8px); }
+        100% { transform: translateX(70px) translateY(10px); }
+      }
+      @keyframes vmkpal-fog-drift-3 {
+        0% { transform: translateX(-50px) translateY(-12px); }
+        50% { transform: translateX(100px) translateY(18px); }
+        100% { transform: translateX(-50px) translateY(-12px); }
+      }
+      @keyframes vmkpal-fog-drift-4 {
+        0% { transform: translateX(80px) translateY(5px); }
+        50% { transform: translateX(-70px) translateY(-20px); }
+        100% { transform: translateX(80px) translateY(5px); }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  fogOverlay = document.createElement('div')
+  fogOverlay.id = 'vmkpal-fog-overlay'
+  fogOverlay.style.cssText = `
+    position: fixed;
+    left: ${bounds.left}px;
+    top: ${bounds.top}px;
+    width: ${bounds.width}px;
+    height: ${bounds.height}px;
+    pointer-events: none;
+    z-index: 2147483635;
+    opacity: 0;
+    transition: opacity 2s ease-in;
+    overflow: hidden;
+    background: linear-gradient(to bottom,
+      rgba(200, 210, 220, ${baseOpacity * 0.1}) 0%,
+      rgba(200, 210, 220, ${baseOpacity * 0.2}) 50%,
+      rgba(210, 220, 230, ${baseOpacity * 0.3}) 100%);
+  `
+
+  // Create wispy cloud streaks across the canvas
+  const cloudWisps = [
+    // Top layer wisps
+    { x: '-25%', y: '2%', w: '85%', h: '10%', opacity: baseOpacity * 0.6, duration: 8, anim: 1 },
+    { x: '40%', y: '5%', w: '75%', h: '8%', opacity: baseOpacity * 0.5, duration: 10, anim: 2 },
+    { x: '-10%', y: '10%', w: '95%', h: '12%', opacity: baseOpacity * 0.7, duration: 7, anim: 3 },
+    { x: '20%', y: '15%', w: '80%', h: '9%', opacity: baseOpacity * 0.55, duration: 9, anim: 4 },
+    // Upper-mid wisps
+    { x: '-20%', y: '22%', w: '90%', h: '11%', opacity: baseOpacity * 0.65, duration: 6, anim: 1 },
+    { x: '35%', y: '26%', w: '85%', h: '8%', opacity: baseOpacity * 0.5, duration: 11, anim: 2 },
+    { x: '5%', y: '32%', w: '100%', h: '13%', opacity: baseOpacity * 0.75, duration: 8, anim: 3 },
+    { x: '-15%', y: '38%', w: '80%', h: '10%', opacity: baseOpacity * 0.6, duration: 9, anim: 4 },
+    // Mid wisps
+    { x: '25%', y: '42%', w: '90%', h: '12%', opacity: baseOpacity * 0.7, duration: 7, anim: 1 },
+    { x: '-5%', y: '48%', w: '85%', h: '9%', opacity: baseOpacity * 0.55, duration: 10, anim: 2 },
+    { x: '30%', y: '52%', w: '95%', h: '14%', opacity: baseOpacity * 0.8, duration: 8, anim: 3 },
+    { x: '-20%', y: '58%', w: '80%', h: '11%', opacity: baseOpacity * 0.65, duration: 9, anim: 4 },
+    // Lower wisps
+    { x: '15%', y: '62%', w: '100%', h: '13%', opacity: baseOpacity * 0.75, duration: 6, anim: 1 },
+    { x: '-10%', y: '68%', w: '90%', h: '10%', opacity: baseOpacity * 0.6, duration: 10, anim: 2 },
+    { x: '25%', y: '72%', w: '85%', h: '15%', opacity: baseOpacity * 0.85, duration: 7, anim: 3 },
+    { x: '-15%', y: '78%', w: '95%', h: '12%', opacity: baseOpacity * 0.7, duration: 8, anim: 4 },
+    // Bottom wisps
+    { x: '10%', y: '82%', w: '100%', h: '14%', opacity: baseOpacity * 0.8, duration: 6, anim: 1 },
+    { x: '-5%', y: '88%', w: '90%', h: '16%', opacity: baseOpacity * 0.9, duration: 7, anim: 2 },
+    { x: '20%', y: '92%', w: '85%', h: '12%', opacity: baseOpacity * 0.75, duration: 8, anim: 3 },
+  ]
+
+  cloudWisps.forEach((wisp) => {
+    const wispDiv = document.createElement('div')
+    wispDiv.style.cssText = `
+      position: absolute;
+      left: ${wisp.x};
+      top: ${wisp.y};
+      width: ${wisp.w};
+      height: ${wisp.h};
+      pointer-events: none;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(220, 225, 235, ${wisp.opacity * 0.3}) 15%,
+        rgba(215, 220, 230, ${wisp.opacity}) 35%,
+        rgba(220, 225, 235, ${wisp.opacity * 0.8}) 65%,
+        rgba(215, 220, 230, ${wisp.opacity * 0.4}) 85%,
+        transparent 100%);
+      animation: vmkpal-fog-drift-${wisp.anim} ${wisp.duration}s ease-in-out infinite;
+      filter: blur(8px);
+      border-radius: 50%;
+    `
+    fogOverlay.appendChild(wispDiv)
+  })
+
+  document.body.appendChild(fogOverlay)
+
+  // Fade in
+  requestAnimationFrame(() => {
+    if (fogOverlay) fogOverlay.style.opacity = '1'
+  })
+  console.log('MyVMK Genie: Started fog effect', isLight ? '(light)' : '(normal)')
+}
+
+function stopFogEffect() {
+  if (!isFogActive || !fogOverlay) return
+  isFogActive = false
+
+  fogOverlay.style.opacity = '0'
+  const overlayToRemove = fogOverlay
+  fogOverlay = null
+  setTimeout(() => {
+    if (overlayToRemove && overlayToRemove.parentNode) {
+      overlayToRemove.remove()
+    }
+  }, 2000)
+  console.log('MyVMK Genie: Stopped fog effect')
+}
+
+// Castle Gardens Overlay - castle image in front of fireworks
+function startCastleOverlay() {
+  if (isCastleOverlayActive) return
+  isCastleOverlayActive = true
+
+  const bounds = getGameCanvasBounds()
+
+  castleOverlay = document.createElement('div')
+  castleOverlay.id = 'vmkpal-castle-overlay'
+  castleOverlay.style.cssText = `
+    position: fixed;
+    left: ${bounds.left}px;
+    top: ${bounds.top}px;
+    width: ${bounds.width}px;
+    height: ${bounds.height}px;
+    pointer-events: none;
+    z-index: 2147483646;
+    background-image: url('${chrome.runtime.getURL('castle-gardens.png')}');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 1s ease-in;
+  `
+  document.body.appendChild(castleOverlay)
+
+  requestAnimationFrame(() => {
+    if (castleOverlay) castleOverlay.style.opacity = '1'
+  })
+  console.log('MyVMK Genie: Started Castle Gardens overlay')
+}
+
+function stopCastleOverlay() {
+  if (!isCastleOverlayActive || !castleOverlay) return
+  isCastleOverlayActive = false
+
+  castleOverlay.style.opacity = '0'
+  const overlayToRemove = castleOverlay
+  castleOverlay = null
+  setTimeout(() => {
+    if (overlayToRemove && overlayToRemove.parentNode) {
+      overlayToRemove.remove()
+    }
+  }, 1000)
+  console.log('MyVMK Genie: Stopped Castle Gardens overlay')
+}
+
+// Map Button Overlay - detects when user clicks the globe/map icon on toolbar
+function startMapButtonOverlay(callback) {
+  if (mapButtonOverlay) return // Already active
+
+  onMapButtonClick = callback
+
+  const bounds = getGameCanvasBounds()
+  if (!bounds.found) {
+    console.log('MyVMK Genie: Cannot create map button overlay - game canvas not found')
+    return
+  }
+
+  // Globe icon position relative to game canvas
+  // At 800x600: globe is ~40px from left, ~30px from bottom, ~28x28px
+  // These are percentages of canvas size for scaling
+  const globeLeftPercent = 0.05  // 40/800 (moved left ~30px)
+  const globeBottomOffset = 30   // Fixed pixel offset from bottom (moved down)
+  const iconSize = 28
+
+  mapButtonOverlay = document.createElement('div')
+  mapButtonOverlay.id = 'vmkpal-map-button-overlay'
+  mapButtonOverlay.style.cssText = `
+    position: fixed;
+    left: ${bounds.left + (bounds.width * globeLeftPercent)}px;
+    top: ${bounds.top + bounds.height - globeBottomOffset}px;
+    width: ${iconSize}px;
+    height: ${iconSize}px;
+    cursor: pointer;
+    z-index: 2147483647;
+    background: transparent;
+  `
+
+  // Capture mousedown to detect click, then allow it to pass through
+  mapButtonOverlay.addEventListener('mousedown', (e) => {
+    console.log('MyVMK Genie: Map button clicked')
+    console.log('MyVMK Genie: onMapButtonClick callback exists:', !!onMapButtonClick)
+
+    // Fire our callback
+    if (onMapButtonClick) {
+      console.log('MyVMK Genie: Calling hideOverlaysForMap callback...')
+      try {
+        onMapButtonClick()
+        console.log('MyVMK Genie: Callback completed')
+      } catch (err) {
+        console.error('MyVMK Genie: Callback error:', err)
+      }
+    } else {
+      console.log('MyVMK Genie: No callback registered!')
+    }
+
+    // Allow click to pass through to the game
+    mapButtonOverlay.style.pointerEvents = 'none'
+
+    // Get the element underneath and dispatch a click to it
+    const elementBelow = document.elementFromPoint(e.clientX, e.clientY)
+    if (elementBelow) {
+      const clickEvent = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        button: e.button
+      })
+      elementBelow.dispatchEvent(clickEvent)
+    }
+
+    // Re-enable pointer events after a short delay
+    setTimeout(() => {
+      if (mapButtonOverlay) {
+        mapButtonOverlay.style.pointerEvents = 'auto'
+      }
+    }, 100)
+  })
+
+  document.body.appendChild(mapButtonOverlay)
+  console.log('MyVMK Genie: Map button overlay created')
+}
+
+function stopMapButtonOverlay() {
+  if (!mapButtonOverlay) return
+
+  mapButtonOverlay.remove()
+  mapButtonOverlay = null
+  onMapButtonClick = null
+  console.log('MyVMK Genie: Map button overlay removed')
+}
+
+function updateMapButtonOverlayPosition() {
+  if (!mapButtonOverlay) return
+
+  const bounds = getGameCanvasBounds()
+  if (!bounds.found) return
+
+  const globeLeftPercent = 0.05
+  const globeBottomOffset = 30
+
+  mapButtonOverlay.style.left = `${bounds.left + (bounds.width * globeLeftPercent)}px`
+  mapButtonOverlay.style.top = `${bounds.top + bounds.height - globeBottomOffset}px`
+}
+
+// Hide all overlays when map is opened
+function hideOverlaysForMap() {
+  console.log('MyVMK Genie: hideOverlaysForMap called')
+
+  // Only save state if this is the first time (not already in map mode)
+  // This prevents overwriting saved state with already-hidden state
+  if (!isMapOpen) {
+    overlaysHiddenForMap = {
+      rain: isRainEnabled,
+      snow: isSnowEnabled,
+      fireworks: isFireworksEnabled,
+      money: isMoneyRainEnabled,
+      emoji: isEmojiRainEnabled,
+      stars: isStarsOverlayEnabled,
+      night: isNightOverlayEnabled,
+      fireflies: isFirefliesActive,
+      fog: isFogActive,
+      kingdomSyncNight: isKingdomSyncNightActive,
+      castle: isCastleOverlayActive,
+      tinkerbell: isTinkerbellActive,
+      butterflies: isButterflyActive,
+      ghost: isGhostEffectActive,
+      spotlights: isSpotlightsEnabled
+    }
+    console.log('MyVMK Genie: Saved overlay state:', overlaysHiddenForMap)
+  }
+
+  isMapOpen = true
+  console.log('MyVMK Genie: Hiding overlays for map view')
+
+  // Stop all visual effects
+  if (isRainEnabled) {
+    stopRainEffect()
+    isRainEnabled = false
+  }
+  if (isSnowEnabled) {
+    stopSnowEffect()
+    isSnowEnabled = false
+  }
+  if (isFireworksEnabled) {
+    stopFireworks()
+    isFireworksEnabled = false
+  }
+  if (isMoneyRainEnabled) {
+    stopMoneyRain()
+    isMoneyRainEnabled = false
+  }
+  if (isEmojiRainEnabled) {
+    stopEmojiRain()
+    isEmojiRainEnabled = false
+  }
+  if (isStarsOverlayEnabled) {
+    const starsOverlay = document.getElementById('vmkpal-stars-overlay')
+    if (starsOverlay) starsOverlay.style.display = 'none'
+  }
+  if (isNightOverlayEnabled) {
+    stopNightOverlay()
+    isNightOverlayEnabled = false
+  }
+  if (isFirefliesActive) {
+    stopFireflyEffect()
+  }
+  if (isFogActive) {
+    stopFogEffect()
+  }
+  if (isKingdomSyncNightActive) {
+    stopKingdomSyncNight()
+  }
+  if (isCastleOverlayActive) {
+    stopCastleOverlay()
+  }
+  if (isTinkerbellActive) {
+    stopTinkerbellEffect()
+  }
+  if (isButterflyActive) {
+    stopButterflyEffect()
+  }
+  if (isGhostEffectActive) {
+    stopGhostEffect()
+  }
+  if (isSpotlightsEnabled) {
+    stopSpotlights()
+    isSpotlightsEnabled = false
+  }
+
+  console.log('MyVMK Genie: All overlays hidden for map')
+}
+
+// Restore overlays after map is closed (called when room is detected again)
+function restoreOverlaysAfterMap() {
+  if (!isMapOpen) return // Map wasn't open
+  isMapOpen = false
+
+  console.log('MyVMK Genie: Restoring overlays after map closed')
+
+  // Restore overlays that were active before map opened
+  if (overlaysHiddenForMap.rain) {
+    isRainEnabled = true
+    startRainEffect()
+  }
+  if (overlaysHiddenForMap.snow) {
+    isSnowEnabled = true
+    startSnowEffect()
+  }
+  if (overlaysHiddenForMap.fireworks) {
+    isFireworksEnabled = true
+    startFireworks()
+  }
+  if (overlaysHiddenForMap.money) {
+    isMoneyRainEnabled = true
+    startMoneyRain()
+  }
+  if (overlaysHiddenForMap.emoji) {
+    isEmojiRainEnabled = true
+    startEmojiRain()
+  }
+  if (overlaysHiddenForMap.stars) {
+    const starsOverlay = document.getElementById('vmkpal-stars-overlay')
+    if (starsOverlay) starsOverlay.style.display = ''
+  }
+  if (overlaysHiddenForMap.night) {
+    isNightOverlayEnabled = true
+    startNightOverlay()
+  }
+  if (overlaysHiddenForMap.spotlights) {
+    isSpotlightsEnabled = true
+    startSpotlights()
+  }
+
+  // Room-specific effects will be restored by checkRoomAmbientEffects
+  // (fireflies, fog, castle, tinkerbell, butterflies, ghost, kingdom sync night)
+
+  overlaysHiddenForMap = {}
+  console.log('MyVMK Genie: Overlays restored')
+}
+
+// Subtle Night Effect - lighter than regular night overlay
+function startKingdomSyncNight() {
+  if (isKingdomSyncNightActive) return
+  isKingdomSyncNightActive = true
+
+  const bounds = getGameCanvasBounds()
+
+  // Create subtle night overlay (lighter than regular night)
+  let nightDiv = document.getElementById('vmkpal-kingdomsync-night')
+  if (!nightDiv) {
+    nightDiv = document.createElement('div')
+    nightDiv.id = 'vmkpal-kingdomsync-night'
+    nightDiv.style.cssText = `
+      position: fixed;
+      left: ${bounds.left}px;
+      top: ${bounds.top}px;
+      width: ${bounds.width}px;
+      height: ${bounds.height}px;
+      pointer-events: none;
+      z-index: 2147483629;
+      background: linear-gradient(
+        to bottom,
+        rgba(10, 15, 40, 0.2) 0%,
+        rgba(15, 20, 50, 0.25) 50%,
+        rgba(10, 15, 40, 0.2) 100%
+      );
+      mix-blend-mode: multiply;
+      opacity: 0;
+      transition: opacity 4s ease-in;
+    `
+    document.body.appendChild(nightDiv)
+  }
+
+  requestAnimationFrame(() => {
+    if (nightDiv) nightDiv.style.opacity = '1'
+  })
+  console.log('MyVMK Genie: Started Kingdom Sync night mode')
+}
+
+function stopKingdomSyncNight() {
+  if (!isKingdomSyncNightActive) return
+  isKingdomSyncNightActive = false
+
+  const nightDiv = document.getElementById('vmkpal-kingdomsync-night')
+  if (nightDiv) {
+    nightDiv.style.opacity = '0'
+    setTimeout(() => {
+      const div = document.getElementById('vmkpal-kingdomsync-night')
+      if (div) div.remove()
+    }, 4000)
+  }
+  console.log('MyVMK Genie: Stopped Kingdom Sync night mode')
+}
+
+// Check if it's night time in Eastern timezone (8PM-6AM)
+function isKingdomSyncNightTime() {
+  const now = new Date()
+  const eastern = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const hour = eastern.getHours()
+  return hour >= 20 || hour < 6
+}
+
+function checkKingdomSyncNight() {
+  if (!isKingdomSyncEnabled) {
+    if (isKingdomSyncNightActive) stopKingdomSyncNight()
+    return
+  }
+
+  if (isKingdomSyncNightTime()) {
+    if (!isKingdomSyncNightActive) startKingdomSyncNight()
+  } else {
+    if (isKingdomSyncNightActive) stopKingdomSyncNight()
+  }
+}
+
+// Determine if rare effect should show (30% chance, cached per session)
+function shouldShowRareEffect(roomKey) {
+  if (kingdomSyncFireflyRooms.has(roomKey)) {
+    return kingdomSyncFireflyRooms.get(roomKey)
+  }
+  const showEffect = Math.random() < 0.3
+  kingdomSyncFireflyRooms.set(roomKey, showEffect)
+  return showEffect
+}
+
+// Main Kingdom Sync room check - called on room change
+function checkKingdomSyncEffects() {
+  if (!isKingdomSyncEnabled || !hasDetectedRoomThisSession) {
+    // If Kingdom Sync is disabled, stop effects
+    if (isFirefliesActive) stopFireflyEffect()
+    if (isFogActive) stopFogEffect()
+    return
+  }
+
+  const roomId = currentRoomId
+  const ROOMS = KINGDOM_SYNC_ROOMS
+
+  let showFireflies = false
+  let showFog = false
+  let isLightFog = false
+
+  // Frontierland Dock - Always fireflies
+  if (roomId === ROOMS.FRONTIERLAND_DOCK) {
+    showFireflies = true
+  }
+  // Frontierland Hub - Rare fireflies
+  else if (roomId === ROOMS.FRONTIERLAND_HUB) {
+    showFireflies = shouldShowRareEffect(roomId)
+  }
+  // Mark Twain Steamboat - Rare fireflies
+  else if (roomId === ROOMS.MARK_TWAIN_STEAMBOAT) {
+    showFireflies = shouldShowRareEffect(roomId)
+  }
+  // Africa (both room IDs) - Rare fireflies
+  else if (ROOMS.AFRICA.includes(roomId)) {
+    showFireflies = shouldShowRareEffect(roomId)
+  }
+  // Pixar Pier - Fireflies only at night (8PM-6AM), rare light fog
+  else if (roomId === ROOMS.PIXAR_PIER) {
+    if (isKingdomSyncNightTime()) {
+      showFireflies = true
+      showFog = shouldShowRareEffect(roomId + '_fog')
+      isLightFog = true
+    }
+  }
+  // Pirate Treehouse - Always fireflies + fog
+  else if (roomId === ROOMS.PIRATE_TREEHOUSE) {
+    showFireflies = true
+    showFog = true
+  }
+  // Explorer's Tent - Always fireflies, rare light fog
+  else if (roomId === ROOMS.EXPLORERS_TENT) {
+    showFireflies = true
+    showFog = shouldShowRareEffect(roomId + '_fog')
+    isLightFog = true
+  }
+
+  // Apply firefly effect
+  if (showFireflies && !isFirefliesActive) {
+    startFireflyEffect()
+  } else if (!showFireflies && isFirefliesActive) {
+    stopFireflyEffect()
+  }
+
+  // Apply fog effect
+  if (showFog && !isFogActive) {
+    startFogEffect(isLightFog)
+  } else if (!showFog && isFogActive) {
+    stopFogEffect()
+  }
+
+  // Check night time
+  checkKingdomSyncNight()
+}
+
 // ============================================
 // SCREEN SHAKE EFFECT
 // ============================================
@@ -4538,6 +5463,80 @@ function renderRave() {
   raveCtx.shadowBlur = 0
 
   raveAnimationId = requestAnimationFrame(renderRave)
+}
+
+// ============================================
+// CASTLE TEST OVERLAY (DEV_MODE)
+// Test fixed percentage-based positioning
+// ============================================
+
+let castleTestOverlay = null
+
+function toggleCastleTestOverlay() {
+  isCastleTestOverlayEnabled = !isCastleTestOverlayEnabled
+
+  if (isCastleTestOverlayEnabled) {
+    createCastleTestOverlay()
+    showNotification('🏰 Castle overlay enabled', 'success')
+  } else {
+    removeCastleTestOverlay()
+    showNotification('🏰 Castle overlay disabled', 'info')
+  }
+}
+
+function createCastleTestOverlay() {
+  if (castleTestOverlay) return
+
+  const bounds = getGameCanvasBounds()
+  console.log('MyVMK Genie: Creating castle overlay, canvas bounds:', bounds)
+
+  castleTestOverlay = document.createElement('div')
+  castleTestOverlay.id = 'vmkpal-castle-test-overlay'
+  castleTestOverlay.style.cssText = `
+    position: fixed;
+    pointer-events: none;
+    z-index: 2147483647;
+    background-image: url('${chrome.runtime.getURL('castle-gardens.png')}');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  `
+
+  document.body.appendChild(castleTestOverlay)
+  updateCastleTestOverlayPosition()
+}
+
+function updateCastleTestOverlayPosition() {
+  if (!castleTestOverlay) return
+
+  const bounds = getGameCanvasBounds()
+
+  // Castle position as percentage of game canvas
+  // Adjust these values to match the castle location in your screenshot
+  const leftPercent = 0.02    // 2% from left edge
+  const topPercent = 0.03     // 3% from top
+  const widthPercent = 0.50   // 50% of canvas width
+  const heightPercent = 0.75  // 75% of canvas height
+
+  const left = bounds.left + bounds.width * leftPercent
+  const top = bounds.top + bounds.height * topPercent
+  const width = bounds.width * widthPercent
+  const height = bounds.height * heightPercent
+
+  console.log('MyVMK Genie: Castle overlay position:', { left, top, width, height, bounds })
+
+  castleTestOverlay.style.left = left + 'px'
+  castleTestOverlay.style.top = top + 'px'
+  castleTestOverlay.style.width = width + 'px'
+  castleTestOverlay.style.height = height + 'px'
+}
+
+function removeCastleTestOverlay() {
+  if (castleTestOverlay) {
+    castleTestOverlay.remove()
+    castleTestOverlay = null
+  }
+  isCastleTestOverlayEnabled = false
 }
 
 // ============================================
@@ -5281,7 +6280,7 @@ function updateNightOverlayBounds(darker = false) {
     width: ${bounds.width}px;
     height: ${bounds.height}px;
     pointer-events: none;
-    z-index: 2147483630;
+    z-index: 2147483647;
     background: linear-gradient(
       to bottom,
       rgba(5, 10, 30, ${opacity1}) 0%,
@@ -6131,6 +7130,81 @@ function createSettingsPanel() {
   themeSection.appendChild(themeGrid)
   div.appendChild(themeSection)
 
+  // Kingdom Sync Toggle
+  const kingdomSyncSection = document.createElement('div')
+  kingdomSyncSection.style.cssText = `
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  `
+  kingdomSyncSection.addEventListener('mouseenter', () => {
+    kingdomSyncSection.style.background = 'rgba(255,255,255,0.1)'
+  })
+  kingdomSyncSection.addEventListener('mouseleave', () => {
+    kingdomSyncSection.style.background = 'rgba(255,255,255,0.05)'
+  })
+
+  const kingdomSyncIcon = document.createElement('img')
+  kingdomSyncIcon.src = chrome.runtime.getURL('genie-kingdomsync-logo.png')
+  kingdomSyncIcon.style.cssText = 'width: 40px; height: 40px; border-radius: 8px;'
+
+  const kingdomSyncText = document.createElement('div')
+  kingdomSyncText.style.cssText = 'flex: 1;'
+  kingdomSyncText.innerHTML = `
+    <div style="font-weight: 600; color: white;">Kingdom Sync</div>
+    <div style="font-size: 11px; color: rgba(255,255,255,0.5);">Enhanced ambient effects & night mode</div>
+  `
+
+  const kingdomSyncToggleBtn = document.createElement('div')
+  kingdomSyncToggleBtn.style.cssText = `
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+  `
+
+  function updateKingdomSyncToggle() {
+    if (isKingdomSyncEnabled) {
+      kingdomSyncToggleBtn.textContent = 'ON'
+      kingdomSyncToggleBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)'
+      kingdomSyncToggleBtn.style.color = 'white'
+    } else {
+      kingdomSyncToggleBtn.textContent = 'OFF'
+      kingdomSyncToggleBtn.style.background = 'rgba(255,255,255,0.1)'
+      kingdomSyncToggleBtn.style.color = 'rgba(255,255,255,0.6)'
+    }
+  }
+  updateKingdomSyncToggle()
+
+  kingdomSyncSection.onclick = () => {
+    isKingdomSyncEnabled = !isKingdomSyncEnabled
+    chrome.storage.local.set({ isKingdomSyncEnabled })
+    updateKingdomSyncToggle()
+
+    if (isKingdomSyncEnabled) {
+      // Reset rare effect decisions for fresh experience
+      kingdomSyncFireflyRooms.clear()
+      checkKingdomSyncEffects()
+    } else {
+      // Stop all Kingdom Sync effects
+      stopFireflyEffect()
+      stopFogEffect()
+      stopKingdomSyncNight()
+    }
+  }
+
+  kingdomSyncSection.appendChild(kingdomSyncIcon)
+  kingdomSyncSection.appendChild(kingdomSyncText)
+  kingdomSyncSection.appendChild(kingdomSyncToggleBtn)
+  div.appendChild(kingdomSyncSection)
+
   // Test Mode Toggle (admin only - shows test events)
   const testModeToggle = createSettingToggle(
     '🧪',
@@ -6367,6 +7441,20 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.3',
+    date: '2025-03-20',
+    changes: [
+      'Kingdom Sync: Enhanced ambient experience with room-specific effects',
+      'Fireflies in Frontierland areas, fog in Adventureland',
+      'Subtle night overlay during evening hours (8PM-6AM Eastern)',
+      'Castle Gardens Overlay: Castle image with fireworks behind',
+      'Map Detection: Overlays hide when opening map, restore on room entry',
+      'Enhanced fireworks with multiple explosion types and better effects',
+      'Matterhorn snow now fades in/out smoothly',
+      'Fixed admin panel timezone parsing for event scheduling'
+    ]
+  },
   {
     version: '2.1.2',
     date: '2025-03-18',
@@ -7236,7 +8324,7 @@ function applyBackgroundColor() {
 
 // Load settings on startup
 function loadSettings() {
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled', 'isKingdomSyncEnabled'], (result) => {
     if (result.isSmallIconEnabled) {
       isSmallIconEnabled = result.isSmallIconEnabled
       setTimeout(applyIconSize, 100)
@@ -7258,6 +8346,9 @@ function loadSettings() {
     }
     if (result.isTestModeEnabled) {
       isTestModeEnabled = result.isTestModeEnabled
+    }
+    if (result.isKingdomSyncEnabled) {
+      isKingdomSyncEnabled = result.isKingdomSyncEnabled
     }
   })
 }
@@ -8976,11 +10067,14 @@ function createPrizeTrackerPanel() {
   // Create content area with iframe
   const content = document.createElement('div')
   content.id = 'vmkpal-prize-tracker-content'
-  content.style.cssText = 'flex: 1; display: flex; overflow: hidden;'
+  content.style.cssText = 'flex: 1; position: relative; overflow: hidden;'
 
   const iframe = document.createElement('iframe')
   iframe.src = PRIZE_TRACKER_EMBED_URL
   iframe.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: none;
@@ -9387,30 +10481,48 @@ function parseICSSimple(icsText) {
 
 // Simple ICS date parser - treats times as Eastern Time
 function parseICSDateSimple(dateStr) {
-  // Extract YYYYMMDD or YYYYMMDDTHHMMSS
-  const match = dateStr.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/)
+  // Match YYYYMMDD or YYYYMMDDTHHMMSS[Z]
+  const match = dateStr.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(?:\d{2})?(Z?))?/)
   if (!match) return null
 
-  const year = parseInt(match[1])
+  const year  = parseInt(match[1])
   const month = parseInt(match[2])
-  const day = parseInt(match[3])
-  const hour = match[4] ? parseInt(match[4]) : 0
-  const min = match[5] ? parseInt(match[5]) : 0
+  const day   = parseInt(match[3])
+  const hour  = match[4] ? parseInt(match[4]) : 0
+  const min   = match[5] ? parseInt(match[5]) : 0
+  const isUtc = match[6] === 'Z'
 
-  // Create date string in Eastern Time format and parse it
-  // This ensures the time is interpreted as Eastern Time
-  const etDateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`
+  let date
+  if (isUtc) {
+    // Explicit UTC suffix — parse directly as UTC
+    date = new Date(Date.UTC(year, month - 1, day, hour, min, 0))
+  } else {
+    // Floating or TZID=America/New_York time — always treat as Eastern Time.
+    // Use Intl.DateTimeFormat to determine the exact ET→UTC offset for this
+    // date (handles DST automatically; no hard-coded offsets).
+    const trialUtc = new Date(Date.UTC(year, month - 1, day, hour, min, 0))
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    })
+    const parts = fmt.formatToParts(trialUtc)
+    const etYear  = parseInt(parts.find(p => p.type === 'year').value)
+    const etMonth = parseInt(parts.find(p => p.type === 'month').value)
+    const etDay   = parseInt(parts.find(p => p.type === 'day').value)
+    const etHour  = parseInt(parts.find(p => p.type === 'hour').value) % 24
+    const etMin   = parseInt(parts.find(p => p.type === 'minute').value)
+    const trialEtMs = Date.UTC(etYear, etMonth - 1, etDay, etHour, etMin, 0)
+    const etOffsetMs = trialUtc.getTime() - trialEtMs // positive = ET lags behind UTC
+    date = new Date(trialUtc.getTime() + etOffsetMs)
+  }
 
-  // Create a Date object - this will be in local time
-  // For proper ET handling, we construct as if it's ET
-  const date = new Date(year, month - 1, day, hour, min, 0)
-
-  // Format for display
-  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric' }
-  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true }
+  // Format for display in Eastern Time
+  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }
+  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' }
 
   const dateStr2 = date.toLocaleDateString('en-US', dateOptions)
-  const timeStr = date.toLocaleTimeString('en-US', timeOptions) + ' ET'
+  const timeStr  = date.toLocaleTimeString('en-US', timeOptions) + ' ET'
 
   return {
     timestamp: date.getTime(),
@@ -9840,6 +10952,10 @@ async function init() {
     startRoomWatcher()
     startGenieEventSystem()
     startAmbientEffectWatcher()
+    // Start map button overlay to detect when user opens map
+    startMapButtonOverlay(() => {
+      hideOverlaysForMap()
+    })
     // Queue monitoring commented out for future reference
     // if (DEV_MODE) {
     //   startQueueMonitor()
@@ -9849,6 +10965,10 @@ async function init() {
   // Handle resize to update overlay positions to match game canvas
   window.addEventListener('resize', () => {
     updateOverlayBounds()
+    // Update castle test overlay if enabled
+    if (isCastleTestOverlayEnabled) {
+      updateCastleTestOverlayPosition()
+    }
   })
 
   // Handle visibility change - pause/resume effects when tab is hidden/visible
@@ -9867,6 +10987,7 @@ async function init() {
       if (ghostAnimationId) { cancelAnimationFrame(ghostAnimationId); ghostAnimationId = null }
       if (tinkerbellAnimationId) { cancelAnimationFrame(tinkerbellAnimationId); tinkerbellAnimationId = null }
       if (butterflyAnimationId) { cancelAnimationFrame(butterflyAnimationId); butterflyAnimationId = null }
+      if (fireflyAnimationId) { cancelAnimationFrame(fireflyAnimationId); fireflyAnimationId = null }
     } else {
       // Tab is visible - resume effects that were active
       console.log('MyVMK Genie: Tab visible - resuming effects')
@@ -9880,8 +11001,16 @@ async function init() {
       if (isGhostEffectActive && !ghostAnimationId) updateGhosts()
       if (isTinkerbellActive && !tinkerbellAnimationId) updateTinkerbell()
       if (isButterflyActive && !butterflyAnimationId) updateButterflies()
+      if (isFirefliesActive && !fireflyAnimationId) renderFireflies()
     }
   })
+
+  // Check Kingdom Sync night time every minute
+  setInterval(() => {
+    if (isKingdomSyncEnabled) {
+      checkKingdomSyncNight()
+    }
+  }, 60000)
 
   // Debug only in internal mode
   if (DEV_MODE) {

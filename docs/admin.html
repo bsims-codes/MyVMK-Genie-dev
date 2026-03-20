@@ -1208,6 +1208,42 @@
       return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    // Convert a date+time string entered as Eastern Time to a UTC ISO string.
+    // Uses Intl.DateTimeFormat to handle DST automatically — no hard-coded offsets.
+    function parseAsEasternTime(dateStr, timeStr) {
+      const [y, mo, d] = dateStr.split('-').map(Number);
+      const [h, m] = timeStr.split(':').map(Number);
+      // Treat the input as UTC first (trial), then measure how far ET is behind UTC
+      // at that moment, and shift by that offset to get the real UTC instant.
+      const trialUtc = new Date(Date.UTC(y, mo - 1, d, h, m, 0));
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      });
+      const parts = fmt.formatToParts(trialUtc);
+      const etYear  = parseInt(parts.find(p => p.type === 'year').value);
+      const etMonth = parseInt(parts.find(p => p.type === 'month').value);
+      const etDay   = parseInt(parts.find(p => p.type === 'day').value);
+      const etHour  = parseInt(parts.find(p => p.type === 'hour').value) % 24;
+      const etMin   = parseInt(parts.find(p => p.type === 'minute').value);
+      const trialEtMs = Date.UTC(etYear, etMonth - 1, etDay, etHour, etMin, 0);
+      const etOffsetMs = trialUtc.getTime() - trialEtMs; // positive = ET lags behind UTC
+      return new Date(trialUtc.getTime() + etOffsetMs).toISOString();
+    }
+
+    // Format a UTC ISO string for display in Eastern Time (for the edit forms).
+    function formatEtDate(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // YYYY-MM-DD
+    }
+    function formatEtTime(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+    }
+
     function formatEffects(event) {
       const effects = event.effects || (event.effect ? [event.effect] : []);
       let icons = effects.map(e => EFFECT_ICONS[e] || e);
@@ -1350,8 +1386,8 @@
       const startDate = new Date(event.startTime);
       document.getElementById('genie-title').value = event.title || '';
       document.getElementById('genie-desc').value = event.description || '';
-      document.getElementById('genie-date').value = startDate.toISOString().split('T')[0];
-      document.getElementById('genie-time').value = startDate.toTimeString().slice(0, 5);
+      document.getElementById('genie-date').value = formatEtDate(event.startTime);
+      document.getElementById('genie-time').value = formatEtTime(event.startTime);
       document.getElementById('genie-duration').value = event.durationMinutes || 5;
       setSelectedEffects(event.effects || event.effect);
       document.getElementById('genie-room').value = event.roomId || '';
@@ -1400,7 +1436,7 @@
         description: document.getElementById('genie-desc').value || undefined,
         roomId: roomId ? parseInt(roomId) : undefined,
         roomName: roomId ? ROOMS[roomId] : undefined,
-        startTime: new Date(`${date}T${time}:00`).toISOString(),
+        startTime: parseAsEasternTime(date, time),
         durationMinutes: parseInt(document.getElementById('genie-duration').value) || 5,
         effects: selectedEffects.length > 0 ? selectedEffects : undefined,
         includeTinkerbell: includeTinkerbell || undefined,
@@ -1430,8 +1466,8 @@
       document.getElementById('community-title').value = event.title || '';
       document.getElementById('community-desc').value = event.description || '';
       document.getElementById('community-submitter').value = event.submittedBy || '';
-      document.getElementById('community-date').value = startDate.toISOString().split('T')[0];
-      document.getElementById('community-time').value = startDate.toTimeString().slice(0, 5);
+      document.getElementById('community-date').value = formatEtDate(event.startTime);
+      document.getElementById('community-time').value = formatEtTime(event.startTime);
       document.getElementById('community-duration').value = event.durationMinutes || 30;
       document.getElementById('community-room').value = event.roomId || '';
       document.getElementById('community-audio').value = event.audioUrl || '';
@@ -1467,7 +1503,7 @@
         description: document.getElementById('community-desc').value || undefined,
         roomId: roomId ? parseInt(roomId) : undefined,
         roomName: roomId ? ROOMS[roomId] : undefined,
-        startTime: new Date(`${date}T${time}:00`).toISOString(),
+        startTime: parseAsEasternTime(date, time),
         durationMinutes: parseInt(document.getElementById('community-duration').value) || 30,
         audioUrl: document.getElementById('community-audio').value || undefined,
         submittedBy: document.getElementById('community-submitter').value || undefined,

@@ -58,7 +58,9 @@ const staticFiles = [
   'Tinkerbelle_Only.gif',
   'Butterfly1.gif',
   'Butterfly2.gif',
-  'Butterfly3.gif'
+  'Butterfly3.gif',
+  'genie-kingdomsync-logo.png',
+  'castle-gardens.png'
 ];
 
 // Transform Chrome manifest to Firefox manifest

@@ -50,9 +50,17 @@ const AUDIO_ROOM_MAP = {
   'vmk_snd_mars': { id: 75, land: 'Tomorrowland' },
   'vmk_snd_nautilus_grotto': { id: 82, land: 'Tomorrowland' },
   'vmk_snd_shipwreck': { id: 78, land: 'Tomorrowland' },
+
+  // Adventureland
+  'PTR': { id: 88, land: 'Adventureland' },
+  'vmk_snd_treehouse': { id: 36, land: 'Adventureland' },
+  'vmk_snd_explorers_tent': { id: 9, land: 'Adventureland' },
   
 
   // Animal Kingdom
   'vmk_snd_africa': { id: 299, land: 'Animal Kingdom' },
   'vmk_snd_folk': { id: 322, land: 'Animal Kingdom' },
+
+  // California Adventure
+  'vmk_snd_pixar_pier_entrance': { id: 300, land: 'California Adventure' },
 }

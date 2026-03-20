@@ -1,5 +1,26 @@
 # MyVMK Genie Changelog
 
+## 2.1.3
+
+### Features
+- **Kingdom Sync**: Enhanced ambient experience with room-specific effects
+  - Fireflies in Frontierland areas (Dock, Hub, Steamboat)
+  - Fireflies + fog in Adventureland (Pirate Treehouse, Explorer's Tent)
+  - Subtle night overlay during evening hours (8PM-6AM Eastern)
+- **Castle Gardens Overlay**: Castle image overlay in Castle Gardens room - fireworks appear behind the castle
+- **Map Detection**: Overlays automatically hide when opening the in-game map and restore when entering a room
+
+### Improvements
+- Enhanced fireworks with multiple explosion types (starburst, willow, peony, ring, crackle)
+- Fireworks now have better color gradients and trailing effects
+- Fireworks in Castle Gardens launch from behind the castle overlay
+- Matterhorn snow now fades in/out smoothly instead of appearing/disappearing abruptly
+- Night overlay now appears over the castle overlay for proper layering
+
+### Bug Fixes
+- Fixed admin panel timezone parsing for event scheduling (now correctly handles Eastern Time with DST)
+- Fixed room-specific effects persisting when navigating away
+
 ## 2.1.2
 
 ### Features
