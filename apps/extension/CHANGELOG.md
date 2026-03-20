@@ -9,6 +9,7 @@
   - Subtle night overlay during evening hours (8PM-6AM Eastern)
 - **Castle Gardens Overlay**: Castle image overlay in Castle Gardens room - fireworks appear behind the castle
 - **Map Detection**: Overlays automatically hide when opening the in-game map and restore when entering a room
+- **Hannah Montana Theme**: New unlockable theme - attend the Hannah Montana party to unlock!
 
 ### Improvements
 - Enhanced fireworks with multiple explosion types (starburst, willow, peony, ring, crackle)
@@ -16,6 +17,9 @@
 - Fireworks in Castle Gardens launch from behind the castle overlay
 - Matterhorn snow now fades in/out smoothly instead of appearing/disappearing abruptly
 - Night overlay now appears over the castle overlay for proper layering
+- Kingdom Sync toggle redesigned as clickable banner image
+- Theme selector icons now display full images without cropping
+- Smaller, more subtle fireflies
 
 ### Bug Fixes
 - Fixed admin panel timezone parsing for event scheduling (now correctly handles Eastern Time with DST)

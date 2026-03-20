@@ -214,7 +214,8 @@ let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
 let isDarkTheme = false // Dark theme toggle
-let unlockedThemes = [] // Themes unlocked by attending events: ['dark']
+let isHannahTheme = false // Hannah Montana theme toggle
+let unlockedThemes = [] // Themes unlocked by attending events: ['dark', 'hannah']
 let isTestModeEnabled = false // Show and trigger test events (admin only)
 let tickerIntervalId = null // Track ticker interval to prevent duplicates
 let manuallyDisabledEffects = new Set() // Track effects user manually disabled during an event
@@ -4420,7 +4421,7 @@ function initFireflies() {
     fireflies.push({
       x: Math.random() * width,
       y: Math.random() * height,
-      size: 2 + Math.random() * 2,
+      size: 1 + Math.random() * 1.5,
       pulseSpeed: 0.5 + Math.random() * 1.5,
       pulsePhase: Math.random() * Math.PI * 2,
       driftX: (Math.random() - 0.5) * 0.3,
@@ -5913,7 +5914,7 @@ function startGenieEvent(event) {
   if (event.unlockTheme && !unlockedThemes.includes(event.unlockTheme)) {
     unlockedThemes.push(event.unlockTheme)
     chrome.storage.local.set({ unlockedThemes })
-    const themeName = event.unlockTheme === 'dark' ? 'Dark' : event.unlockTheme === 'pink' ? 'Pink' : event.unlockTheme
+    const themeName = event.unlockTheme === 'dark' ? 'Dark' : event.unlockTheme === 'pink' ? 'Pink' : event.unlockTheme === 'hannah' ? 'Hannah Montana' : event.unlockTheme
     setTimeout(() => {
       showNotification(`🎁 You unlocked the ${themeName} theme!`, 'success', 4000, true)
     }, 2500) // Delay so it doesn't overlap with event notification
@@ -6073,7 +6074,7 @@ function animateCollectible(el, speed) {
 
 function handleCollectibleClick(collectible) {
   const themeId = collectible.unlockTheme
-  const themeName = themeId === 'dark' ? 'Dark' : themeId === 'pink' ? 'Pink' : themeId
+  const themeName = themeId === 'dark' ? 'Dark' : themeId === 'pink' ? 'Pink' : themeId === 'hannah' ? 'Hannah Montana' : themeId
 
   if (unlockedThemes.includes(themeId)) {
     // Already unlocked - show message
@@ -6993,6 +6994,7 @@ function createSettingsPanel() {
 
   // Theme Selector Section
   const isDarkUnlocked = unlockedThemes.includes('dark')
+  const isHannahUnlocked = unlockedThemes.includes('hannah')
 
   const themeSection = document.createElement('div')
   themeSection.style.cssText = `
@@ -7021,10 +7023,11 @@ function createSettingsPanel() {
   `
 
   // Helper to create theme option
-  function createThemeOption(id, imgSrc, isLocked = false) {
-    const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme) ||
+  function createThemeOption(id, imgSrc, isLocked = false, lockTooltip = '') {
+    const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme && !isHannahTheme) ||
                        (id === 'pink' && isPinkTheme) ||
-                       (id === 'dark' && isDarkTheme)
+                       (id === 'dark' && isDarkTheme) ||
+                       (id === 'hannah' && isHannahTheme)
 
     const option = document.createElement('div')
     option.dataset.themeId = id
@@ -7046,7 +7049,7 @@ function createSettingsPanel() {
     img.style.cssText = `
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       border-radius: 9px;
     `
     option.appendChild(img)
@@ -7068,7 +7071,7 @@ function createSettingsPanel() {
       option.appendChild(lockOverlay)
 
       // Tooltip for locked theme
-      option.title = 'Find the hidden item to unlock Dark Theme!'
+      option.title = lockTooltip || 'This theme is locked!'
     }
 
     // Hover effects
@@ -7091,14 +7094,21 @@ function createSettingsPanel() {
         if (id === 'default') {
           isPinkTheme = false
           isDarkTheme = false
+          isHannahTheme = false
         } else if (id === 'pink') {
           isPinkTheme = true
           isDarkTheme = false
+          isHannahTheme = false
         } else if (id === 'dark') {
           isPinkTheme = false
           isDarkTheme = true
+          isHannahTheme = false
+        } else if (id === 'hannah') {
+          isPinkTheme = false
+          isDarkTheme = false
+          isHannahTheme = true
         }
-        chrome.storage.local.set({ isPinkTheme, isDarkTheme })
+        chrome.storage.local.set({ isPinkTheme, isDarkTheme, isHannahTheme })
         applyTheme()
         updateThemeSelection()
       })
@@ -7111,9 +7121,10 @@ function createSettingsPanel() {
   function updateThemeSelection() {
     themeGrid.querySelectorAll('[data-theme-id]').forEach(opt => {
       const id = opt.dataset.themeId
-      const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme) ||
+      const isSelected = (id === 'default' && !isPinkTheme && !isDarkTheme && !isHannahTheme) ||
                          (id === 'pink' && isPinkTheme) ||
-                         (id === 'dark' && isDarkTheme)
+                         (id === 'dark' && isDarkTheme) ||
+                         (id === 'hannah' && isHannahTheme)
       opt.style.borderColor = isSelected ? '#8b5cf6' : 'transparent'
       opt.style.boxShadow = isSelected ? '0 0 15px rgba(139, 92, 246, 0.5)' : 'none'
     })
@@ -7122,66 +7133,49 @@ function createSettingsPanel() {
   // Create theme options
   const defaultTheme = createThemeOption('default', chrome.runtime.getURL('myvmk-genie.png'))
   const pinkTheme = createThemeOption('pink', chrome.runtime.getURL('myvmk-genie-lamp-logo-pink.png'))
-  const darkTheme = createThemeOption('dark', chrome.runtime.getURL('myvmk-genie-lamp-logo-jafar.png'), !isDarkUnlocked)
+  const darkTheme = createThemeOption('dark', chrome.runtime.getURL('myvmk-genie-lamp-logo-jafar.png'), !isDarkUnlocked, 'Find the hidden item to unlock Dark Theme!')
+  const hannahTheme = createThemeOption('hannah', chrome.runtime.getURL('hannah-logo.png'), !isHannahUnlocked, 'Attend the Hannah Montana party to unlock!')
 
   themeGrid.appendChild(defaultTheme)
   themeGrid.appendChild(pinkTheme)
   themeGrid.appendChild(darkTheme)
+  themeGrid.appendChild(hannahTheme)
   themeSection.appendChild(themeGrid)
   div.appendChild(themeSection)
 
-  // Kingdom Sync Toggle
+  // Kingdom Sync Toggle - full width image
   const kingdomSyncSection = document.createElement('div')
   kingdomSyncSection.style.cssText = `
     padding: 12px;
     background: rgba(255,255,255,0.05);
     border-radius: 8px;
     margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
     cursor: pointer;
     transition: background 0.2s;
   `
-  kingdomSyncSection.addEventListener('mouseenter', () => {
-    kingdomSyncSection.style.background = 'rgba(255,255,255,0.1)'
-  })
-  kingdomSyncSection.addEventListener('mouseleave', () => {
-    kingdomSyncSection.style.background = 'rgba(255,255,255,0.05)'
-  })
 
   const kingdomSyncIcon = document.createElement('img')
-  kingdomSyncIcon.src = chrome.runtime.getURL('genie-kingdomsync-logo.png')
-  kingdomSyncIcon.style.cssText = 'width: 40px; height: 40px; border-radius: 8px;'
-
-  const kingdomSyncText = document.createElement('div')
-  kingdomSyncText.style.cssText = 'flex: 1;'
-  kingdomSyncText.innerHTML = `
-    <div style="font-weight: 600; color: white;">Kingdom Sync</div>
-    <div style="font-size: 11px; color: rgba(255,255,255,0.5);">Enhanced ambient effects & night mode</div>
+  kingdomSyncIcon.src = chrome.runtime.getURL(isKingdomSyncEnabled ? 'genie-kingdomsync-logo-on.png' : 'genie-kingdomsync-logo.png')
+  kingdomSyncIcon.title = 'Kingdom Sync - Room ambiance & night mode'
+  kingdomSyncIcon.style.cssText = `
+    width: 80%;
+    display: block;
+    margin: 0 auto;
+    border-radius: 6px;
+    transition: transform 0.2s, opacity 0.2s;
+    opacity: ${isKingdomSyncEnabled ? '1' : '0.6'};
   `
-
-  const kingdomSyncToggleBtn = document.createElement('div')
-  kingdomSyncToggleBtn.style.cssText = `
-    padding: 6px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.2s;
-  `
+  kingdomSyncIcon.addEventListener('mouseenter', () => {
+    kingdomSyncIcon.style.transform = 'scale(1.02)'
+  })
+  kingdomSyncIcon.addEventListener('mouseleave', () => {
+    kingdomSyncIcon.style.transform = 'scale(1)'
+  })
 
   function updateKingdomSyncToggle() {
-    if (isKingdomSyncEnabled) {
-      kingdomSyncToggleBtn.textContent = 'ON'
-      kingdomSyncToggleBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)'
-      kingdomSyncToggleBtn.style.color = 'white'
-    } else {
-      kingdomSyncToggleBtn.textContent = 'OFF'
-      kingdomSyncToggleBtn.style.background = 'rgba(255,255,255,0.1)'
-      kingdomSyncToggleBtn.style.color = 'rgba(255,255,255,0.6)'
-    }
+    kingdomSyncIcon.src = chrome.runtime.getURL(isKingdomSyncEnabled ? 'genie-kingdomsync-logo-on.png' : 'genie-kingdomsync-logo.png')
+    kingdomSyncIcon.style.opacity = isKingdomSyncEnabled ? '1' : '0.6'
   }
-  updateKingdomSyncToggle()
 
   kingdomSyncSection.onclick = () => {
     isKingdomSyncEnabled = !isKingdomSyncEnabled
@@ -7201,8 +7195,6 @@ function createSettingsPanel() {
   }
 
   kingdomSyncSection.appendChild(kingdomSyncIcon)
-  kingdomSyncSection.appendChild(kingdomSyncText)
-  kingdomSyncSection.appendChild(kingdomSyncToggleBtn)
   div.appendChild(kingdomSyncSection)
 
   // Test Mode Toggle (admin only - shows test events)
@@ -7344,7 +7336,7 @@ function createSettingsPanel() {
   div.appendChild(bgSection)
 
   // Load saved settings to update UI
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'isHannahTheme', 'unlockedThemes', 'isTestModeEnabled'], (result) => {
     if (result.isSmallIconEnabled !== undefined) {
       isSmallIconEnabled = result.isSmallIconEnabled
       smallIconToggle.updateState()
@@ -7357,6 +7349,9 @@ function createSettingsPanel() {
     }
     if (result.isDarkTheme !== undefined) {
       isDarkTheme = result.isDarkTheme
+    }
+    if (result.isHannahTheme !== undefined) {
+      isHannahTheme = result.isHannahTheme
     }
     // Update theme selection UI
     updateThemeSelection()
@@ -7445,14 +7440,13 @@ const CHANGELOG = [
     version: '2.1.3',
     date: '2025-03-20',
     changes: [
-      'Kingdom Sync: Enhanced ambient experience with room-specific effects',
-      'Fireflies in Frontierland areas, fog in Adventureland',
-      'Subtle night overlay during evening hours (8PM-6AM Eastern)',
-      'Castle Gardens Overlay: Castle image with fireworks behind',
-      'Map Detection: Overlays hide when opening map, restore on room entry',
-      'Enhanced fireworks with multiple explosion types and better effects',
-      'Matterhorn snow now fades in/out smoothly',
-      'Fixed admin panel timezone parsing for event scheduling'
+      'Kingdom Sync: Room ambiance with fireflies, fog, and night mode',
+      'Castle Gardens Overlay: Fireworks appear behind the castle',
+      'Map Detection: Overlays hide when opening map',
+      'Hannah Montana Theme: New unlockable party theme!',
+      'Enhanced fireworks with multiple explosion types',
+      'Matterhorn snow fades in/out smoothly',
+      'Redesigned Kingdom Sync toggle and theme selector'
     ]
   },
   {
@@ -8219,6 +8213,16 @@ function updateIconState() {
 
 // Get current theme colors
 function getThemeColors() {
+  if (isHannahTheme) {
+    return {
+      gradient: 'linear-gradient(135deg, #7b1fa2, #e91e63)',
+      gradientRgba: 'linear-gradient(135deg, rgba(123, 31, 162, 0.98), rgba(233, 30, 99, 0.98))',
+      glow: '0 0 15px 5px rgba(233, 30, 99, 0.5), 0 0 30px 10px rgba(233, 30, 99, 0.3)',
+      bgImage: chrome.runtime.getURL('hannah-bg.png'),
+      logo: chrome.runtime.getURL('hannah-logo.png'),
+      bgGradient: 'linear-gradient(135deg, #7b1fa2 0%, #e91e63 50%, #7b1fa2 100%)'
+    }
+  }
   if (isDarkTheme) {
     return {
       gradient: 'linear-gradient(135deg, #1a1a1a, #2d2d2d)',
@@ -8324,7 +8328,7 @@ function applyBackgroundColor() {
 
 // Load settings on startup
 function loadSettings() {
-  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'unlockedThemes', 'isTestModeEnabled', 'isKingdomSyncEnabled'], (result) => {
+  chrome.storage.local.get(['isSmallIconEnabled', 'customBackgroundColor', 'isPinkTheme', 'isDarkTheme', 'isHannahTheme', 'unlockedThemes', 'isTestModeEnabled', 'isKingdomSyncEnabled'], (result) => {
     if (result.isSmallIconEnabled) {
       isSmallIconEnabled = result.isSmallIconEnabled
       setTimeout(applyIconSize, 100)
@@ -8335,6 +8339,10 @@ function loadSettings() {
     }
     if (result.isDarkTheme) {
       isDarkTheme = result.isDarkTheme
+      setTimeout(applyTheme, 100)
+    }
+    if (result.isHannahTheme) {
+      isHannahTheme = result.isHannahTheme
       setTimeout(applyTheme, 100)
     }
     if (result.unlockedThemes) {

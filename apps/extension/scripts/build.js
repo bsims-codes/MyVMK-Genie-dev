@@ -60,7 +60,10 @@ const staticFiles = [
   'Butterfly2.gif',
   'Butterfly3.gif',
   'genie-kingdomsync-logo.png',
-  'castle-gardens.png'
+  'genie-kingdomsync-logo-on.png',
+  'castle-gardens.png',
+  'hannah-logo.png',
+  'hannah-bg.png'
 ];
 
 // Transform Chrome manifest to Firefox manifest
