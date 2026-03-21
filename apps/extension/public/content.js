@@ -128,6 +128,25 @@ function getGameCanvasBounds() {
   }
 }
 
+// Factory function for creating overlay canvases
+// Returns { canvas, ctx, bounds } - canvas is appended to body
+function createOverlayCanvas(id, zIndex) {
+  const bounds = getGameCanvasBounds()
+  const canvas = document.createElement('canvas')
+  canvas.id = id
+  canvas.width = bounds.width
+  canvas.height = bounds.height
+  canvas.style.cssText = `
+    position: fixed;
+    left: ${bounds.left}px;
+    top: ${bounds.top}px;
+    pointer-events: none;
+    z-index: ${zIndex};
+  `
+  document.body.appendChild(canvas)
+  return { canvas, ctx: canvas.getContext('2d'), bounds }
+}
+
 // Update all overlay canvases to match game canvas bounds
 function updateOverlayBounds() {
   const bounds = getGameCanvasBounds()
@@ -188,12 +207,8 @@ function updateOverlayBounds() {
 
 let currentAudio = null
 let phrasesCache = {}
-// Queue detection feature - commented out for future reference
-// let lastQueuePosition = null
-// let queueAlertThreshold = 5 // Alert when position is this or lower
 let tesseractWorker = null
 let isOcrReady = false
-let ocrScanInterval = null
 let mediaRecorder = null
 let recordedChunks = []
 let isRecording = false
@@ -395,7 +410,7 @@ const KINGDOM_SYNC_ROOMS = {
   FRONTIERLAND_DOCK: 59,
   FRONTIERLAND_HUB: 58,
   MARK_TWAIN_STEAMBOAT: 68,
-  AFRICA: [70, 299],
+  AFRICA: new Set([70, 299]),
   PIXAR_PIER: 300,
   PIRATE_TREEHOUSE: 36,
   EXPLORERS_TENT: 9,
@@ -548,33 +563,7 @@ function runDebug() {
   const iframes = document.querySelectorAll('iframe')
   console.log('Iframes found:', iframes.length)
   iframes.forEach((f, i) => console.log(`  iframe ${i}:`, f.src || '(no src)'))
-
-  // Queue detection logging - commented out for future reference
-  // console.log('=== Queue Detection ===')
-  // const queueKeywords = ['queue', 'vmk pass', 'number', 'waiting', 'position']
-  // document.querySelectorAll('*').forEach(el => {
-  //   const text = el.textContent?.toLowerCase() || ''
-  //   if (queueKeywords.some(k => text.includes(k)) && el.children.length === 0) {
-  //     console.log('  Queue-related element:', el.tagName, el.className, `"${el.textContent?.trim()}"`)
-  //   }
-  // })
 }
-
-// Queue monitoring - commented out for future reference
-// function startQueueMonitor() {
-//   console.log('MyVMK Genie: Queue monitor active')
-//
-//   // Watch for DOM changes that might be queue-related (fallback)
-//   const queueObserver = new MutationObserver((mutations) => {
-//     checkForQueueInfo()
-//   })
-//
-//   queueObserver.observe(document.body, {
-//     childList: true,
-//     subtree: true,
-//     characterData: true
-//   })
-// }
 
 // Initialize Tesseract OCR (bundled with extension to bypass CSP)
 async function initOCR() {
@@ -614,206 +603,6 @@ async function captureScreen() {
   }
 }
 
-// Legacy function - kept for compatibility but now uses captureScreen
-function captureCanvas() {
-  // This function is now async and returns a promise via captureScreen
-  // Keeping for any code that might reference it
-  console.log('MyVMK Genie: captureCanvas called - use captureScreen instead')
-  return null
-}
-
-// Scan canvas for queue information using OCR - commented out for future reference
-// async function scanForQueue() {
-//   // Capture screen via background script (avoids tainted canvas)
-//   const imageData = await captureScreen()
-//   if (!imageData) {
-//     showNotification('Could not capture game screen', 'error')
-//     return null
-//   }
-//
-//   // Initialize OCR if needed
-//   if (!isOcrReady) {
-//     showNotification('Starting OCR engine...', 'info')
-//     const ready = await initOCR()
-//     if (!ready) {
-//       showNotification('OCR failed to initialize', 'error')
-//       return null
-//     }
-//   }
-//
-//   try {
-//     console.log('MyVMK Genie: Scanning for queue...')
-//
-//     const result = await tesseractWorker.recognize(imageData)
-//     const text = result.data.text
-//     console.log('MyVMK Genie: OCR result:', text)
-//
-//     // Look for queue patterns
-//     const patterns = [
-//       /you are number\s*(\d+)/i,
-//       /number\s*(\d+)\s*in queue/i,
-//       /number\s+(\d+)/i,
-//       /are number\s*(\d+)/i
-//     ]
-//
-//     for (const pattern of patterns) {
-//       const match = text.match(pattern)
-//       if (match && match[1]) {
-//         const position = parseInt(match[1])
-//         if (position > 0 && position < 1000) {
-//           console.log('MyVMK Genie: Queue position found:', position)
-//           handleQueuePosition(position)
-//           return position
-//         }
-//       }
-//     }
-//
-//     // Check if VMK Pass popup might be visible
-//     if (text.toLowerCase().includes('vmk') || text.toLowerCase().includes('queue') || text.toLowerCase().includes('pass')) {
-//       console.log('MyVMK Genie: Queue popup may be visible but number not detected')
-//     }
-//
-//     return null
-//   } catch (err) {
-//     console.error('MyVMK Genie: OCR scan failed:', err)
-//     return null
-//   }
-// }
-
-// Start automatic queue scanning - commented out for future reference
-// function startAutoScan(intervalMs = 5000) {
-//   stopAutoScan() // Clear any existing interval
-//
-//   console.log('MyVMK Genie: Starting auto-scan every', intervalMs, 'ms')
-//   showNotification('Auto-scanning started', 'success')
-//
-//   // Initial scan
-//   scanForQueue()
-//
-//   ocrScanInterval = setInterval(async () => {
-//     const position = await scanForQueue()
-//     if (position !== null) {
-//       console.log('MyVMK Genie: Auto-scan found position:', position)
-//     }
-//   }, intervalMs)
-// }
-
-// Stop automatic queue scanning - commented out for future reference
-// function stopAutoScan() {
-//   if (ocrScanInterval) {
-//     clearInterval(ocrScanInterval)
-//     ocrScanInterval = null
-//     console.log('MyVMK Genie: Auto-scan stopped')
-//   }
-// }
-
-
-// Check DOM for queue information - commented out for future reference
-// function checkForQueueInfo() {
-//   // Look for elements containing queue position
-//   // Pattern: "You are number X in queue" or similar
-//   const allText = document.body.innerText || ''
-//
-//   // Try to find queue position pattern
-//   const queuePatterns = [
-//     /you are number\s*(\d+)\s*in queue/i,
-//     /position[:\s]*(\d+)/i,
-//     /queue[:\s]*#?(\d+)/i,
-//     /number\s*(\d+)\s*in\s*(queue|line)/i
-//   ]
-//
-//   for (const pattern of queuePatterns) {
-//     const match = allText.match(pattern)
-//     if (match && match[1]) {
-//       const position = parseInt(match[1])
-//       handleQueuePosition(position)
-//       return
-//     }
-//   }
-//
-//   // Also look for specific elements
-//   document.querySelectorAll('*').forEach(el => {
-//     if (el.children.length > 0) return // Only leaf elements
-//
-//     const text = el.textContent?.trim() || ''
-//     // Look for just a number in a small element (might be the queue number)
-//     if (/^\d{1,3}$/.test(text)) {
-//       const parent = el.parentElement
-//       const parentText = parent?.textContent?.toLowerCase() || ''
-//       if (parentText.includes('queue') || parentText.includes('number')) {
-//         const position = parseInt(text)
-//         handleQueuePosition(position)
-//       }
-//     }
-//   })
-// }
-
-// Handle detected queue position - commented out for future reference
-// function handleQueuePosition(position) {
-//   if (position === lastQueuePosition) return // No change
-//
-//   console.log('MyVMK Genie: Queue position detected:', position)
-//   lastQueuePosition = position
-//
-//   // Update queue display if we have one
-//   updateQueueDisplay(position)
-//
-//   // Check if we should alert
-//   chrome.storage.local.get(['queueAlertThreshold', 'queueAlertsEnabled'], (result) => {
-//     const threshold = result.queueAlertThreshold || 5
-//     const enabled = result.queueAlertsEnabled !== false // Default to enabled
-//
-//     if (enabled && position <= threshold && position > 0) {
-//       // Alert the user!
-//       showQueueAlert(position)
-//     }
-//   })
-// }
-
-// Show queue alert - commented out for future reference
-// function showQueueAlert(position) {
-//   // Visual notification
-//   showNotification(`🎫 Queue position: ${position} - Get ready!`, 'success')
-//
-//   // Play alert sound
-//   playQueueAlertSound()
-//
-//   // Flash the title
-//   flashTitle(`[${position}] Queue Alert!`)
-// }
-
-// Play queue alert sound - commented out for future reference
-// function playQueueAlertSound() {
-//   try {
-//     // Create a simple beep sound
-//     const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-//     const oscillator = audioContext.createOscillator()
-//     const gainNode = audioContext.createGain()
-//
-//     oscillator.connect(gainNode)
-//     gainNode.connect(audioContext.destination)
-//
-//     oscillator.frequency.value = 800
-//     oscillator.type = 'sine'
-//     gainNode.gain.value = 0.3
-//
-//     oscillator.start()
-//     oscillator.stop(audioContext.currentTime + 0.2)
-//
-//     // Second beep
-//     setTimeout(() => {
-//       const osc2 = audioContext.createOscillator()
-//       osc2.connect(gainNode)
-//       osc2.frequency.value = 1000
-//       osc2.type = 'sine'
-//       osc2.start()
-//       osc2.stop(audioContext.currentTime + 0.2)
-//     }, 250)
-//   } catch (e) {
-//     console.log('MyVMK Genie: Could not play alert sound')
-//   }
-// }
-
 // Flash the page title
 function flashTitle(alertText) {
   const originalTitle = document.title
@@ -831,15 +620,6 @@ function flashTitle(alertText) {
     }
   }, 500)
 }
-
-// Update queue display in toolbar - commented out for future reference
-// function updateQueueDisplay(position) {
-//   const display = document.getElementById('vmkpal-queue-display')
-//   if (display) {
-//     display.textContent = `#${position}`
-//     display.style.display = 'inline'
-//   }
-// }
 
 // Called when room changes
 function onRoomChange(oldRoom, newRoom) {
@@ -5040,7 +4820,7 @@ function checkKingdomSyncEffects() {
     showFireflies = shouldShowRareEffect(roomId)
   }
   // Africa (both room IDs) - Rare fireflies
-  else if (ROOMS.AFRICA.includes(roomId)) {
+  else if (ROOMS.AFRICA.has(roomId)) {
     showFireflies = shouldShowRareEffect(roomId)
   }
   // Pixar Pier - Fireflies only at night (8PM-6AM), rare light fog
@@ -10664,11 +10444,8 @@ function updateEventTicker() {
   // Initial render
   renderTickerContent()
 
-  // Mark as initialized
-  tickerIntervalId = true
-
   // Update content every 60 seconds to refresh countdowns
-  setInterval(renderTickerContent, 60000)
+  tickerIntervalId = setInterval(renderTickerContent, 60000)
 }
 
 
@@ -10964,10 +10741,6 @@ async function init() {
     startMapButtonOverlay(() => {
       hideOverlaysForMap()
     })
-    // Queue monitoring commented out for future reference
-    // if (DEV_MODE) {
-    //   startQueueMonitor()
-    // }
   }, 500)
 
   // Handle resize to update overlay positions to match game canvas
