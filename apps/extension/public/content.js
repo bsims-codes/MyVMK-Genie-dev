@@ -7217,6 +7217,15 @@ function createSettingsPanel() {
 // Changelog data
 const CHANGELOG = [
   {
+    version: '2.1.4',
+    date: '2025-03-20',
+    changes: [
+      'Performance: Removed ~200 lines of unused code',
+      'Performance: Fixed ticker interval memory leak',
+      'Performance: Optimized room ID lookups'
+    ]
+  },
+  {
     version: '2.1.3',
     date: '2025-03-20',
     changes: [

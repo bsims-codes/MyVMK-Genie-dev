@@ -1,5 +1,13 @@
 # MyVMK Genie Changelog
 
+## 2.1.4 (In Progress)
+
+### Performance
+- Removed ~200 lines of unused code (commented queue monitoring system)
+- Fixed ticker interval memory leak
+- Added canvas factory helper for more efficient overlay creation
+- Optimized room ID lookups with Set data structure
+
 ## 2.1.3
 
 ### Features
