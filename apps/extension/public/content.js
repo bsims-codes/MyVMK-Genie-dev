@@ -5845,6 +5845,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 51, action: 'spawnPalmTrees', colors: ['pink', 'blue'] },
   { time: 51, action: 'spawnSpeakerLeft' },  // Speaker enters from left only
   { time: 54, action: 'replaceHelicopter', asset: '6_singing' },  // GIF 5 one cycle (~3.2s) → GIF 6
+  { time: 54, action: 'forceHannahTheme' },  // Switch everyone's theme to Hannah
 
   // === PERFORMANCE (1:00-1:16) ===
   { time: 60, action: 'stagePulse', enabled: true },
@@ -7369,6 +7370,10 @@ function executeHannahMainShowEvent(event) {
 
     case 'explode':
       explodeCanvas()
+      break
+
+    case 'forceHannahTheme':
+      forceHannahTheme()
       break
 
     case 'end':
@@ -12503,6 +12508,16 @@ function getThemeColors() {
     logo: chrome.runtime.getURL('myvmk-genie.png'),
     bgGradient: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)'
   }
+}
+
+// Force switch to Hannah theme (for event choreography)
+function forceHannahTheme() {
+  isPinkTheme = false
+  isDarkTheme = false
+  isHannahTheme = true
+  chrome.storage.local.set({ isPinkTheme, isDarkTheme, isHannahTheme })
+  applyTheme()
+  showNotification('🎀 Hannah Montana theme activated!', 'success', 3000)
 }
 
 // Apply theme (blue or pink)
