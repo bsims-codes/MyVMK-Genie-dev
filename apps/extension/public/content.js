@@ -3218,6 +3218,10 @@ function triggerProjectorSpotlight(color = 'white', duration = 1500) {
   const projectorX = bounds.width * 0.88
   const projectorY = bounds.height * 0.88
 
+  // Target: true center of canvas
+  const centerX = bounds.width * 0.5
+  const centerY = bounds.height * 0.5
+
   // Color mapping
   const colorMap = {
     white: [255, 255, 255],
@@ -3227,9 +3231,11 @@ function triggerProjectorSpotlight(color = 'white', duration = 1500) {
   }
   const [r, g, b] = colorMap[color] || colorMap.white
 
-  // Draw a cone beam pointing toward center-left
-  const beamLength = bounds.width * 0.7
-  const beamAngle = Math.PI * 0.82  // Point toward left/center (about 147 degrees)
+  // Calculate angle from projector to true center
+  const dx = centerX - projectorX
+  const dy = centerY - projectorY
+  const beamAngle = Math.atan2(dy, dx)
+  const beamLength = Math.sqrt(dx * dx + dy * dy) * 1.2  // Extend slightly past center
   const beamWidth = 60  // Wider beam
 
   // Calculate end points
@@ -5830,7 +5836,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
 
   // === PROJECTOR ENTRY (0:35) - Projector enters from right, mirrored ===
   { time: 35, action: 'spawnProjector' },  // flying_light from right, mirrored
-  { time: 37, action: 'projectorSpotlight', color: 'white', duration: 5000 },  // Spotlight burst when settled
+  { time: 37, action: 'projectorSpotlight', color: 'white', duration: 10000 },  // Spotlight burst when settled (10s)
 
   // === GIF 3-4 SEQUENCE (0:36) ===
   { time: 36, action: 'replaceHelicopter', asset: '3_hannah_appears' },
@@ -5870,7 +5876,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 109, action: 'replaceHelicopter', asset: '9_getting_on_star' },  // GIF 8 → GIF 9
   { time: 110, action: 'replaceHelicopter', asset: '10_standing_star' },  // GIF 9 one cycle (1s) → GIF 10
   { time: 115, action: 'planeFlyOffLeft', asset: '11_plane_3' },  // GIF 11 plane floats off left
-  { time: 115, action: 'hideDarkStar' },  // Remove dark star when light star appears
+  { time: 112, action: 'hideDarkStar' },  // Remove dark star when light star appears
   { time: 115, action: 'showLayer', layer: 'center', asset: '11_star_lightup' },  // Star lighting up (one lifetime)
   { time: 118, action: 'hideLayer', layer: 'helicopter' },  // Hide helicopter layer
   { time: 118, action: 'showLayer', layer: 'center', asset: '12_dancing_star' },  // GIF 12 centered with stages
@@ -7167,8 +7173,6 @@ function startHannahMainShow(offsetSeconds = 0) {
       }
     }
   }, 100)
-
-  showNotification('🎤 Hannah Montana Show started!', 'success')
 }
 
 // Execute a choreography event
