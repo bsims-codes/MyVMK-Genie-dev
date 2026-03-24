@@ -1,0 +1,10 @@
+The Hannah Montana event will take place in two rooms. One - Sci-Fi Drive In. this room is already mapped. There will be another room that I need to map later. The following all will take place in the Sci-Fi Drive-in. There will be a general hangout time during the event which will use the lantern 2 lantern 3 and lantern 4. there will also be a "performance" during the event at some point. the performance will use all other assets and music.
+LW BG - current overlay in testing. this will be part of the performance.
+hannah-flying-light.gif - this is a light; make a light pop out the right side, it can flicker a bit. It will be on the tip top overlay and and hover around the left side of the room during performance.
+hannah-flying-speaker.gif - speaker - also top overlay, could have flip effect, could add pulse effect to front to simulate music coming out (or slowly spawn little blue music notes that float up) during performance
+hannah-flying-treepink.gif and hannah-flying-treeblue.gif - background props for the performance. I imagine two of each color on each side, mid screen - slightly going up and down to immolate floating, no other movement besides flying in + out at the end. these will be on 2nd lower level, just one level above the “night mode” layer
+hannah-lantern2.png and hannah-lantern3.png and hannah-lantern4.png - start from bottom and rise to top slowly like a traditional chinese lantern with a flicker/pulse. release a couple from different spots every few minutes
+hannah-lantern1 - will be reserved for only the choreographed performance.
+https://www.youtube.com/live/iXMgtPEm4wE - this video should open in a pop-up viewer during the event
+
+I want to setup two aspects. One, the hangout. Two, the performance. I need a way to host this as an event. It would be ideal if I could host the hangout event on the calendar and manually trigger the event but make it synced across all users in the room. Otherwise, I assume I will need to schedule two overlapping events to trigger the longer hangout and the shorter performance (they will overlap)

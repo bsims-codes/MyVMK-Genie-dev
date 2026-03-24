@@ -157,7 +157,9 @@ function updateOverlayBounds() {
     { canvas: fireworksCanvas, ctx: fireworksCtx },
     { canvas: moneyCanvas, ctx: moneyCtx },
     { canvas: emojiCanvas, ctx: emojiCtx },
-    { canvas: fireflyCanvas, ctx: fireflyCtx }
+    { canvas: fireflyCanvas, ctx: fireflyCtx },
+    { canvas: sparkleCanvas, ctx: sparkleCtx },
+    { canvas: spotlightCanvas, ctx: spotlightCtx }
   ]
 
   overlays.forEach(({ canvas, ctx }) => {
@@ -170,6 +172,37 @@ function updateOverlayBounds() {
       canvas.height = bounds.height
     }
   })
+
+  // Light wall canvas - handle differently based on mode
+  if (lightWallCanvas && isLightWallActive) {
+    let newWidth, newHeight
+    if (lightWallMode === 'overlay') {
+      // Overlay mode: position on game canvas
+      lightWallCanvas.style.left = bounds.left + 'px'
+      lightWallCanvas.style.top = bounds.top + 'px'
+      newWidth = bounds.width
+      newHeight = bounds.height
+    } else {
+      // Background mode: full viewport
+      lightWallCanvas.style.left = '0px'
+      lightWallCanvas.style.top = '0px'
+      newWidth = window.innerWidth
+      newHeight = window.innerHeight
+    }
+    lightWallCanvas.width = newWidth
+    lightWallCanvas.height = newHeight
+
+    // Recalculate light positions for new canvas size
+    const lightBounds = { width: newWidth, height: newHeight }
+    const spacing = {
+      x: lightBounds.width / (LIGHT_WALL_COLS + 1),
+      y: lightBounds.height / (LIGHT_WALL_ROWS + 1)
+    }
+    lightWallLights.forEach(light => {
+      light.x = spacing.x * (light.col + 1)
+      light.y = spacing.y * (light.row + 1)
+    })
+  }
 
   // Also update night overlay if enabled
   if (isNightOverlayEnabled) {
@@ -302,6 +335,17 @@ const RAVE_COLORS = [
   '#ff0000', // Red
 ]
 
+// Spotlight color presets (RGB arrays)
+const SPOTLIGHT_COLORS = {
+  white: [255, 255, 255],
+  pink: [255, 105, 180],
+  purple: [147, 112, 219],
+  gold: [255, 215, 0],
+  blue: [100, 149, 237],
+  red: [255, 80, 80],
+  green: [100, 255, 100]
+}
+
 // Choreography system for synced shows
 let choreographyActive = false
 let choreographyStartTime = 0
@@ -371,6 +415,124 @@ let butterflyData = []
 let isButterflyActive = false
 let butterflyAnimationId = null
 let butterflySpawnTimer = null
+
+// Hannah Montana Lantern Effect
+const SCI_FI_DINE_IN_ID = 72
+const HANNAH_LANTERN_IMAGES = ['hannah/hannah-lantern2.PNG', 'hannah/hannah-lantern3.PNG', 'hannah/hannah-lantern4.PNG']
+const HANNAH_LANTERN1_IMAGE = 'hannah/hannah-lantern1.PNG' // Performance only
+let hannahLanternElements = []
+let hannahLanternData = []
+let isHannahLanternsActive = false
+let hannahLanternAnimationId = null
+let hannahLanternSpawnTimer = null
+
+// Hannah Billboard Video Screen
+let hannahBillboardContainer = null
+let isHannahBillboardActive = false
+
+// Hannah Flying Props
+const HANNAH_FLYING_PROPS = {
+  light: 'hannah/hannah-flying-light.gif',
+  speaker: 'hannah/hannah-flying-speaker.gif',
+  treePink: 'hannah/hannah-flying-treepink.gif',
+  treeBlue: 'hannah/hannah-flying-treeblue.gif'
+}
+let hannahPropsElements = []
+let hannahPropsData = []
+let isHannahPropsActive = false
+let hannahPropsAnimationId = null
+
+// Hannah Performance Choreography
+const HANNAH_YOUTUBE_URL = 'https://www.youtube.com/live/iXMgtPEm4wE'
+let isHannahPerformanceActive = false
+let hannahPerformanceStartTime = null
+let hannahChoreographyInterval = null
+let lastHannahChoreographyIndex = -1
+
+// Hannah Montana Main Show (choreographed GIF sequence)
+let isHannahMainShowActive = false
+let hannahMainShowStartTime = null
+let hannahMainShowInterval = null
+let lastHannahMainShowIndex = -1
+let hannahMainShowAudio = null
+let hannahMainShowLayers = {
+  center: null,
+  left: null,
+  right: null,
+  plane: null,
+  crowd: null,
+  helicopter: null
+}
+let helicopterFinalPosition = { xProp: 0.25, yProp: 0.05, widthProp: 0.5 }
+let helicopterLockedDimensions = null  // Pixel dimensions locked after fly-in for seamless swaps
+
+// Hannah Montana Main Show Assets (numbered sequence)
+const HANNAH_MAIN_ASSETS = {
+  '1_silhouette': 'hannah/Hannah-Montana-Main/1. Only Dark Sillhoutte Hannah.gif',
+  '2_plane': 'hannah/Hannah-Montana-Main/2. Plane Flying Away WIthout Hannah.gif',
+  '3_hannah_appears': 'hannah/Hannah-Montana-Main/3. ...Hannah......gif',
+  '3.5_left_stage': 'hannah/Hannah-Montana-Main/3.5 Left Animated Stage.gif',
+  '3.5_right_stage': 'hannah/Hannah-Montana-Main/3.5 Right Animated Stage.gif',
+  '4_spotlight': 'hannah/Hannah-Montana-Main/4. Hannah Only Spotlight.gif',
+  '5_singing_spotlights': 'hannah/Hannah-Montana-Main/5. 1WIth SPotlights Hannah Singing.gif',
+  '6_singing': 'hannah/Hannah-Montana-Main/6. Hannah Singing.gif',
+  '7_spotlight_reverse': 'hannah/Hannah-Montana-Main/7. SpotLight Reverse of Lamp.gif',
+  '8_plane_2': 'hannah/Hannah-Montana-Main/8. Plane Flying Away WIthout Hannah.gif',
+  '9_dark_star': 'hannah/Hannah-Montana-Main/9. DArk Star.png',
+  '9_getting_on_star': 'hannah/Hannah-Montana-Main/9. DarkHannah Getting On Star.gif',
+  '10_standing_star': 'hannah/Hannah-Montana-Main/10. DarkHannah Standing On Star.gif',
+  '11_plane_3': 'hannah/Hannah-Montana-Main/11. Plane Flying Away WIthout Hannah.gif',
+  '11_star_lightup': 'hannah/Hannah-Montana-Main/11. Hannah Star Lighting Up After Plane Flies Away.gif',
+  '11.5_floor_people': 'hannah/Hannah-Montana-Main/11.5. Floor to People.gif',
+  '11.5_right': 'hannah/Hannah-Montana-Main/11.5. Right i think.gif',
+  '11.75_left': 'hannah/Hannah-Montana-Main/11.75. Left I think.gif',
+  '11.75_right_dance': 'hannah/Hannah-Montana-Main/11.75. Right Dancy Dance.gif',
+  '12_dancing_star': 'hannah/Hannah-Montana-Main/12. Hannah Dancing On Star thats Glowing.gif',
+  '13_butterfly': 'hannah/Hannah-Montana-Main/13. Hannah Montana Butterfly.gif',
+  '13_transform': 'hannah/Hannah-Montana-Main/13. Winged Hannah Transform Clothes On Star.gif',
+  '13.5_left_change': 'hannah/Hannah-Montana-Main/13.5. Left Change-Over.gif',
+  '13.5_right_change': 'hannah/Hannah-Montana-Main/13.5. Right Change-Over (No Hannah).gif',
+  '13.75_left': 'hannah/Hannah-Montana-Main/13.75. left.gif',
+  '13.75_right': 'hannah/Hannah-Montana-Main/13.75. RIght Dancing without HM.gif',
+  '14_winged_dancing': 'hannah/Hannah-Montana-Main/14. WInged Dancing On Animated Star.gif',
+  '15_disappearing': 'hannah/Hannah-Montana-Main/15. Hannah Disappearing Off Star.gif',
+  '15.25_crowd_appear': 'hannah/Hannah-Montana-Main/15.25. Hannah Appearing In Dark Crowd.gif',
+  '15.25_star_animate': 'hannah/Hannah-Montana-Main/15.25. Star Animating.gif',
+  '15.5_crowd_fly': 'hannah/Hannah-Montana-Main/15.50. Hannah Flying In Crowd.gif',
+  '15.75_crowd_hover': 'hannah/Hannah-Montana-Main/15.75. Hannah Hovering Over Crowd.gif',
+  '16_floating_down': 'hannah/Hannah-Montana-Main/16. Hannah Floating Down.gif',
+  '17_crowd_disappear': 'hannah/Hannah-Montana-Main/17. Hannah Disappearing out of crowd.gif',
+  '17_reverse_star': 'hannah/Hannah-Montana-Main/17. Reverse Hannah Disappearing Off Star.gif',
+  '17.5_left_floors': 'hannah/Hannah-Montana-Main/17.5. Changing Floors (No Pets)Left.gif',
+  '17.5_stage_colors': 'hannah/Hannah-Montana-Main/17.5. Stage Changing Colors.gif',
+  '18_finale': 'hannah/Hannah-Montana-Main/18. WInged Dancing On Animated Star.gif',
+  // Flying props assets
+  'gator': 'hannah/Hannah-Montana-Main/Dancing-hannah-gator.gif',
+  'tree_white': 'hannah/hannah-flying-treewhite.gif',
+  'tree_pink': 'hannah/hannah-flying-treepink.gif',
+  'tree_blue': 'hannah/hannah-flying-treeblue.gif',
+  'flying_speaker': 'hannah/hannah-flying-speaker.gif',
+  'flying_light': 'hannah/hannah-flying-light.gif',
+  // Film strip assets
+  'tape1': 'hannah/Hannah-Montana-Main/hannah-tape1.png',
+  'tape2': 'hannah/Hannah-Montana-Main/hannah-tape2.png',
+  // Jack Jack bubble assets
+  'jackjack_left': 'hannah/Hannah-Montana-Main/Facing_Left_Jack_Jack_In_Bubble.gif',
+  'jackjack_right': 'hannah/Hannah-Montana-Main/Facing_Right_Jack_Jack_In_Bubble.gif',
+  // Pink butterfly for spawning
+  'pink_butterfly': 'hannah/Hannah-Montana-Main/13. Hannah Montana Butterfly.gif',
+  // HM Logo
+  'hm_logo': 'hannah/Hannah-Montana-Main/hm-logo.gif'
+}
+const HANNAH_MAIN_AUDIO = 'hannah/Hannah-Montana-Main/hannah-party.mp3'
+
+// Gator parade state
+let gatorParadeElements = []
+let gatorParadeAnimationId = null
+
+// Hannah Main Show beta testing password protection
+const HANNAH_BETA_PASSWORD = 'geniegeniegenie'  // Change this for each test build
+let hannahMainShowUnlocked = false
 
 // Snow Effect for Matterhorn
 const MATTERHORN_ID = 33
@@ -2829,8 +2991,8 @@ function createSpotlight(canvasWidth, canvasHeight) {
   return createSpotlightAt(Math.random() * canvasWidth, canvasWidth, canvasHeight, null, null, null)
 }
 
-function createSpotlightAt(x, canvasWidth, canvasHeight, group = null, sharedPhase = null, sharedCenter = null) {
-  const colors = [
+function createSpotlightAt(x, canvasWidth, canvasHeight, group = null, sharedPhase = null, sharedCenter = null, colorOverride = null) {
+  const defaultColors = [
     [255, 255, 255], // white
     [200, 200, 255], // blue-white
     [255, 200, 200], // pink-white
@@ -2839,13 +3001,22 @@ function createSpotlightAt(x, canvasWidth, canvasHeight, group = null, sharedPha
   ]
   const startAngle = sharedCenter !== null ? sharedCenter : -Math.PI / 2 + (Math.random() - 0.5) * 0.3
   const phase = sharedPhase !== null ? sharedPhase : Math.random() * Math.PI * 2
+
+  // Use override color if provided, otherwise random from defaults
+  let colorRGB
+  if (colorOverride) {
+    colorRGB = typeof colorOverride === 'string' ? SPOTLIGHT_COLORS[colorOverride] : colorOverride
+  } else {
+    colorRGB = defaultColors[Math.floor(Math.random() * defaultColors.length)]
+  }
+
   return {
     x: x,
     baseY: canvasHeight,
     angle: startAngle,
     width: 25 + Math.random() * 15,
     length: canvasHeight * 0.85,
-    colorRGB: colors[Math.floor(Math.random() * colors.length)],
+    colorRGB: colorRGB,
     baseOpacity: 0.35,
     opacity: 1.0, // Current opacity multiplier (0-1)
     targetOpacity: 1.0, // Target opacity for fading
@@ -2856,6 +3027,58 @@ function createSpotlightAt(x, canvasWidth, canvasHeight, group = null, sharedPha
     sweepCenter: startAngle,
     sweepPhase: phase
   }
+}
+
+// Start spotlights with specific colors
+// colors: array of color names from SPOTLIGHT_COLORS (e.g., ['pink', 'purple', 'gold'])
+function startColoredSpotlights(colors = ['pink', 'purple', 'gold']) {
+  const bounds = getGameCanvasBounds()
+
+  if (!spotlightCanvas) {
+    spotlightCanvas = document.createElement('canvas')
+    spotlightCanvas.id = 'vmkpal-spotlight-canvas'
+    spotlightCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483643;
+      background: transparent;
+    `
+    spotlightCtx = spotlightCanvas.getContext('2d')
+    document.body.appendChild(spotlightCanvas)
+  }
+
+  spotlightCanvas.style.left = bounds.left + 'px'
+  spotlightCanvas.style.top = bounds.top + 'px'
+  spotlightCanvas.width = bounds.width
+  spotlightCanvas.height = bounds.height
+  spotlightCanvas.style.display = 'block'
+
+  // Create spotlights with specified colors - 3 on left, 3 on right
+  spotlights = []
+  const centerX = bounds.width / 2
+  const leftGroupPhase = Math.random() * Math.PI * 2
+  const rightGroupPhase = Math.random() * Math.PI * 2
+  const leftSweepCenter = -Math.PI / 2 - 0.15
+  const rightSweepCenter = -Math.PI / 2 + 0.15
+
+  // Left group - 3 spotlights with rotating colors
+  for (let i = 0; i < 3; i++) {
+    const x = centerX * 0.15 + (i * centerX * 0.25)
+    const color = colors[i % colors.length]
+    spotlights.push(createSpotlightAt(x, bounds.width, bounds.height, 'left', leftGroupPhase, leftSweepCenter, color))
+  }
+
+  // Right group - 3 spotlights with rotating colors
+  for (let i = 0; i < 3; i++) {
+    const x = centerX + centerX * 0.35 + (i * centerX * 0.25)
+    const color = colors[(i + 1) % colors.length] // Offset by 1 for variety
+    spotlights.push(createSpotlightAt(x, bounds.width, bounds.height, 'right', rightGroupPhase, rightSweepCenter, color))
+  }
+
+  isSpotlightsEnabled = true
+  lastSpotlightTime = 0
+  renderSpotlights()
+  console.log('MyVMK Genie: Started colored spotlights with colors:', colors)
 }
 
 function updateSpotlights(dt) {
@@ -2967,6 +3190,730 @@ function stopSpotlights() {
     spotlightCtx.clearRect(0, 0, spotlightCanvas.width, spotlightCanvas.height)
   }
   spotlights = []
+}
+
+// Projector spotlight burst - emanates from projector position toward left/center
+function triggerProjectorSpotlight(color = 'white', duration = 1500) {
+  const bounds = getGameCanvasBounds()
+
+  // Create a temporary canvas for the projector spotlight
+  const canvas = document.createElement('canvas')
+  canvas.className = 'vmkpal-projector-spotlight'
+  canvas.width = bounds.width
+  canvas.height = bounds.height
+  canvas.style.cssText = `
+    position: fixed;
+    left: ${bounds.left}px;
+    top: ${bounds.top}px;
+    pointer-events: none;
+    z-index: 2147483642;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+  `
+  document.body.appendChild(canvas)
+
+  const ctx = canvas.getContext('2d')
+
+  // Projector position (bottom right corner - matches projector endX/yProp)
+  const projectorX = bounds.width * 0.88
+  const projectorY = bounds.height * 0.88
+
+  // Color mapping
+  const colorMap = {
+    white: [255, 255, 255],
+    pink: [255, 150, 200],
+    gold: [255, 215, 0],
+    purple: [180, 130, 255]
+  }
+  const [r, g, b] = colorMap[color] || colorMap.white
+
+  // Draw a cone beam pointing toward center-left
+  const beamLength = bounds.width * 0.6
+  const beamAngle = Math.PI * 0.85  // Point toward left/center
+  const beamWidth = 40
+
+  // Calculate end points
+  const endX = projectorX + Math.cos(beamAngle) * beamLength
+  const endY = projectorY + Math.sin(beamAngle) * beamLength
+
+  // Create gradient along beam
+  const gradient = ctx.createLinearGradient(projectorX, projectorY, endX, endY)
+  gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.5)`)
+  gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, 0.25)`)
+  gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+
+  // Draw cone
+  ctx.save()
+  ctx.translate(projectorX, projectorY)
+  ctx.rotate(beamAngle)
+
+  ctx.beginPath()
+  ctx.moveTo(0, -beamWidth / 4)
+  ctx.lineTo(beamLength, -beamWidth * 2)
+  ctx.lineTo(beamLength, beamWidth * 2)
+  ctx.lineTo(0, beamWidth / 4)
+  ctx.closePath()
+
+  ctx.fillStyle = gradient
+  ctx.fill()
+
+  // Add glow at projector source
+  const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, beamWidth)
+  glowGradient.addColorStop(0, `rgba(255, 255, 255, 0.6)`)
+  glowGradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.3)`)
+  glowGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+  ctx.beginPath()
+  ctx.arc(0, 0, beamWidth, 0, Math.PI * 2)
+  ctx.fillStyle = glowGradient
+  ctx.fill()
+
+  ctx.restore()
+
+  // Fade in
+  setTimeout(() => canvas.style.opacity = '1', 50)
+
+  // Fade out and remove
+  setTimeout(() => {
+    canvas.style.opacity = '0'
+    setTimeout(() => {
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas)
+    }, 300)
+  }, duration)
+}
+
+// ============================================
+// SPARKLE EFFECT (Gold, Purple, Pink)
+// ============================================
+
+let sparkleCanvas = null
+let sparkleCtx = null
+let sparkleAnimationId = null
+let sparkles = []
+let isSparklesActive = false
+let lastSparkleTime = 0
+let sparkleColor = 'gold'
+const SPARKLE_COUNT = 60
+const SPARKLE_COLORS = {
+  gold: { core: '255, 215, 0', glow: '255, 180, 0' },
+  purple: { core: '180, 130, 255', glow: '147, 112, 219' },
+  pink: { core: '255, 150, 200', glow: '255, 105, 180' }
+}
+
+function createSparkle(bounds, randomY = false) {
+  return {
+    x: Math.random() * bounds.width,
+    y: randomY ? Math.random() * bounds.height : -20,
+    vx: (Math.random() - 0.5) * 30, // Horizontal drift
+    vy: 20 + Math.random() * 40, // Fall speed
+    size: 2 + Math.random() * 3,
+    twinklePhase: Math.random() * Math.PI * 2,
+    twinkleSpeed: 3 + Math.random() * 4,
+    lifetime: 2 + Math.random() * 2, // seconds
+    age: 0
+  }
+}
+
+function startSparkles(color = 'gold', intensity = 1.0) {
+  sparkleColor = color
+  const bounds = getGameCanvasBounds()
+
+  if (!sparkleCanvas) {
+    sparkleCanvas = document.createElement('canvas')
+    sparkleCanvas.id = 'vmkpal-sparkle-canvas'
+    sparkleCanvas.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483644;
+    `
+    sparkleCtx = sparkleCanvas.getContext('2d')
+    document.body.appendChild(sparkleCanvas)
+  }
+
+  sparkleCanvas.style.left = bounds.left + 'px'
+  sparkleCanvas.style.top = bounds.top + 'px'
+  sparkleCanvas.width = bounds.width
+  sparkleCanvas.height = bounds.height
+  sparkleCanvas.style.display = 'block'
+
+  // Initialize sparkles
+  sparkles = []
+  const count = Math.floor(SPARKLE_COUNT * intensity)
+  for (let i = 0; i < count; i++) {
+    sparkles.push(createSparkle(bounds, true))
+  }
+
+  isSparklesActive = true
+  lastSparkleTime = performance.now()
+  renderSparkles()
+  console.log('MyVMK Genie: Started sparkles with color:', color)
+}
+
+function renderSparkles() {
+  if (!isSparklesActive || !sparkleCtx) return
+
+  const now = performance.now()
+  const dt = Math.min((now - lastSparkleTime) / 1000, 0.1)
+  lastSparkleTime = now
+
+  const bounds = getGameCanvasBounds()
+  sparkleCtx.clearRect(0, 0, sparkleCanvas.width, sparkleCanvas.height)
+
+  const colors = SPARKLE_COLORS[sparkleColor] || SPARKLE_COLORS.gold
+
+  // Update and draw sparkles
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    const s = sparkles[i]
+
+    // Update position
+    s.x += s.vx * dt
+    s.y += s.vy * dt
+    s.age += dt
+    s.twinklePhase += s.twinkleSpeed * dt
+
+    // Remove if too old or off screen
+    if (s.age > s.lifetime || s.y > bounds.height + 20) {
+      sparkles.splice(i, 1)
+      // Respawn at top
+      sparkles.push(createSparkle(bounds, false))
+      continue
+    }
+
+    // Calculate twinkle (opacity oscillation)
+    const twinkle = (Math.sin(s.twinklePhase) + 1) / 2 // 0-1
+    const alpha = 0.4 + twinkle * 0.6
+
+    // Draw sparkle with glow
+    sparkleCtx.save()
+    sparkleCtx.shadowBlur = 8 + twinkle * 8
+    sparkleCtx.shadowColor = `rgba(${colors.glow}, ${alpha})`
+
+    // Draw diamond/star shape
+    sparkleCtx.fillStyle = `rgba(${colors.core}, ${alpha})`
+    sparkleCtx.beginPath()
+    const size = s.size * (0.8 + twinkle * 0.4)
+    // 4-point star
+    sparkleCtx.moveTo(s.x, s.y - size)
+    sparkleCtx.lineTo(s.x + size * 0.3, s.y)
+    sparkleCtx.lineTo(s.x, s.y + size)
+    sparkleCtx.lineTo(s.x - size * 0.3, s.y)
+    sparkleCtx.closePath()
+    sparkleCtx.fill()
+
+    // Horizontal points
+    sparkleCtx.beginPath()
+    sparkleCtx.moveTo(s.x - size, s.y)
+    sparkleCtx.lineTo(s.x, s.y + size * 0.3)
+    sparkleCtx.lineTo(s.x + size, s.y)
+    sparkleCtx.lineTo(s.x, s.y - size * 0.3)
+    sparkleCtx.closePath()
+    sparkleCtx.fill()
+
+    sparkleCtx.restore()
+  }
+
+  sparkleAnimationId = requestAnimationFrame(renderSparkles)
+}
+
+function stopSparkles() {
+  isSparklesActive = false
+  if (sparkleAnimationId) {
+    cancelAnimationFrame(sparkleAnimationId)
+    sparkleAnimationId = null
+  }
+  if (sparkleCanvas) {
+    sparkleCanvas.style.display = 'none'
+  }
+  sparkles = []
+}
+
+// ============================================
+// LIGHT WALL BACKGROUND (Concert Stage Lights)
+// ============================================
+
+let lightWallCanvas = null
+let lightWallCtx = null
+let lightWallAnimationId = null
+let lightWallLights = []
+let isLightWallActive = false
+let lastLightWallTime = 0
+let lightWallPattern = 'wave' // wave, twinkle, beat, chase
+let lightWallMode = 'background' // 'background' (dark, replaces bg) or 'overlay' (transparent, on top)
+
+const LIGHT_WALL_ROWS = 14
+const LIGHT_WALL_COLS = 20
+const LIGHT_WALL_COLORS = {
+  gold: '255, 215, 0',
+  pink: '255, 105, 180',
+  purple: '147, 112, 219',
+  white: '255, 255, 255'
+}
+
+function createLightWallLight(row, col, totalRows, totalCols, bounds, colorScheme) {
+  const colors = colorScheme || ['gold', 'white']
+  const color = colors[Math.floor(Math.random() * colors.length)]
+  const spacing = {
+    x: bounds.width / (totalCols + 1),
+    y: bounds.height / (totalRows + 1)
+  }
+  return {
+    x: spacing.x * (col + 1),
+    y: spacing.y * (row + 1),
+    row: row,
+    col: col,
+    brightness: Math.random(),
+    targetBrightness: Math.random(),
+    pulseSpeed: 2 + Math.random() * 3,
+    phase: Math.random() * Math.PI * 2,
+    color: color,
+    baseSize: 8 + Math.random() * 4
+  }
+}
+
+// mode: 'background' (full viewport behind game) or 'overlay' (transparent, on top of game)
+function startLightWall(colorScheme = ['gold', 'white'], pattern = 'wave', mode = 'background') {
+  lightWallPattern = pattern
+  lightWallMode = mode
+
+  const isOverlay = mode === 'overlay'
+
+  // For overlay mode: position on game canvas
+  // For background mode: cover entire viewport behind game
+  let canvasLeft, canvasTop, canvasWidth, canvasHeight
+
+  if (isOverlay) {
+    const bounds = getGameCanvasBounds()
+    canvasLeft = bounds.left
+    canvasTop = bounds.top
+    canvasWidth = bounds.width
+    canvasHeight = bounds.height
+  } else {
+    // Full viewport for background mode
+    canvasLeft = 0
+    canvasTop = 0
+    canvasWidth = window.innerWidth
+    canvasHeight = window.innerHeight
+  }
+
+  // z-index: overlay on top of game, background behind game
+  const zIndex = isOverlay ? 2147483642 : 1
+
+  if (!lightWallCanvas) {
+    lightWallCanvas = document.createElement('canvas')
+    lightWallCanvas.id = 'vmkpal-lightwall-canvas'
+    lightWallCtx = lightWallCanvas.getContext('2d')
+    document.body.appendChild(lightWallCanvas)
+  }
+
+  lightWallCanvas.style.cssText = `
+    position: fixed;
+    left: ${canvasLeft}px;
+    top: ${canvasTop}px;
+    pointer-events: none;
+    z-index: ${zIndex};
+  `
+  lightWallCanvas.width = canvasWidth
+  lightWallCanvas.height = canvasHeight
+  lightWallCanvas.style.display = 'block'
+
+  // Create light grid with proper bounds
+  const lightBounds = { width: canvasWidth, height: canvasHeight }
+  lightWallLights = []
+  for (let row = 0; row < LIGHT_WALL_ROWS; row++) {
+    for (let col = 0; col < LIGHT_WALL_COLS; col++) {
+      lightWallLights.push(createLightWallLight(row, col, LIGHT_WALL_ROWS, LIGHT_WALL_COLS, lightBounds, colorScheme))
+    }
+  }
+
+  isLightWallActive = true
+  lastLightWallTime = performance.now()
+  renderLightWall()
+  console.log('MyVMK Genie: Started light wall with pattern:', pattern)
+}
+
+function renderLightWall() {
+  if (!isLightWallActive || !lightWallCtx) return
+
+  const now = performance.now()
+  const dt = Math.min((now - lastLightWallTime) / 1000, 0.1)
+  const elapsed = now / 1000
+  lastLightWallTime = now
+
+  const bounds = getGameCanvasBounds()
+  const isOverlay = lightWallMode === 'overlay'
+
+  // Clear canvas - dark background for background mode, transparent for overlay
+  if (isOverlay) {
+    lightWallCtx.clearRect(0, 0, lightWallCanvas.width, lightWallCanvas.height)
+  } else {
+    lightWallCtx.fillStyle = 'rgba(0, 0, 0, 0.95)'
+    lightWallCtx.fillRect(0, 0, lightWallCanvas.width, lightWallCanvas.height)
+  }
+
+  // Update and draw lights based on pattern
+  for (const light of lightWallLights) {
+    // Update brightness based on pattern
+    switch (lightWallPattern) {
+      case 'wave':
+        // Wave ripples across from left to right (faster)
+        const wavePos = (elapsed * 4 + light.col * 0.25) % (Math.PI * 2)
+        light.targetBrightness = (Math.sin(wavePos) + 1) / 2
+        break
+      case 'twinkle':
+        // Random twinkling (more frequent)
+        if (Math.random() < 0.04) {
+          light.targetBrightness = 0.8 + Math.random() * 0.2
+        } else if (Math.random() < 0.08) {
+          light.targetBrightness = 0.1 + Math.random() * 0.3
+        }
+        break
+      case 'beat':
+        // All lights pulse together (faster BPM)
+        const beatPhase = (elapsed * 3.5) % 1
+        light.targetBrightness = beatPhase < 0.1 ? 1 : Math.pow(1 - beatPhase, 2)
+        break
+      case 'chase':
+        // Lights chase left to right then top to bottom (faster)
+        const chasePos = (elapsed * 6) % (LIGHT_WALL_COLS + LIGHT_WALL_ROWS)
+        const lightPos = light.col + (light.row * 0.5)
+        const dist = Math.abs(chasePos - lightPos)
+        light.targetBrightness = Math.max(0, 1 - dist * 0.3)
+        break
+    }
+
+    // Smooth brightness transition (snappier)
+    light.brightness += (light.targetBrightness - light.brightness) * dt * 15
+
+    // Get color RGB
+    const colorRGB = LIGHT_WALL_COLORS[light.color] || LIGHT_WALL_COLORS.gold
+    // Lower alpha for overlay mode (more transparent)
+    const baseAlpha = 0.3 + light.brightness * 0.7
+    const alpha = isOverlay ? baseAlpha * 0.5 : baseAlpha
+
+    // Draw light with glow
+    const size = light.baseSize * (0.6 + light.brightness * 0.6)
+
+    // Outer glow
+    const gradient = lightWallCtx.createRadialGradient(
+      light.x, light.y, 0,
+      light.x, light.y, size * 4
+    )
+    gradient.addColorStop(0, `rgba(${colorRGB}, ${alpha})`)
+    gradient.addColorStop(0.3, `rgba(${colorRGB}, ${alpha * 0.4})`)
+    gradient.addColorStop(1, `rgba(${colorRGB}, 0)`)
+
+    lightWallCtx.beginPath()
+    lightWallCtx.arc(light.x, light.y, size * 4, 0, Math.PI * 2)
+    lightWallCtx.fillStyle = gradient
+    lightWallCtx.fill()
+
+    // Bright center
+    lightWallCtx.beginPath()
+    lightWallCtx.arc(light.x, light.y, size, 0, Math.PI * 2)
+    lightWallCtx.fillStyle = `rgba(${colorRGB}, ${alpha})`
+    lightWallCtx.fill()
+
+    // Hot white core
+    lightWallCtx.beginPath()
+    lightWallCtx.arc(light.x, light.y, size * 0.4, 0, Math.PI * 2)
+    lightWallCtx.fillStyle = `rgba(255, 255, 255, ${light.brightness * 0.8})`
+    lightWallCtx.fill()
+  }
+
+  lightWallAnimationId = requestAnimationFrame(renderLightWall)
+}
+
+function stopLightWall() {
+  isLightWallActive = false
+  if (lightWallAnimationId) {
+    cancelAnimationFrame(lightWallAnimationId)
+    lightWallAnimationId = null
+  }
+  if (lightWallCanvas) {
+    lightWallCanvas.style.display = 'none'
+  }
+  lightWallLights = []
+}
+
+// ============================================
+// LIGHTNING STRIKE EFFECT
+// ============================================
+
+let lightningOverlay = null
+let isLightningActive = false
+
+function triggerLightning(color = 'pink', withBolt = true) {
+  if (isLightningActive) return
+
+  const bounds = getGameCanvasBounds()
+  isLightningActive = true
+
+  // Create flash overlay
+  lightningOverlay = document.createElement('canvas')
+  lightningOverlay.id = 'vmkpal-lightning-canvas'
+  lightningOverlay.width = bounds.width
+  lightningOverlay.height = bounds.height
+  lightningOverlay.style.cssText = `
+    position: fixed;
+    left: ${bounds.left}px;
+    top: ${bounds.top}px;
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0;
+    transition: opacity 0.05s ease-in;
+  `
+  document.body.appendChild(lightningOverlay)
+
+  const ctx = lightningOverlay.getContext('2d')
+
+  // Get color values
+  const colorMap = {
+    pink: { r: 255, g: 105, b: 180 },
+    purple: { r: 147, g: 112, b: 219 },
+    white: { r: 255, g: 255, b: 255 },
+    blue: { r: 100, g: 149, b: 237 }
+  }
+  const c = colorMap[color] || colorMap.pink
+
+  // Full screen flash
+  ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0.6)`
+  ctx.fillRect(0, 0, bounds.width, bounds.height)
+
+  // Draw lightning bolt if requested
+  if (withBolt) {
+    ctx.strokeStyle = `rgba(255, 255, 255, 0.95)`
+    ctx.lineWidth = 4
+    ctx.shadowBlur = 20
+    ctx.shadowColor = `rgba(${c.r}, ${c.g}, ${c.b}, 1)`
+    ctx.lineCap = 'round'
+
+    // Generate jagged lightning path
+    ctx.beginPath()
+    let x = bounds.width * (0.3 + Math.random() * 0.4)
+    let y = 0
+    ctx.moveTo(x, y)
+
+    while (y < bounds.height * 0.7) {
+      const segmentLength = 20 + Math.random() * 40
+      const xOffset = (Math.random() - 0.5) * 60
+      y += segmentLength
+      x += xOffset
+      ctx.lineTo(x, y)
+
+      // Occasional branch
+      if (Math.random() < 0.2) {
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        const branchX = x + (Math.random() - 0.5) * 80
+        const branchY = y + 30 + Math.random() * 30
+        ctx.lineTo(branchX, branchY)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+      }
+    }
+    ctx.stroke()
+
+    // Draw again with thinner white core
+    ctx.lineWidth = 2
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.stroke()
+  }
+
+  // Flash on
+  requestAnimationFrame(() => {
+    lightningOverlay.style.opacity = '1'
+
+    // Flash off after 150ms
+    setTimeout(() => {
+      if (lightningOverlay) {
+        lightningOverlay.style.transition = 'opacity 0.3s ease-out'
+        lightningOverlay.style.opacity = '0'
+
+        // Remove after fade
+        setTimeout(() => {
+          if (lightningOverlay) {
+            lightningOverlay.remove()
+            lightningOverlay = null
+          }
+          isLightningActive = false
+        }, 300)
+      }
+    }, 150)
+  })
+
+  console.log('MyVMK Genie: Triggered lightning -', color)
+}
+
+// ============================================
+// EVENT IMAGE OVERLAY SYSTEM
+// ============================================
+
+// Active overlays keyed by ID
+let eventOverlays = {}
+let eventOverlayAnimations = {}
+
+// Overlay configurations (can be extended via admin panel)
+const EVENT_OVERLAY_PRESETS = {
+  'hannah-helicopter': {
+    image: 'hannah-helicopter.png',
+    position: { x: 0.7, y: 0.3 },
+    size: { width: 200 },
+    animation: 'float',
+    zIndex: 2147483642
+  },
+  'hannah-platform': {
+    image: 'hannah-platform.png',
+    position: { x: 0.5, y: 0.6 },
+    size: { width: 250 },
+    animation: 'none',
+    zIndex: 2147483641
+  },
+  'palm-tree-left': {
+    image: 'palm-tree.png',
+    position: { x: 0.05, y: 0.7 },
+    size: { width: 120 },
+    animation: 'none',
+    zIndex: 2147483640
+  },
+  'palm-tree-right': {
+    image: 'palm-tree.png',
+    position: { x: 0.9, y: 0.7 },
+    size: { width: 120 },
+    animation: 'none',
+    flipX: true,
+    zIndex: 2147483640
+  },
+  'pump-graphic': {
+    image: 'pump-graphic.png',
+    position: { x: 0.5, y: 0.4 },
+    size: { width: 150 },
+    animation: 'pulse',
+    zIndex: 2147483643
+  }
+}
+
+// Show an event overlay
+// id: preset ID or custom config
+// options: override preset values
+function showEventOverlay(id, options = {}) {
+  // Get preset config or use options directly
+  const preset = EVENT_OVERLAY_PRESETS[id] || {}
+  const config = { ...preset, ...options }
+
+  if (!config.image) {
+    console.warn('MyVMK Genie: No image specified for overlay', id)
+    return
+  }
+
+  // Remove existing if present
+  if (eventOverlays[id]) {
+    hideEventOverlay(id)
+  }
+
+  const bounds = getGameCanvasBounds()
+
+  // Create image element
+  const img = document.createElement('img')
+  img.id = `vmkpal-overlay-${id}`
+  img.src = chrome.runtime.getURL(config.image)
+
+  const posX = bounds.left + (config.position?.x || 0.5) * bounds.width
+  const posY = bounds.top + (config.position?.y || 0.5) * bounds.height
+  const width = config.size?.width || 100
+
+  img.style.cssText = `
+    position: fixed;
+    left: ${posX}px;
+    top: ${posY}px;
+    width: ${width}px;
+    height: auto;
+    transform: translate(-50%, -50%) ${config.flipX ? 'scaleX(-1)' : ''};
+    pointer-events: none;
+    z-index: ${config.zIndex || 2147483640};
+    opacity: 0;
+    transition: opacity 0.5s ease-in;
+  `
+
+  document.body.appendChild(img)
+  eventOverlays[id] = img
+
+  // Fade in
+  requestAnimationFrame(() => {
+    img.style.opacity = '1'
+  })
+
+  // Start animation if specified
+  if (config.animation && config.animation !== 'none') {
+    startOverlayAnimation(id, config.animation, img, posY)
+  }
+
+  console.log('MyVMK Genie: Showing overlay:', id)
+}
+
+// Start overlay animation
+function startOverlayAnimation(id, type, element, baseY) {
+  let phase = 0
+
+  function animate() {
+    if (!eventOverlays[id]) return
+
+    phase += 0.05
+
+    switch (type) {
+      case 'float':
+        // Gentle up/down bob
+        const floatOffset = Math.sin(phase) * 10
+        element.style.top = (baseY + floatOffset) + 'px'
+        break
+      case 'pulse':
+        // Scale in/out
+        const scale = 1 + Math.sin(phase * 2) * 0.1
+        const flipX = element.style.transform.includes('scaleX(-1)')
+        element.style.transform = `translate(-50%, -50%) scale(${scale}) ${flipX ? 'scaleX(-1)' : ''}`
+        break
+      case 'sway':
+        // Slight rotation
+        const rotation = Math.sin(phase * 0.5) * 5
+        element.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`
+        break
+    }
+
+    eventOverlayAnimations[id] = requestAnimationFrame(animate)
+  }
+
+  animate()
+}
+
+// Hide an event overlay
+function hideEventOverlay(id) {
+  const overlay = eventOverlays[id]
+  if (!overlay) return
+
+  // Cancel animation
+  if (eventOverlayAnimations[id]) {
+    cancelAnimationFrame(eventOverlayAnimations[id])
+    delete eventOverlayAnimations[id]
+  }
+
+  // Fade out and remove
+  overlay.style.opacity = '0'
+  setTimeout(() => {
+    if (overlay && overlay.parentNode) {
+      overlay.remove()
+    }
+    delete eventOverlays[id]
+  }, 500)
+
+  console.log('MyVMK Genie: Hiding overlay:', id)
+}
+
+// Hide all event overlays
+function hideAllEventOverlays() {
+  for (const id of Object.keys(eventOverlays)) {
+    hideEventOverlay(id)
+  }
 }
 
 // ============================================
@@ -4141,6 +5088,3308 @@ function checkButterflyRoom() {
   }
 }
 
+// ============================================================================
+// HANNAH MONTANA LANTERN EFFECT
+// Chinese lanterns that rise from the bottom of the screen with flicker effect
+// ============================================================================
+
+function createHannahLantern(imageIndex = null) {
+  const bounds = getGameCanvasBounds()
+  console.log('MyVMK Genie: Creating lantern, bounds:', bounds)
+
+  // Pick random lantern image if not specified
+  const idx = imageIndex !== null ? imageIndex : Math.floor(Math.random() * HANNAH_LANTERN_IMAGES.length)
+  const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN_IMAGES[idx])
+  console.log('MyVMK Genie: Lantern image URL:', imageUrl)
+
+  const lantern = document.createElement('img')
+  lantern.src = imageUrl
+  lantern.className = 'vmkpal-hannah-lantern'
+
+  // Debug: log when image loads or errors
+  lantern.onload = () => console.log('MyVMK Genie: Lantern image loaded')
+  lantern.onerror = (e) => console.error('MyVMK Genie: Lantern image failed to load', e)
+
+  // Random horizontal position
+  const startX = bounds.left + 50 + Math.random() * (bounds.width - 100)
+  const startY = bounds.top + bounds.height - 20 // Start at bottom of visible area
+  console.log('MyVMK Genie: Lantern position:', startX, startY)
+
+  lantern.style.cssText = `
+    position: fixed;
+    width: 50px;
+    height: auto;
+    pointer-events: none;
+    opacity: 1;
+    z-index: 2147483640;
+    transition: none;
+    left: ${startX}px;
+    top: ${startY}px;
+  `
+
+  document.body.appendChild(lantern)
+  console.log('MyVMK Genie: Lantern appended to DOM, element:', lantern)
+
+  const data = {
+    element: lantern,
+    x: startX,
+    y: startY,
+    // Slow rise speed - gentle floating upward
+    riseSpeed: 0.4 + Math.random() * 0.3,
+    // Horizontal drift parameters
+    driftPhase: Math.random() * Math.PI * 2,
+    driftSpeed: 0.3 + Math.random() * 0.2,
+    driftAmount: 15 + Math.random() * 10,
+    // Flicker parameters
+    flickerPhase: Math.random() * Math.PI * 2,
+    flickerSpeed: 3 + Math.random() * 2,
+    baseOpacity: 0.85 + Math.random() * 0.15,
+    createdAt: performance.now()
+  }
+
+  hannahLanternElements.push(lantern)
+  hannahLanternData.push(data)
+
+  return data
+}
+
+let lanternDebugCounter = 0
+function updateHannahLanterns() {
+  if (!isHannahLanternsActive) return
+
+  // Log every 60 frames (~1 second)
+  lanternDebugCounter++
+  if (lanternDebugCounter % 60 === 0) {
+    console.log('MyVMK Genie: Lantern animation running, count:', hannahLanternData.length)
+  }
+
+  const bounds = getGameCanvasBounds()
+  const now = performance.now()
+
+  // Update each lantern
+  for (let i = hannahLanternData.length - 1; i >= 0; i--) {
+    const data = hannahLanternData[i]
+    const lantern = data.element
+
+    // Rise upward
+    data.y -= data.riseSpeed
+
+    // Horizontal drift (gentle sine wave)
+    data.driftPhase += data.driftSpeed * 0.016 // ~60fps
+    const driftX = Math.sin(data.driftPhase) * data.driftAmount
+
+    // Update position only - no opacity changes
+    lantern.style.left = `${data.x + driftX}px`
+    lantern.style.top = `${data.y}px`
+
+    // Remove if off top of screen
+    if (data.y < bounds.top - 80) {
+      lantern.style.opacity = '0'
+      setTimeout(() => {
+        if (lantern.parentNode) {
+          lantern.parentNode.removeChild(lantern)
+        }
+      }, 500)
+      hannahLanternElements.splice(i, 1)
+      hannahLanternData.splice(i, 1)
+    }
+  }
+
+  hannahLanternAnimationId = requestAnimationFrame(updateHannahLanterns)
+}
+
+function spawnHannahLantern() {
+  if (!isHannahLanternsActive) return
+
+  // Spawn 1-2 lanterns
+  const count = Math.random() > 0.6 ? 2 : 1
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      if (isHannahLanternsActive) {
+        createHannahLantern()
+      }
+    }, i * 1500) // Stagger by 1.5 seconds
+  }
+
+  // Schedule next spawn (15-30 seconds)
+  const nextSpawn = (15 + Math.random() * 15) * 1000
+  hannahLanternSpawnTimer = setTimeout(spawnHannahLantern, nextSpawn)
+}
+
+function startHannahLanterns() {
+  if (isHannahLanternsActive) return
+
+  isHannahLanternsActive = true
+  console.log('MyVMK Genie: Starting Hannah lanterns')
+
+  // Spawn initial lanterns immediately
+  createHannahLantern()
+  setTimeout(() => {
+    if (isHannahLanternsActive) createHannahLantern()
+  }, 2000)
+
+  // Start animation loop
+  updateHannahLanterns()
+
+  // Start spawn timer (first additional spawn in 10-20 seconds)
+  const firstSpawn = (10 + Math.random() * 10) * 1000
+  hannahLanternSpawnTimer = setTimeout(spawnHannahLantern, firstSpawn)
+}
+
+function stopHannahLanterns() {
+  if (!isHannahLanternsActive) return
+
+  isHannahLanternsActive = false
+  console.log('MyVMK Genie: Stopping Hannah lanterns')
+
+  // Cancel animation and spawn timer
+  if (hannahLanternAnimationId) {
+    cancelAnimationFrame(hannahLanternAnimationId)
+    hannahLanternAnimationId = null
+  }
+  if (hannahLanternSpawnTimer) {
+    clearTimeout(hannahLanternSpawnTimer)
+    hannahLanternSpawnTimer = null
+  }
+
+  // Fade out and remove lanterns
+  hannahLanternElements.forEach(lantern => {
+    lantern.style.transition = 'opacity 1.5s ease-out'
+    lantern.style.opacity = '0'
+  })
+
+  setTimeout(() => {
+    hannahLanternElements.forEach(lantern => {
+      if (lantern.parentNode) {
+        lantern.parentNode.removeChild(lantern)
+      }
+    })
+    hannahLanternElements = []
+    hannahLanternData = []
+  }, 1500)
+}
+
+// ============================================================================
+// HANNAH BILLBOARD VIDEO SCREEN
+// Fixed "movie screen" overlay positioned in the Sci-Fi Dine-In theater area
+// ============================================================================
+
+function showHannahBillboard(youtubeUrl, seekSeconds = 0) {
+  if (isHannahBillboardActive) return
+
+  const bounds = getGameCanvasBounds()
+  isHannahBillboardActive = true
+
+  // Extract YouTube video ID
+  let videoId = null
+  const ytMatch = youtubeUrl.match(/(?:youtube\.com\/(?:watch\?v=|live\/)|youtu\.be\/)([a-zA-Z0-9_-]+)/)
+  if (ytMatch) {
+    videoId = ytMatch[1]
+  }
+
+  if (!videoId) {
+    console.error('MyVMK Genie: Invalid YouTube URL for billboard')
+    return
+  }
+
+  // Create billboard container
+  hannahBillboardContainer = document.createElement('div')
+  hannahBillboardContainer.id = 'vmkpal-hannah-billboard'
+
+  // Position: Upper-center area of game canvas (like the Sci-Fi screen)
+  const screenWidth = bounds.width * 0.45
+  const screenHeight = screenWidth * (9 / 16) // 16:9 aspect ratio
+  const screenX = bounds.left + (bounds.width - screenWidth) / 2
+  const screenY = bounds.top + bounds.height * 0.08 // Near top
+
+  hannahBillboardContainer.style.cssText = `
+    position: fixed;
+    left: ${screenX}px;
+    top: ${screenY}px;
+    width: ${screenWidth}px;
+    height: ${screenHeight}px;
+    background: #000;
+    border: 4px solid #333;
+    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.8),
+                0 0 60px rgba(255, 100, 200, 0.3),
+                inset 0 0 20px rgba(0,0,0,0.5);
+    z-index: 2147483644;
+    pointer-events: auto;
+    opacity: 0;
+    transition: opacity 1s ease-in;
+    overflow: hidden;
+  `
+
+  // Build embed URL with autoplay and seek
+  let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&modestbranding=1&rel=0`
+  if (seekSeconds > 0) {
+    embedUrl += `&start=${Math.floor(seekSeconds)}`
+  }
+
+  hannahBillboardContainer.innerHTML = `
+    <iframe
+      width="100%"
+      height="100%"
+      src="${embedUrl}"
+      frameborder="0"
+      allow="autoplay; encrypted-media; fullscreen"
+      allowfullscreen
+      style="display: block; border-radius: 4px;"
+    ></iframe>
+  `
+
+  document.body.appendChild(hannahBillboardContainer)
+
+  // Fade in
+  setTimeout(() => {
+    hannahBillboardContainer.style.opacity = '1'
+  }, 100)
+
+  console.log('MyVMK Genie: Showing Hannah billboard', seekSeconds > 0 ? `at ${seekSeconds}s` : '')
+}
+
+function hideHannahBillboard() {
+  if (!isHannahBillboardActive || !hannahBillboardContainer) return
+
+  isHannahBillboardActive = false
+
+  hannahBillboardContainer.style.transition = 'opacity 1s ease-out'
+  hannahBillboardContainer.style.opacity = '0'
+
+  setTimeout(() => {
+    if (hannahBillboardContainer && hannahBillboardContainer.parentNode) {
+      hannahBillboardContainer.parentNode.removeChild(hannahBillboardContainer)
+    }
+    hannahBillboardContainer = null
+  }, 1000)
+
+  console.log('MyVMK Genie: Hiding Hannah billboard')
+}
+
+// ============================================================================
+// HANNAH FLYING PROPS
+// Trees, lights, and speakers that animate during the performance
+// ============================================================================
+
+function createHannahProp(propType, position, options = {}) {
+  const bounds = getGameCanvasBounds()
+  const imageUrl = chrome.runtime.getURL(HANNAH_FLYING_PROPS[propType])
+
+  const prop = document.createElement('img')
+  prop.src = imageUrl
+  prop.className = `vmkpal-hannah-prop vmkpal-hannah-prop-${propType}`
+
+  // Default sizes based on prop type
+  const defaultSizes = {
+    light: 50,
+    speaker: 60,
+    treePink: 100,
+    treeBlue: 100
+  }
+  const size = options.size || defaultSizes[propType] || 60
+
+  // Calculate position
+  const posX = bounds.left + position.x * bounds.width
+  const posY = bounds.top + position.y * bounds.height
+
+  // Z-index: Trees lower (above night), light/speaker higher
+  const zIndex = propType.includes('tree') ? 2147483638 : 2147483642
+
+  prop.style.cssText = `
+    position: fixed;
+    width: ${size}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: ${zIndex};
+    filter: drop-shadow(0 0 10px rgba(255, 150, 200, 0.5));
+    transition: opacity 1s ease-in-out, left 2s ease-out, transform 0.3s ease-out;
+    left: ${posX}px;
+    top: ${posY}px;
+    transform: translate(-50%, -50%) ${options.flipX ? 'scaleX(-1)' : ''};
+  `
+
+  document.body.appendChild(prop)
+
+  const data = {
+    element: prop,
+    type: propType,
+    x: posX,
+    y: posY,
+    baseY: posY,
+    targetX: posX,
+    options: options,
+    // Animation parameters
+    floatPhase: Math.random() * Math.PI * 2,
+    floatSpeed: 0.8 + Math.random() * 0.4,
+    floatAmount: 8 + Math.random() * 5,
+    // Flicker for light
+    flickerPhase: Math.random() * Math.PI * 2,
+    flickerSpeed: 5 + Math.random() * 3,
+    // Pulse for speaker
+    pulsePhase: Math.random() * Math.PI * 2,
+    pulseSpeed: 2 + Math.random(),
+    // Entry animation state
+    entryComplete: false,
+    entryStartX: options.entryFrom === 'left' ? bounds.left - 150 : (options.entryFrom === 'right' ? bounds.left + bounds.width + 150 : posX)
+  }
+
+  // If entry animation, start from off-screen
+  if (options.entryFrom) {
+    prop.style.left = `${data.entryStartX}px`
+    data.x = data.entryStartX
+  }
+
+  hannahPropsElements.push(prop)
+  hannahPropsData.push(data)
+
+  // Fade in
+  setTimeout(() => {
+    prop.style.opacity = '1'
+    // Start entry animation
+    if (options.entryFrom) {
+      setTimeout(() => {
+        prop.style.left = `${posX}px`
+        data.entryComplete = true
+      }, 500)
+    } else {
+      data.entryComplete = true
+    }
+  }, 100)
+
+  return data
+}
+
+function updateHannahProps() {
+  if (!isHannahPropsActive) return
+
+  const now = performance.now()
+
+  for (const data of hannahPropsData) {
+    const prop = data.element
+
+    // Floating up/down animation (for all props)
+    data.floatPhase += data.floatSpeed * 0.016
+    const floatY = Math.sin(data.floatPhase) * data.floatAmount
+    prop.style.top = `${data.baseY + floatY}px`
+
+    // Light-specific: flicker effect
+    if (data.type === 'light') {
+      data.flickerPhase += data.flickerSpeed * 0.016
+      const flicker = 0.7 + Math.sin(data.flickerPhase) * 0.3
+      prop.style.opacity = String(flicker)
+    }
+
+    // Speaker-specific: pulse effect
+    if (data.type === 'speaker') {
+      data.pulsePhase += data.pulseSpeed * 0.016
+      const pulse = 1 + Math.sin(data.pulsePhase) * 0.05
+      const baseTransform = data.options.flipX ? 'scaleX(-1)' : ''
+      prop.style.transform = `translate(-50%, -50%) ${baseTransform} scale(${pulse})`
+    }
+  }
+
+  hannahPropsAnimationId = requestAnimationFrame(updateHannahProps)
+}
+
+function startHannahProps() {
+  if (isHannahPropsActive) return
+
+  isHannahPropsActive = true
+  console.log('MyVMK Genie: Starting Hannah props')
+
+  // Create the flying props
+  // Trees: 2 of each color on each side, mid-screen
+  createHannahProp('treePink', { x: 0.12, y: 0.5 }, { entryFrom: 'left', flipX: false })
+  createHannahProp('treeBlue', { x: 0.18, y: 0.6 }, { entryFrom: 'left', flipX: false })
+  createHannahProp('treePink', { x: 0.88, y: 0.5 }, { entryFrom: 'right', flipX: true })
+  createHannahProp('treeBlue', { x: 0.82, y: 0.6 }, { entryFrom: 'right', flipX: true })
+
+  // Light: Right side, top
+  setTimeout(() => {
+    if (isHannahPropsActive) {
+      createHannahProp('light', { x: 0.85, y: 0.2 }, { entryFrom: 'right' })
+    }
+  }, 2000)
+
+  // Speakers: Top area, one on each side
+  setTimeout(() => {
+    if (isHannahPropsActive) {
+      createHannahProp('speaker', { x: 0.15, y: 0.2 }, { entryFrom: 'left' })
+      createHannahProp('speaker', { x: 0.85, y: 0.2 }, { entryFrom: 'right', flipX: true })
+    }
+  }, 3000)
+
+  // Start animation loop
+  updateHannahProps()
+}
+
+function stopHannahProps() {
+  if (!isHannahPropsActive) return
+
+  isHannahPropsActive = false
+  console.log('MyVMK Genie: Stopping Hannah props')
+
+  if (hannahPropsAnimationId) {
+    cancelAnimationFrame(hannahPropsAnimationId)
+    hannahPropsAnimationId = null
+  }
+
+  // Fly props off screen
+  const bounds = getGameCanvasBounds()
+  hannahPropsData.forEach(data => {
+    const prop = data.element
+    if (data.options.entryFrom === 'left' || data.type === 'speaker') {
+      prop.style.left = `${bounds.left - 200}px`
+    } else {
+      prop.style.left = `${bounds.left + bounds.width + 200}px`
+    }
+    prop.style.opacity = '0'
+  })
+
+  // Remove after animation
+  setTimeout(() => {
+    hannahPropsElements.forEach(prop => {
+      if (prop.parentNode) {
+        prop.parentNode.removeChild(prop)
+      }
+    })
+    hannahPropsElements = []
+    hannahPropsData = []
+  }, 2500)
+}
+
+// ============================================================================
+// HANNAH MONTANA PERFORMANCE CHOREOGRAPHY
+// Timed sequence synced to the YouTube live video
+// ============================================================================
+
+// Choreography timeline - times in seconds from video start
+// The video is a Hannah Montana concert performance
+const HANNAH_PERFORMANCE_CHOREOGRAPHY = [
+  // === OPENING (0:00) - Setup phase ===
+  { time: 0, action: 'night', enabled: true },
+  { time: 0, action: 'lightwall', enabled: true, colors: ['pink', 'purple', 'gold'] },
+  { time: 0, action: 'billboard', enabled: true },
+
+  // === INTRO (0:05) - Props fly in ===
+  { time: 5, action: 'trees', enabled: true },
+  { time: 8, action: 'spotlights', enabled: true, colors: ['pink', 'purple', 'gold'] },
+  { time: 10, action: 'light', enabled: true },
+  { time: 12, action: 'speaker', enabled: true },
+
+  // === PERFORMANCE (0:15+) - Lanterns during show ===
+  { time: 15, action: 'lantern1', enabled: true },
+  { time: 45, action: 'lantern1', enabled: true },
+  { time: 90, action: 'lantern1', enabled: true },
+  { time: 150, action: 'lantern1', enabled: true },
+  { time: 210, action: 'lantern1', enabled: true },
+  { time: 270, action: 'lantern1', enabled: true },
+
+  // === FINALE (dynamic - update with actual video length) ===
+  // Placeholder: assume ~5 minute performance for now
+  { time: 280, action: 'trees', enabled: false },
+  { time: 285, action: 'light', enabled: false },
+  { time: 285, action: 'speaker', enabled: false },
+  { time: 290, action: 'spotlights', enabled: false },
+  { time: 295, action: 'lightwall', enabled: false },
+  { time: 300, action: 'end' }
+]
+
+function startHannahPerformance(offsetSeconds = 0) {
+  if (isHannahPerformanceActive) return
+
+  isHannahPerformanceActive = true
+  console.log('MyVMK Genie: Starting Hannah performance', offsetSeconds > 0 ? `at ${offsetSeconds}s` : '')
+
+  const isLateJoin = offsetSeconds > 5
+
+  // Show the billboard video
+  showHannahBillboard(HANNAH_YOUTUBE_URL, offsetSeconds)
+
+  // Start night overlay
+  startNightOverlay(true)
+
+  // Initialize timing
+  hannahPerformanceStartTime = performance.now() - (offsetSeconds * 1000)
+  lastHannahChoreographyIndex = -1
+
+  // For late joiners, apply current state
+  if (isLateJoin) {
+    let nightEnabled = false
+    let lightwallEnabled = false
+    let treesEnabled = false
+    let lightEnabled = false
+    let speakerEnabled = false
+    let spotlightsEnabled = false
+
+    for (let i = 0; i < HANNAH_PERFORMANCE_CHOREOGRAPHY.length; i++) {
+      const event = HANNAH_PERFORMANCE_CHOREOGRAPHY[i]
+      if (event.time <= offsetSeconds) {
+        lastHannahChoreographyIndex = i
+        // Track state
+        if (event.action === 'night') nightEnabled = event.enabled
+        if (event.action === 'lightwall') lightwallEnabled = event.enabled
+        if (event.action === 'trees') treesEnabled = event.enabled
+        if (event.action === 'light') lightEnabled = event.enabled
+        if (event.action === 'speaker') speakerEnabled = event.enabled
+        if (event.action === 'spotlights') spotlightsEnabled = event.enabled
+      } else {
+        break
+      }
+    }
+
+    // Apply current state
+    if (lightwallEnabled) startLightWall(['pink', 'purple', 'gold'], 'wave', 'overlay')
+    if (treesEnabled) startHannahProps()
+    if (spotlightsEnabled) startColoredSpotlights(['pink', 'purple', 'gold'])
+
+    console.log('MyVMK Genie: Late join - Hannah performance at index', lastHannahChoreographyIndex)
+  }
+
+  // Start choreography loop
+  hannahChoreographyInterval = setInterval(() => {
+    if (!isHannahPerformanceActive) {
+      clearInterval(hannahChoreographyInterval)
+      return
+    }
+
+    const elapsedSeconds = (performance.now() - hannahPerformanceStartTime) / 1000
+
+    // Process choreography events
+    for (let i = lastHannahChoreographyIndex + 1; i < HANNAH_PERFORMANCE_CHOREOGRAPHY.length; i++) {
+      const event = HANNAH_PERFORMANCE_CHOREOGRAPHY[i]
+      if (event.time <= elapsedSeconds) {
+        executeHannahChoreographyEvent(event)
+        lastHannahChoreographyIndex = i
+      } else {
+        break
+      }
+    }
+  }, 100)
+}
+
+function executeHannahChoreographyEvent(event) {
+  console.log('MyVMK Genie: Hannah choreography:', event)
+
+  switch (event.action) {
+    case 'night':
+      if (event.enabled) startNightOverlay(true)
+      else stopNightOverlay()
+      break
+
+    case 'lightwall':
+      if (event.enabled) {
+        const colors = event.colors || ['pink', 'purple', 'gold']
+        startLightWall(colors, 'wave', 'overlay')
+      } else {
+        stopLightWall()
+      }
+      break
+
+    case 'billboard':
+      if (event.enabled) showHannahBillboard(HANNAH_YOUTUBE_URL)
+      else hideHannahBillboard()
+      break
+
+    case 'trees':
+    case 'light':
+    case 'speaker':
+      // Props are controlled together via startHannahProps/stopHannahProps
+      if (event.enabled && !isHannahPropsActive) startHannahProps()
+      else if (!event.enabled && isHannahPropsActive) stopHannahProps()
+      break
+
+    case 'spotlights':
+      if (event.enabled) {
+        const colors = event.colors || ['pink', 'purple', 'gold']
+        startColoredSpotlights(colors)
+      } else {
+        stopSpotlights()
+      }
+      break
+
+    case 'lantern1':
+      // Spawn a performance lantern (lantern1)
+      if (event.enabled) {
+        spawnPerformanceLantern()
+      }
+      break
+
+    case 'end':
+      stopHannahPerformance()
+      break
+  }
+}
+
+function spawnPerformanceLantern() {
+  // Spawn the special performance lantern (lantern1)
+  const bounds = getGameCanvasBounds()
+  const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN1_IMAGE)
+
+  const lantern = document.createElement('img')
+  lantern.src = imageUrl
+  lantern.className = 'vmkpal-hannah-lantern vmkpal-hannah-lantern-performance'
+
+  const startX = bounds.left + 100 + Math.random() * (bounds.width - 200)
+  const startY = bounds.top + bounds.height + 50
+
+  lantern.style.cssText = `
+    position: fixed;
+    width: 50px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483639;
+    filter: drop-shadow(0 0 12px rgba(255, 150, 200, 0.7))
+            drop-shadow(0 0 20px rgba(255, 100, 150, 0.5));
+    transition: opacity 2s ease-in-out;
+    left: ${startX}px;
+    top: ${startY}px;
+  `
+
+  document.body.appendChild(lantern)
+
+  // Add to lantern tracking (reuse existing system)
+  const data = {
+    element: lantern,
+    x: startX,
+    y: startY,
+    riseSpeed: 1.0 + Math.random() * 0.4,
+    driftPhase: Math.random() * Math.PI * 2,
+    driftSpeed: 0.2 + Math.random() * 0.15,
+    driftAmount: 20 + Math.random() * 10,
+    flickerPhase: Math.random() * Math.PI * 2,
+    flickerSpeed: 4 + Math.random() * 2,
+    baseOpacity: 0.9,
+    createdAt: performance.now()
+  }
+
+  hannahLanternElements.push(lantern)
+  hannahLanternData.push(data)
+
+  // Fade in
+  setTimeout(() => {
+    lantern.style.opacity = '0.9'
+  }, 100)
+
+  // Ensure lantern animation is running
+  if (!hannahLanternAnimationId) {
+    updateHannahLanterns()
+  }
+}
+
+function stopHannahPerformance() {
+  if (!isHannahPerformanceActive) return
+
+  isHannahPerformanceActive = false
+  console.log('MyVMK Genie: Stopping Hannah performance')
+
+  // Clear choreography interval
+  if (hannahChoreographyInterval) {
+    clearInterval(hannahChoreographyInterval)
+    hannahChoreographyInterval = null
+  }
+
+  // Stop all effects
+  hideHannahBillboard()
+  stopHannahProps()
+  stopLightWall()
+  stopSpotlights()
+  stopNightOverlay()
+  stopHannahLanterns()
+
+  // Reset state
+  hannahPerformanceStartTime = null
+  lastHannahChoreographyIndex = -1
+}
+
+// ============================================================================
+// HANNAH MONTANA MAIN SHOW - Full Choreographed GIF Sequence
+// Synced to hannah-party.mp3 (~248 seconds / 4m 8s)
+// ============================================================================
+
+// Choreography timeline - times in seconds
+// Each event specifies which layer(s) to show and what asset to display
+// Layers: center (main Hannah), left (left side), right (right side), plane (flying plane), helicopter
+const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
+  // === HELICOPTER ENTRANCE (0:10-0:15) - GIF 1 flies in slowly from top right ===
+  { time: 8, action: 'wind', enabled: true },   // Wind starts before helicopter enters
+  { time: 10, action: 'helicopterFlyInSlow', asset: '1_silhouette', duration: 5 },  // 5 seconds to center
+  { time: 15, action: 'wind', enabled: false }, // Wind stops when helicopter centered
+  { time: 15, action: 'spotlights', colors: ['white', 'white', 'white'] },  // White spotlights for beginning
+  // GIF 1 hovers at center from 0:15 to 0:18
+
+  // === GIF 2 SEQUENCE (0:18-0:26) - Switch to GIF 2, hover ===
+  { time: 18, action: 'replaceHelicopter', asset: '2_plane' },
+
+  // === HELICOPTER DESCENT (0:26) ===
+  { time: 26, action: 'helicopterDescend' },    // Helicopter descends
+
+  // === PROJECTOR ENTRY (0:35) - Projector enters from right, mirrored ===
+  { time: 35, action: 'spawnProjector' },  // flying_light from right, mirrored
+  { time: 37, action: 'projectorSpotlight', color: 'white', duration: 5000 },  // Spotlight burst when settled
+
+  // === GIF 3-4 SEQUENCE (0:36) ===
+  { time: 36, action: 'replaceHelicopter', asset: '3_hannah_appears' },
+  { time: 39, action: 'replaceHelicopter', asset: '4_spotlight' },  // GIF 3 one cycle (~3.2s) → GIF 4
+
+  // === STAGE SETUP (0:44-0:51) ===
+  { time: 44, action: 'riseLayer', layer: 'left', asset: '3.5_left_stage' },
+  { time: 47, action: 'riseLayer', layer: 'right', asset: '3.5_right_stage' },
+
+  // === GIF 5-6 + PROPS (0:51) ===
+  { time: 51, action: 'replaceHelicopter', asset: '5_singing_spotlights' },  // GIF 4 → GIF 5
+  { time: 51, action: 'spawnPalmTrees', colors: ['pink', 'blue'] },
+  { time: 51, action: 'spawnSpeakerLeft' },  // Speaker enters from left only
+  { time: 54, action: 'replaceHelicopter', asset: '6_singing' },  // GIF 5 one cycle (~3.2s) → GIF 6
+
+  // === PERFORMANCE (1:00-1:16) ===
+  { time: 60, action: 'stagePulse', enabled: true },
+  { time: 60, action: 'lightwall', color: 'gold', enabled: true },  // Gold background lightwall
+  { time: 64, action: 'dropFilmStrips' },  // Film strips drop from top
+  { time: 70, action: 'stagePulse', enabled: false },
+
+  // === STAGE TRANSFORM (1:16) - Switch to audience stages ===
+  { time: 76, action: 'showLayer', layer: 'left', asset: '11.5_floor_people' },  // 11.5: 18 frames × 200ms = 3.6s
+  { time: 76, action: 'showLayer', layer: 'right', asset: '11.5_right' },
+  { time: 80, action: 'showLayer', layer: 'left', asset: '11.75_left' },  // After one 11.5 cycle → 11.75
+  { time: 80, action: 'showLayer', layer: 'right', asset: '11.75_right_dance' },
+
+  // === GIF 6 WANDER (1:36) - Moves around then recenters ===
+  { time: 96, action: 'helicopterWander' },  // GIF 6 moves around screen then recenters
+  { time: 100, action: 'spotlights', colors: ['green', 'pink', 'green'] },  // Green/pink spotlights for middle
+
+  // === STAR SEQUENCE (1:43-2:00) ===
+  { time: 103, action: 'replaceHelicopter', asset: '7_spotlight_reverse' },  // GIF 6 → GIF 7
+  { time: 106, action: 'replaceHelicopter', asset: '8_plane_2' },  // GIF 7 (~3s) → GIF 8
+  { time: 106, action: 'spawnDarkStar' },  // Dark star PNG enters from right, centers below
+  { time: 109, action: 'replaceHelicopter', asset: '9_getting_on_star' },  // GIF 8 → GIF 9
+  { time: 110, action: 'replaceHelicopter', asset: '10_standing_star' },  // GIF 9 one cycle (1s) → GIF 10
+  { time: 115, action: 'planeFlyOffLeft', asset: '11_plane_3' },  // GIF 11 plane floats off left
+  { time: 115, action: 'hideDarkStar' },  // Remove dark star when light star appears
+  { time: 115, action: 'showLayer', layer: 'center', asset: '11_star_lightup' },  // Star lighting up (one lifetime)
+  { time: 118, action: 'hideLayer', layer: 'helicopter' },  // Hide helicopter layer
+  { time: 118, action: 'showLayer', layer: 'center', asset: '12_dancing_star' },  // GIF 12 centered with stages
+  { time: 118, action: 'butterflies', color: 'pink' },  // Pink butterflies start
+
+  // === JACK JACK BUBBLES (2:00-3:00) - Float upward like lanterns ===
+  { time: 120, action: 'jackJackBubbles', enabled: true },   // Start Jack Jack bubbles
+  { time: 120, action: 'hannahLanterns', enabled: true },    // Start lanterns 2, 3, 4 (same time as Jack Jack)
+  { time: 180, action: 'jackJackBubbles', enabled: false },  // Stop Jack Jack bubbles
+  { time: 180, action: 'hannahLanterns', enabled: false },   // Stop lanterns 2, 3, 4
+
+  // === DISCO BALL (2:30) - Pink disco effect behind GIF 12 ===
+  { time: 150, action: 'discoBall', color: 'pink', enabled: true },
+
+  // === LIGHTNING & TRANSFORM (2:46-2:49) ===
+  { time: 166, action: 'lightning', color: 'pink' },
+  { time: 166, action: 'floatLogoDown' },  // HM logo floats down behind Hannah
+  { time: 169, action: 'showLayer', layer: 'center', asset: '13_transform' },  // GIF 12 → GIF 13
+  { time: 169, action: 'spawnButterfliesAndFlyAway' },  // Butterflies spawn and fly off
+  { time: 169, action: 'discoBall', enabled: false },
+  { time: 177, action: 'showLayer', layer: 'center', asset: '14_winged_dancing' },  // GIF 13 one cycle (7.6s) → GIF 14
+
+  // === GATOR PARADE (2:51) - Slow movement behind other effects ===
+  { time: 171, action: 'gatorParadeSlow' },  // Gator + white palm trees, slow movement
+  { time: 171, action: 'lantern1', enabled: true },  // White lantern spawns with gator parade
+
+  // === CROWD SEQUENCE (2:57) ===
+  { time: 177, action: 'showLayer', layer: 'left', asset: '13.5_left_change' },  // Stages → GIF 13 (one cycle)
+  { time: 177, action: 'showLayer', layer: 'right', asset: '13.5_right_change' },
+  { time: 180, action: 'showLayer', layer: 'center', asset: '15_disappearing' },  // GIF 14 → GIF 15 (disappearing)
+  { time: 180, action: 'showLayer', layer: 'left', asset: '13.75_left' },  // Stages cycle to 13.75
+  { time: 180, action: 'showLayer', layer: 'right', asset: '13.75_right_dance' },
+  { time: 183, action: 'showLayer', layer: 'center', asset: '15.25_star_animate' },  // → 15.25 star animating
+  { time: 183, action: 'showLayer', layer: 'crowd', asset: '15.25_crowd_appear' },  // Crowd appears (one cycle)
+  { time: 186, action: 'showLayer', layer: 'crowd', asset: '15.5_crowd_fly' },  // 15.50 (two cycles)
+
+  // === HELICOPTER RE-ENTRY (3:09) - From top right ===
+  { time: 189, action: 'helicopterReenter', asset: '11_plane_3' },  // GIF 11 plane re-enters from top right
+
+  { time: 193, action: 'showLayer', layer: 'crowd', asset: '15.75_crowd_hover' },  // 15.75 (two cycles)
+  { time: 200, action: 'showLayer', layer: 'crowd', asset: '16_floating_down' },  // 15.75 → few seconds
+  { time: 200, action: 'spotlights', colors: ['white', 'white', 'white'] },  // White spotlights for end
+  { time: 203, action: 'showLayer', layer: 'crowd', asset: '17_crowd_disappear' },  // → 17 hannah disappearing
+  { time: 206, action: 'showLayer', layer: 'center', asset: '17_reverse_star' },  // 15.25 star → 17 reverse
+  { time: 209, action: 'hideLayer', layer: 'crowd' },
+  { time: 209, action: 'showLayer', layer: 'center', asset: '18_finale' },  // GIF 17 → GIF 18 persistent
+  { time: 209, action: 'showLayer', layer: 'left', asset: '17.5_left_floors' },  // Stages → 17.5
+  { time: 209, action: 'showLayer', layer: 'right', asset: '17.5_stage_colors' },
+
+  // === FINALE (3:38-3:50) ===
+  { time: 218, action: 'centerLayerFlyAway', duration: 5 },  // GIF 18 floats up and away to top right (5 seconds)
+  { time: 223, action: 'fireworksContinuous', color: 'pink' },  // Pink fireworks start and continue
+  { time: 230, action: 'helicopterFlyOffTopLeft' },  // Helicopter flies off to top left
+  { time: 235, action: 'hideLayer', layer: 'left' },
+  { time: 235, action: 'hideLayer', layer: 'right' },
+  { time: 240, action: 'spotlights', enabled: false },  // Stop spotlights
+
+  // === END (4:08) ===
+  { time: 248, action: 'end' }
+]
+
+// Get position styles for a layer based on canvas bounds
+function getHannahLayerPosition(position, bounds) {
+  switch (position) {
+    case 'center':
+      return {
+        left: bounds.left + bounds.width * 0.42,  // Align with dark star position
+        top: bounds.top + bounds.height * 0.35,   // Centered vertically like star
+        width: bounds.width * 0.15  // Same size as dark star
+      }
+    case 'left':
+      return {
+        left: bounds.left + bounds.width * 0.02,  // Small margin from edge
+        top: bounds.top + bounds.height * 0.40,   // Lower on canvas
+        width: bounds.width * 0.32  // Slightly smaller for symmetry
+      }
+    case 'right':
+      return {
+        left: bounds.left + bounds.width * 0.66,  // Mirrors left (100% - 2% - 32%)
+        top: bounds.top + bounds.height * 0.40,   // Lower on canvas
+        width: bounds.width * 0.32  // Same width as left
+      }
+    case 'plane':
+      return {
+        left: bounds.left + bounds.width * 0.1,
+        top: bounds.top + bounds.height * 0.05,
+        width: bounds.width * 0.8
+      }
+    case 'helicopter':
+      // Use stored final position from fly-in animation
+      return {
+        left: bounds.left + bounds.width * helicopterFinalPosition.xProp,
+        top: bounds.top + bounds.height * helicopterFinalPosition.yProp,
+        width: bounds.width * helicopterFinalPosition.widthProp
+      }
+    case 'crowd':
+      return {
+        left: bounds.left + bounds.width * 0.35,  // Centered
+        top: bounds.top + bounds.height * 0.35,   // Centered vertically
+        width: bounds.width * 0.30  // Smaller size
+      }
+    default:
+      return { left: bounds.left, top: bounds.top, width: bounds.width * 0.5 }
+  }
+}
+
+// Update all Hannah Main Show layer positions (called on resize)
+function updateHannahMainShowLayerPositions() {
+  if (!isHannahMainShowActive) return
+
+  const bounds = getGameCanvasBounds()
+
+  for (const [layerId, layer] of Object.entries(hannahMainShowLayers)) {
+    if (layer) {
+      const pos = getHannahLayerPosition(layerId, bounds)
+      layer.style.left = pos.left + 'px'
+      layer.style.top = pos.top + 'px'
+      // Skip width/height for helicopter if dimensions are locked (to preserve seamless swaps)
+      if (layerId === 'helicopter' && helicopterLockedDimensions) {
+        // Recalculate locked dimensions proportionally on resize
+        helicopterLockedDimensions = {
+          width: bounds.width * helicopterFinalPosition.widthProp,
+          height: (helicopterLockedDimensions.height / helicopterLockedDimensions.width) * (bounds.width * helicopterFinalPosition.widthProp)
+        }
+        layer.style.width = helicopterLockedDimensions.width + 'px'
+        layer.style.height = helicopterLockedDimensions.height + 'px'
+      } else {
+        layer.style.width = pos.width + 'px'
+        if (pos.height) {
+          layer.style.height = pos.height + 'px'
+        }
+      }
+    }
+  }
+}
+
+// Create a GIF layer element for the Hannah Main Show
+function createHannahMainShowLayer(layerId, position = 'center') {
+  const bounds = getGameCanvasBounds()
+  const layer = document.createElement('img')
+  layer.id = `vmkpal-hannah-main-${layerId}`
+  layer.className = 'vmkpal-hannah-main-layer'
+  layer.dataset.position = position // Store position type for resize updates
+
+  const pos = getHannahLayerPosition(position, bounds)
+
+  // Center layer needs higher z-index to appear above helicopter during transitions
+  const zIndex = (layerId === 'center') ? 2147483643 : 2147483641
+
+  layer.style.cssText = `
+    position: fixed;
+    left: ${pos.left}px;
+    top: ${pos.top}px;
+    width: ${pos.width}px;
+    ${pos.height ? `height: ${pos.height}px; object-fit: cover;` : 'height: auto;'}
+    pointer-events: none;
+    z-index: ${zIndex};
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+  `
+
+  document.body.appendChild(layer)
+  return layer
+}
+
+// Show a layer with a specific asset
+function showHannahMainShowLayer(layerId, assetKey) {
+  let layer = hannahMainShowLayers[layerId]
+
+  // Create layer if it doesn't exist
+  if (!layer) {
+    layer = createHannahMainShowLayer(layerId, layerId)
+    hannahMainShowLayers[layerId] = layer
+  }
+
+  // Set the image source
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (assetPath) {
+    layer.src = chrome.runtime.getURL(assetPath)
+    layer.style.opacity = '1'
+
+    // Start floating animation for plane layer
+    if (layerId === 'plane') {
+      startHelicopterFloat('plane')
+    }
+  }
+}
+
+// Hide a layer
+function hideHannahMainShowLayer(layerId) {
+  const layer = hannahMainShowLayers[layerId]
+  if (layer) {
+    layer.style.opacity = '0'
+
+    // Stop floating animation for helicopter/plane layers
+    if (layerId === 'helicopter' || layerId === 'plane') {
+      stopHelicopterFloat()
+    }
+
+    // Stop floating animation for stage layers
+    if (layerId === 'left' || layerId === 'right') {
+      stopStageFloat(layerId)
+    }
+  }
+}
+
+// Rise a layer from bottom (for stage entrances)
+function riseHannahMainShowLayer(layerId, assetKey) {
+  let layer = hannahMainShowLayers[layerId]
+
+  // Create layer if it doesn't exist
+  if (!layer) {
+    layer = createHannahMainShowLayer(layerId, layerId)
+    hannahMainShowLayers[layerId] = layer
+  }
+
+  // Set the image source
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  layer.src = chrome.runtime.getURL(assetPath)
+
+  // Animation parameters
+  const duration = 2000  // 2 seconds to rise
+  const startTime = performance.now()
+
+  function animateRise() {
+    if (!isHannahMainShowActive) return
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    // Ease-out for smooth stop
+    const easedProgress = 1 - Math.pow(1 - progress, 3)
+
+    // Get final position
+    const finalPos = getHannahLayerPosition(layerId, bounds)
+
+    // Start from below canvas, rise to final position
+    const startY = bounds.top + bounds.height + 50
+    const currentY = startY + (finalPos.top - startY) * easedProgress
+
+    layer.style.left = finalPos.left + 'px'
+    layer.style.top = currentY + 'px'
+    layer.style.width = finalPos.width + 'px'
+    layer.style.opacity = Math.min(progress * 2, 1)  // Fade in during first half
+
+    if (progress < 1) {
+      requestAnimationFrame(animateRise)
+    } else {
+      // Start floating animation after rise completes
+      startStageFloat(layerId)
+    }
+  }
+
+  animateRise()
+}
+
+// Stage floating animation state
+let stageFloatAnimationId = null
+let stageFloatPhases = { left: 0, right: Math.PI } // Offset phases so they don't move in sync
+let activeFloatingStages = new Set()
+
+function startStageFloat(layerId) {
+  activeFloatingStages.add(layerId)
+
+  // Start animation loop if not already running
+  if (!stageFloatAnimationId) {
+    animateStageFloat()
+  }
+}
+
+function stopStageFloat(layerId) {
+  activeFloatingStages.delete(layerId)
+
+  // Stop animation if no more floating stages
+  if (activeFloatingStages.size === 0 && stageFloatAnimationId) {
+    cancelAnimationFrame(stageFloatAnimationId)
+    stageFloatAnimationId = null
+  }
+}
+
+function animateStageFloat() {
+  if (!isHannahMainShowActive || activeFloatingStages.size === 0) {
+    stageFloatAnimationId = null
+    return
+  }
+
+  const bounds = getGameCanvasBounds()
+
+  for (const layerId of activeFloatingStages) {
+    const layer = hannahMainShowLayers[layerId]
+    if (!layer || layer.style.opacity === '0') continue
+
+    // Update phase
+    stageFloatPhases[layerId] = (stageFloatPhases[layerId] || 0) + 0.025
+
+    // Get base position
+    const pos = getHannahLayerPosition(layerId, bounds)
+
+    // Add floating offset (subtle up/down movement)
+    const floatOffset = Math.sin(stageFloatPhases[layerId]) * (bounds.height * 0.008)
+
+    layer.style.top = (pos.top + floatOffset) + 'px'
+    layer.style.left = pos.left + 'px'
+  }
+
+  stageFloatAnimationId = requestAnimationFrame(animateStageFloat)
+}
+
+function stopAllStageFloats() {
+  activeFloatingStages.clear()
+  if (stageFloatAnimationId) {
+    cancelAnimationFrame(stageFloatAnimationId)
+    stageFloatAnimationId = null
+  }
+}
+
+// Helicopter floating animation state
+let helicopterFloatPhase = 0
+let helicopterFloatAnimationId = null
+
+// Helicopter fly-in animation - enters from top-left, lands in center, then floats
+function startHelicopterFlyIn(assetKey) {
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  // Stop any existing float animation
+  if (helicopterFloatAnimationId) {
+    cancelAnimationFrame(helicopterFloatAnimationId)
+    helicopterFloatAnimationId = null
+  }
+
+  // Create the helicopter layer
+  let layer = hannahMainShowLayers['helicopter']
+  if (!layer) {
+    layer = document.createElement('img')
+    layer.id = 'vmkpal-hannah-main-helicopter'
+    layer.className = 'vmkpal-hannah-main-layer'
+    layer.style.cssText = `
+      position: fixed;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483642;
+      opacity: 1;
+    `
+    document.body.appendChild(layer)
+    hannahMainShowLayers['helicopter'] = layer
+  }
+
+  layer.src = chrome.runtime.getURL(assetPath)
+
+  // Animation parameters (proportional to canvas)
+  const duration = 6000  // 6 seconds to fly in (matches wind duration)
+  const startTime = performance.now()
+
+  // Start position: top-right, outside canvas
+  const startXProp = 1.0
+  const startYProp = -0.2
+
+  // End position: centered in canvas
+  const endXProp = 0.25
+  const endYProp = 0.05  // Higher on canvas (was 0.15)
+  const endWidthProp = 0.5
+
+  // Start small, grow to full size
+  const startWidthProp = 0.15  // Start at 15% of canvas width (small)
+  const widthProp = endWidthProp  // Final size
+
+  // Store final position for seamless replacement
+  helicopterFinalPosition = { xProp: endXProp, yProp: endYProp, widthProp: endWidthProp }
+
+  // Easing function (ease-out cubic for smooth landing)
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3)
+  }
+
+  function animateHelicopter() {
+    if (!isHannahMainShowActive) return
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    const easedProgress = easeOutCubic(progress)
+
+    // Interpolate position and size
+    const currentXProp = startXProp + (endXProp - startXProp) * easedProgress
+    const currentYProp = startYProp + (endYProp - startYProp) * easedProgress
+    const currentWidthProp = startWidthProp + (endWidthProp - startWidthProp) * easedProgress
+
+    // Calculate actual pixel positions
+    const actualX = bounds.left + (currentXProp * bounds.width)
+    const actualY = bounds.top + (currentYProp * bounds.height)
+    const width = bounds.width * currentWidthProp
+
+    layer.style.left = actualX + 'px'
+    layer.style.top = actualY + 'px'
+    layer.style.width = width + 'px'
+    layer.style.opacity = '1'  // Always visible, scaling up instead of fading
+
+    if (progress < 1) {
+      requestAnimationFrame(animateHelicopter)
+    } else {
+      // Lock dimensions for seamless image swaps
+      helicopterLockedDimensions = {
+        width: layer.offsetWidth,
+        height: layer.offsetHeight
+      }
+      // Apply locked dimensions with object-fit to ensure consistency
+      layer.style.width = helicopterLockedDimensions.width + 'px'
+      layer.style.height = helicopterLockedDimensions.height + 'px'
+      layer.style.objectFit = 'fill'
+      // Start floating animation after landing
+      startHelicopterFloat('helicopter')
+    }
+  }
+
+  animateHelicopter()
+}
+
+// Floating animation for helicopter/plane layers
+function startHelicopterFloat(layerId) {
+  helicopterFloatPhase = 0
+
+  function animateFloat() {
+    if (!isHannahMainShowActive) {
+      helicopterFloatAnimationId = null
+      return
+    }
+
+    const layer = hannahMainShowLayers[layerId]
+    if (!layer || layer.style.opacity === '0') {
+      helicopterFloatAnimationId = null
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+    helicopterFloatPhase += 0.03
+
+    // Get base position
+    const pos = getHannahLayerPosition(layerId, bounds)
+
+    // Add floating offset (subtle up/down movement)
+    const floatOffset = Math.sin(helicopterFloatPhase) * (bounds.height * 0.01)
+
+    layer.style.top = (pos.top + floatOffset) + 'px'
+    layer.style.left = pos.left + 'px'
+
+    helicopterFloatAnimationId = requestAnimationFrame(animateFloat)
+  }
+
+  animateFloat()
+}
+
+function stopHelicopterFloat() {
+  if (helicopterFloatAnimationId) {
+    cancelAnimationFrame(helicopterFloatAnimationId)
+    helicopterFloatAnimationId = null
+  }
+}
+
+// Replace helicopter image seamlessly (same position/size)
+function replaceHelicopterImage(assetKey) {
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  const layer = hannahMainShowLayers['helicopter']
+  if (!layer) return
+
+  // Use locked dimensions from fly-in animation (ensures all helicopter gifs are same size)
+  if (helicopterLockedDimensions) {
+    layer.style.width = helicopterLockedDimensions.width + 'px'
+    layer.style.height = helicopterLockedDimensions.height + 'px'
+    layer.style.objectFit = 'fill'
+  }
+
+  // Swap the image source
+  layer.src = chrome.runtime.getURL(assetPath)
+}
+
+// Slow helicopter fly-in (configurable duration)
+function startHelicopterFlyInSlow(assetKey, durationSeconds) {
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  // Stop any existing float animation
+  if (helicopterFloatAnimationId) {
+    cancelAnimationFrame(helicopterFloatAnimationId)
+    helicopterFloatAnimationId = null
+  }
+
+  // Create the helicopter layer
+  let layer = hannahMainShowLayers['helicopter']
+  if (!layer) {
+    layer = document.createElement('img')
+    layer.id = 'vmkpal-hannah-main-helicopter'
+    layer.className = 'vmkpal-hannah-main-layer'
+    layer.style.cssText = `
+      position: fixed;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483642;
+      opacity: 1;
+    `
+    document.body.appendChild(layer)
+    hannahMainShowLayers['helicopter'] = layer
+  }
+
+  layer.src = chrome.runtime.getURL(assetPath)
+
+  const duration = durationSeconds * 1000  // Convert to ms
+  const startTime = performance.now()
+
+  // Start position: top-right corner
+  const startXProp = 0.9
+  const startYProp = -0.3
+
+  // End position: centered in canvas
+  const endXProp = 0.25
+  const endYProp = 0.05  // Higher on canvas (was 0.15)
+  const endWidthProp = 0.5
+
+  const startWidthProp = 0.15
+  helicopterFinalPosition = { xProp: endXProp, yProp: endYProp, widthProp: endWidthProp }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3)
+  }
+
+  function animateHelicopter() {
+    if (!isHannahMainShowActive) return
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    const easedProgress = easeOutCubic(progress)
+
+    const currentXProp = startXProp + (endXProp - startXProp) * easedProgress
+    const currentYProp = startYProp + (endYProp - startYProp) * easedProgress
+    const currentWidthProp = startWidthProp + (endWidthProp - startWidthProp) * easedProgress
+
+    const actualX = bounds.left + (currentXProp * bounds.width)
+    const actualY = bounds.top + (currentYProp * bounds.height)
+    const width = bounds.width * currentWidthProp
+
+    layer.style.left = actualX + 'px'
+    layer.style.top = actualY + 'px'
+    layer.style.width = width + 'px'
+    layer.style.opacity = '1'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateHelicopter)
+    } else {
+      helicopterLockedDimensions = {
+        width: layer.offsetWidth,
+        height: layer.offsetHeight
+      }
+      layer.style.width = helicopterLockedDimensions.width + 'px'
+      layer.style.height = helicopterLockedDimensions.height + 'px'
+      layer.style.objectFit = 'fill'
+      startHelicopterFloat('helicopter')
+    }
+  }
+
+  animateHelicopter()
+}
+
+// Helicopter descend animation - moves helicopter down smoothly
+function startHelicopterDescend() {
+  const layer = hannahMainShowLayers['helicopter']
+  if (!layer) return
+
+  stopHelicopterFloat()  // Stop floating while descending
+
+  const bounds = getGameCanvasBounds()
+  const duration = 3000  // 3 seconds to descend
+  const startTime = performance.now()
+
+  // Get current position
+  const startYProp = helicopterFinalPosition.yProp
+  const endYProp = 0.15  // Descend to centered position (was 0.35)
+
+  function animateDescend() {
+    if (!isHannahMainShowActive) return
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    // Ease out for smooth stop
+    const easedProgress = 1 - Math.pow(1 - progress, 3)
+    const currentYProp = startYProp + (endYProp - startYProp) * easedProgress
+
+    layer.style.top = (bounds.top + bounds.height * currentYProp) + 'px'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateDescend)
+    } else {
+      helicopterFinalPosition.yProp = endYProp
+      startHelicopterFloat('helicopter')  // Resume floating
+    }
+  }
+
+  animateDescend()
+}
+
+// Spawn projector from right side (mirrored flying_light)
+function spawnProjectorFromRight() {
+  const bounds = getGameCanvasBounds()
+  const assetPath = HANNAH_MAIN_ASSETS['flying_light']
+  if (!assetPath) return
+
+  const projector = document.createElement('img')
+  projector.src = chrome.runtime.getURL(assetPath)
+  projector.className = 'vmkpal-hannah-flying-prop'
+
+  const propWidth = bounds.width * 0.06  // Same size as speaker
+
+  projector.style.cssText = `
+    position: fixed;
+    width: ${propWidth}px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2147483641;
+    opacity: 0;
+    transition: opacity 0.5s;
+    transform: scaleX(-1);
+  `
+  document.body.appendChild(projector)
+
+  // Animate from right side
+  hannahFlyingPropsElements.push({
+    element: projector,
+    xProp: 1.2,
+    yProp: 0.88,  // Lower into bottom right corner
+    endX: 0.88,   // Farther right
+    speed: 0.006,
+    fromLeft: false,
+    widthProp: 0.06,  // Same size as speaker
+    bobPhase: Math.random() * Math.PI * 2
+  })
+
+  setTimeout(() => projector.style.opacity = '1', 50)
+
+  if (!hannahFlyingPropsAnimationId) {
+    animateHannahFlyingProps()
+  }
+}
+
+// Spawn speaker from left side only
+function spawnSpeakerFromLeft() {
+  const bounds = getGameCanvasBounds()
+  const assetPath = HANNAH_MAIN_ASSETS['flying_speaker']
+  if (!assetPath) return
+
+  const speaker = document.createElement('img')
+  speaker.src = chrome.runtime.getURL(assetPath)
+  speaker.className = 'vmkpal-hannah-flying-prop'
+
+  const propWidth = bounds.width * 0.06  // Half size (was 0.12)
+
+  speaker.style.cssText = `
+    position: fixed;
+    width: ${propWidth}px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2147483641;
+    opacity: 0;
+    transition: opacity 0.5s;
+  `
+  document.body.appendChild(speaker)
+
+  hannahFlyingPropsElements.push({
+    element: speaker,
+    xProp: -0.2,
+    yProp: 0.88,  // Bottom left corner (matches projector height)
+    endX: 0.10,   // Farther into left corner
+    speed: 0.006,
+    fromLeft: true,
+    widthProp: 0.06,
+    bobPhase: Math.random() * Math.PI * 2
+  })
+
+  setTimeout(() => speaker.style.opacity = '1', 50)
+
+  if (!hannahFlyingPropsAnimationId) {
+    animateHannahFlyingProps()
+  }
+}
+
+// Helicopter wander animation - moves around then recenters
+let helicopterWanderAnimationId = null
+
+function startHelicopterWander() {
+  if (helicopterWanderAnimationId) return
+
+  const layer = hannahMainShowLayers['helicopter']
+  if (!layer) return
+
+  // Stop float animation during wander
+  stopHelicopterFloat()
+
+  const startTime = performance.now()
+  const totalDuration = 7000  // 7 seconds total
+
+  // Wander path: smoothly move through these positions
+  const waypoints = [
+    { x: 0.25, y: 0.15 },  // Start (center)
+    { x: 0.45, y: 0.20 },  // Move right
+    { x: 0.10, y: 0.25 },  // Move left
+    { x: 0.40, y: 0.10 },  // Move up-right
+    { x: 0.25, y: 0.15 }   // Return to center
+  ]
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  }
+
+  function animateWander() {
+    if (!isHannahMainShowActive) {
+      helicopterWanderAnimationId = null
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+
+    if (elapsed > totalDuration) {
+      helicopterWanderAnimationId = null
+      // Set final position
+      const finalWaypoint = waypoints[waypoints.length - 1]
+      layer.style.left = (bounds.left + finalWaypoint.x * bounds.width) + 'px'
+      layer.style.top = (bounds.top + finalWaypoint.y * bounds.height) + 'px'
+      startHelicopterFloat('helicopter')
+      return
+    }
+
+    // Calculate which segment we're in and progress within that segment
+    const overallProgress = elapsed / totalDuration
+    const numSegments = waypoints.length - 1
+    const segmentDuration = 1 / numSegments
+    const currentSegment = Math.min(Math.floor(overallProgress / segmentDuration), numSegments - 1)
+    const segmentProgress = (overallProgress - currentSegment * segmentDuration) / segmentDuration
+    const easedProgress = easeInOutCubic(segmentProgress)
+
+    // Interpolate between current and next waypoint
+    const fromWaypoint = waypoints[currentSegment]
+    const toWaypoint = waypoints[currentSegment + 1]
+
+    const currentX = fromWaypoint.x + (toWaypoint.x - fromWaypoint.x) * easedProgress
+    const currentY = fromWaypoint.y + (toWaypoint.y - fromWaypoint.y) * easedProgress
+
+    const x = bounds.left + currentX * bounds.width
+    const y = bounds.top + currentY * bounds.height
+
+    layer.style.left = x + 'px'
+    layer.style.top = y + 'px'
+
+    helicopterWanderAnimationId = requestAnimationFrame(animateWander)
+  }
+
+  animateWander()
+}
+
+// Spawn dark star PNG from right, center below helicopter
+let darkStarElement = null
+
+function spawnDarkStarFromRight() {
+  const bounds = getGameCanvasBounds()
+  const assetPath = HANNAH_MAIN_ASSETS['9_dark_star']
+  if (!assetPath) return
+
+  darkStarElement = document.createElement('img')
+  darkStarElement.src = chrome.runtime.getURL(assetPath)
+  darkStarElement.className = 'vmkpal-hannah-dark-star'
+
+  const starWidth = bounds.width * 0.15
+
+  darkStarElement.style.cssText = `
+    position: fixed;
+    width: ${starWidth}px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2147483640;
+    opacity: 0;
+    transition: opacity 0.5s, left 2s ease-out;
+  `
+
+  // Start from right side
+  darkStarElement.style.left = (bounds.left + bounds.width * 1.1) + 'px'
+  darkStarElement.style.top = (bounds.top + bounds.height * 0.45) + 'px'
+
+  document.body.appendChild(darkStarElement)
+
+  // Animate to center
+  setTimeout(() => {
+    darkStarElement.style.opacity = '1'
+    setTimeout(() => {
+      darkStarElement.style.left = (bounds.left + bounds.width * 0.42) + 'px'
+    }, 100)
+  }, 50)
+}
+
+// Hide/remove the dark star
+function hideDarkStar() {
+  if (darkStarElement) {
+    darkStarElement.style.opacity = '0'
+    setTimeout(() => {
+      if (darkStarElement && darkStarElement.parentNode) {
+        darkStarElement.parentNode.removeChild(darkStarElement)
+      }
+      darkStarElement = null
+    }, 500)
+  }
+}
+
+// Plane fly off to the left
+function planeFlyOffLeft(assetKey) {
+  const layer = hannahMainShowLayers['helicopter']
+  if (!layer) return
+
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (assetPath) {
+    layer.src = chrome.runtime.getURL(assetPath)
+  }
+
+  stopHelicopterFloat()
+
+  const startTime = performance.now()
+  const duration = 3000
+
+  function animateFlyOff() {
+    if (!isHannahMainShowActive) return
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    // Move to left and slightly up
+    const startX = bounds.left + bounds.width * 0.25
+    const endX = bounds.left - bounds.width * 0.3
+    const currentX = startX + (endX - startX) * progress
+
+    const startY = bounds.top + bounds.height * 0.15
+    const endY = bounds.top + bounds.height * 0.05
+    const currentY = startY + (endY - startY) * progress
+
+    layer.style.left = currentX + 'px'
+    layer.style.top = currentY + 'px'
+    layer.style.opacity = (1 - progress * 0.5) + ''
+
+    if (progress < 1) {
+      requestAnimationFrame(animateFlyOff)
+    } else {
+      layer.style.opacity = '0'
+    }
+  }
+
+  animateFlyOff()
+}
+
+// Spawn butterflies that fly away off screen
+function spawnButterfliesAndFlyAway() {
+  const bounds = getGameCanvasBounds()
+  const centerX = bounds.left + bounds.width * 0.5
+  const centerY = bounds.top + bounds.height * 0.3
+
+  // Use pink Hannah Montana butterfly
+  const pinkButterflyPath = HANNAH_MAIN_ASSETS['pink_butterfly']
+
+  // Create several butterflies
+  for (let i = 0; i < 8; i++) {
+    setTimeout(() => {
+      if (!isHannahMainShowActive) return
+
+      const butterfly = document.createElement('img')
+      butterfly.src = chrome.runtime.getURL(pinkButterflyPath)
+      butterfly.className = 'vmkpal-hannah-spawn-butterfly'
+
+      const size = 20 + Math.random() * 15
+
+      butterfly.style.cssText = `
+        position: fixed;
+        width: ${size}px;
+        height: auto;
+        pointer-events: none;
+        z-index: 2147483645;
+        opacity: 1;
+        left: ${centerX}px;
+        top: ${centerY}px;
+        transition: left 3s ease-out, top 3s ease-out, opacity 2s;
+      `
+      document.body.appendChild(butterfly)
+
+      // Fly away in random directions
+      setTimeout(() => {
+        const angle = (Math.PI * 2 / 8) * i + Math.random() * 0.5
+        const distance = bounds.width * 0.6
+        butterfly.style.left = (centerX + Math.cos(angle) * distance) + 'px'
+        butterfly.style.top = (centerY + Math.sin(angle) * distance) + 'px'
+        butterfly.style.opacity = '0'
+
+        setTimeout(() => butterfly.remove(), 3500)
+      }, 100)
+    }, i * 150)
+  }
+}
+
+// Slow gator parade (slower movement)
+function spawnGatorParadeSlow() {
+  const bounds = getGameCanvasBounds()
+
+  // Spawn gator
+  const gatorPath = HANNAH_MAIN_ASSETS['gator']
+  if (gatorPath) {
+    const gator = document.createElement('img')
+    gator.src = chrome.runtime.getURL(gatorPath)
+    gator.className = 'vmkpal-hannah-gator-slow'
+
+    const gatorWidth = bounds.width * 0.2
+
+    gator.style.cssText = `
+      position: fixed;
+      width: ${gatorWidth}px;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483638;
+      opacity: 0;
+      transition: opacity 0.5s;
+    `
+    document.body.appendChild(gator)
+    gatorParadeElements.push(gator)
+    setTimeout(() => gator.style.opacity = '1', 100)
+  }
+
+  // Spawn white palm trees
+  for (let i = 0; i < 3; i++) {
+    const treePath = HANNAH_MAIN_ASSETS['tree_white']
+    if (!treePath) continue
+
+    const tree = document.createElement('img')
+    tree.src = chrome.runtime.getURL(treePath)
+    tree.className = 'vmkpal-hannah-gator-slow'
+
+    const treeWidth = bounds.width * 0.12
+
+    tree.style.cssText = `
+      position: fixed;
+      width: ${treeWidth}px;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483637;
+      opacity: 0;
+      transition: opacity 0.5s;
+    `
+    document.body.appendChild(tree)
+    gatorParadeElements.push(tree)
+    setTimeout(() => tree.style.opacity = '1', 200 + i * 100)
+  }
+
+  // Start slow parade animation
+  if (!gatorParadeAnimationId) {
+    let paradePhase = 0
+    const startX = bounds.width * 1.1
+    const endX = -bounds.width * 1.0  // Move fully off screen (accounting for tree offsets)
+
+    function animateSlowParade() {
+      if (!isHannahMainShowActive) {
+        gatorParadeAnimationId = null
+        return
+      }
+
+      const bounds = getGameCanvasBounds()
+      paradePhase += 0.0008  // Very slow
+
+      gatorParadeElements.forEach((el, index) => {
+        if (!el || !el.parentNode) return
+
+        // Gator (index 0) leads, trees trail behind (higher index = further right/behind)
+        const offset = index * bounds.width * 0.15
+        const x = bounds.left + startX + (endX - startX) * paradePhase + offset
+        const y = bounds.top + bounds.height * 0.65 + Math.sin(paradePhase * 10 + index) * 5
+
+        el.style.left = x + 'px'
+        el.style.top = y + 'px'
+      })
+
+      if (paradePhase < 1) {
+        gatorParadeAnimationId = requestAnimationFrame(animateSlowParade)
+      }
+    }
+
+    animateSlowParade()
+  }
+}
+
+// Helicopter re-enter from top right
+function helicopterReenterFromTopRight(assetKey) {
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  let layer = hannahMainShowLayers['helicopter']
+  if (!layer) {
+    layer = document.createElement('img')
+    layer.id = 'vmkpal-hannah-main-helicopter'
+    layer.className = 'vmkpal-hannah-main-layer'
+    layer.style.cssText = `
+      position: fixed;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483642;
+      opacity: 1;
+    `
+    document.body.appendChild(layer)
+    hannahMainShowLayers['helicopter'] = layer
+  }
+
+  layer.src = chrome.runtime.getURL(assetPath)
+  layer.style.opacity = '1'
+
+  const bounds = getGameCanvasBounds()
+  const startX = bounds.left + bounds.width * 1.1
+  const startY = bounds.top - bounds.height * 0.2
+  const endX = bounds.left + bounds.width * 0.6
+  const endY = bounds.top + bounds.height * 0.1
+
+  layer.style.left = startX + 'px'
+  layer.style.top = startY + 'px'
+  layer.style.width = (bounds.width * 0.3) + 'px'
+
+  const startTime = performance.now()
+  const duration = 3000
+
+  function animateReenter() {
+    if (!isHannahMainShowActive) return
+
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    const eased = 1 - Math.pow(1 - progress, 3)
+
+    layer.style.left = (startX + (endX - startX) * eased) + 'px'
+    layer.style.top = (startY + (endY - startY) * eased) + 'px'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateReenter)
+    } else {
+      startHelicopterFloat('helicopter')
+    }
+  }
+
+  animateReenter()
+}
+
+// Center layer fly away to top right
+function centerLayerFlyAway(durationSeconds) {
+  const layer = hannahMainShowLayers['center']
+  if (!layer) return
+
+  const bounds = getGameCanvasBounds()
+  const startX = parseFloat(layer.style.left) || (bounds.left + bounds.width * 0.3)
+  const startY = parseFloat(layer.style.top) || (bounds.top + bounds.height * 0.1)
+  const endX = bounds.left + bounds.width * 1.2
+  const endY = bounds.top - bounds.height * 0.3
+
+  const startTime = performance.now()
+  const duration = durationSeconds * 1000
+
+  function animateFlyAway() {
+    if (!isHannahMainShowActive) return
+
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    layer.style.left = (startX + (endX - startX) * progress) + 'px'
+    layer.style.top = (startY + (endY - startY) * progress) + 'px'
+    layer.style.opacity = (1 - progress * 0.5) + ''
+
+    if (progress < 1) {
+      requestAnimationFrame(animateFlyAway)
+    } else {
+      layer.style.opacity = '0'
+    }
+  }
+
+  animateFlyAway()
+}
+
+// Continuous fireworks
+let continuousFireworksInterval = null
+
+function startContinuousFireworks(color) {
+  if (continuousFireworksInterval) return
+
+  function launchFirework() {
+    if (!isHannahMainShowActive) {
+      clearInterval(continuousFireworksInterval)
+      continuousFireworksInterval = null
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+    const x = bounds.left + bounds.width * (0.2 + Math.random() * 0.6)
+    const y = bounds.top + bounds.height * (0.1 + Math.random() * 0.4)
+    createFirework(x, y, color || 'pink')
+  }
+
+  // Launch immediately and then every 400ms
+  launchFirework()
+  continuousFireworksInterval = setInterval(launchFirework, 400)
+}
+
+function stopContinuousFireworks() {
+  if (continuousFireworksInterval) {
+    clearInterval(continuousFireworksInterval)
+    continuousFireworksInterval = null
+  }
+}
+
+// Helicopter fly off to top left
+function helicopterFlyOffTopLeft() {
+  const layer = hannahMainShowLayers['helicopter']
+  if (!layer) return
+
+  stopHelicopterFloat()
+
+  const bounds = getGameCanvasBounds()
+  const startX = parseFloat(layer.style.left) || (bounds.left + bounds.width * 0.6)
+  const startY = parseFloat(layer.style.top) || (bounds.top + bounds.height * 0.1)
+  const endX = bounds.left - bounds.width * 0.3
+  const endY = bounds.top - bounds.height * 0.3
+
+  const startTime = performance.now()
+  const duration = 4000
+
+  function animateFlyOff() {
+    if (!isHannahMainShowActive) return
+
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    layer.style.left = (startX + (endX - startX) * progress) + 'px'
+    layer.style.top = (startY + (endY - startY) * progress) + 'px'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateFlyOff)
+    } else {
+      layer.style.opacity = '0'
+    }
+  }
+
+  animateFlyOff()
+}
+
+// Resize handler for Hannah Main Show
+let hannahMainShowResizeHandler = null
+let hannahDebugTimer = null
+
+// Create debug timer overlay (DEV_MODE only)
+function createHannahDebugTimer() {
+  if (!DEV_MODE) return null
+
+  const timer = document.createElement('div')
+  timer.id = 'vmkpal-hannah-debug-timer'
+  timer.style.cssText = `
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    font-family: monospace;
+    font-size: 24px;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 8px;
+    z-index: 2147483647;
+    pointer-events: none;
+    border: 2px solid #00ff00;
+  `
+  document.body.appendChild(timer)
+  return timer
+}
+
+function updateHannahDebugTimer(elapsedSeconds) {
+  if (!hannahDebugTimer) return
+  const mins = Math.floor(elapsedSeconds / 60)
+  const secs = Math.floor(elapsedSeconds % 60)
+  const ms = Math.floor((elapsedSeconds % 1) * 10)
+  hannahDebugTimer.textContent = `${mins}:${secs.toString().padStart(2, '0')}.${ms}`
+}
+
+function removeHannahDebugTimer() {
+  if (hannahDebugTimer) {
+    hannahDebugTimer.remove()
+    hannahDebugTimer = null
+  }
+}
+
+// Start the Hannah Montana Main Show
+function startHannahMainShow(offsetSeconds = 0) {
+  if (isHannahMainShowActive) return
+
+  isHannahMainShowActive = true
+  const isLateJoin = offsetSeconds > 5
+  console.log('MyVMK Genie: Starting Hannah Montana Main Show' + (isLateJoin ? ` (syncing to ${Math.floor(offsetSeconds)}s)` : ''))
+
+  // Reset helicopter dimensions for fresh start
+  helicopterLockedDimensions = null
+
+  // Create debug timer (DEV_MODE only)
+  hannahDebugTimer = createHannahDebugTimer()
+
+  // Add resize listener to update layer positions
+  hannahMainShowResizeHandler = () => updateHannahMainShowLayerPositions()
+  window.addEventListener('resize', hannahMainShowResizeHandler)
+
+  // Start night overlay for atmosphere
+  startNightOverlay(true)
+
+  // Mute game audio and play our show audio
+  muteGameAudio()
+  const audioUrl = chrome.runtime.getURL(HANNAH_MAIN_AUDIO)
+  hannahMainShowAudio = new Audio(audioUrl)
+  hannahMainShowAudio.currentTime = offsetSeconds
+  hannahMainShowAudio.play().catch(e => console.log('MyVMK Genie: Audio play failed', e))
+
+  // When audio ends, stop the show
+  hannahMainShowAudio.onended = () => {
+    stopHannahMainShow()
+  }
+
+  // Initialize timing
+  hannahMainShowStartTime = performance.now() - (offsetSeconds * 1000)
+  lastHannahMainShowIndex = -1
+
+  // For late joiners, apply current state
+  if (isLateJoin) {
+    const currentState = {}
+
+    for (let i = 0; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
+      const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
+      if (event.time <= offsetSeconds) {
+        lastHannahMainShowIndex = i
+
+        // Track layer states
+        if (event.action === 'showLayer') {
+          currentState[event.layer] = event.asset
+        } else if (event.action === 'hideLayer') {
+          delete currentState[event.layer]
+        }
+      } else {
+        break
+      }
+    }
+
+    // Apply current state
+    for (const [layer, asset] of Object.entries(currentState)) {
+      showHannahMainShowLayer(layer, asset)
+    }
+
+    console.log('MyVMK Genie: Late join - Hannah Main Show at index', lastHannahMainShowIndex)
+  }
+
+  // Start choreography loop
+  hannahMainShowInterval = setInterval(() => {
+    if (!isHannahMainShowActive) {
+      clearInterval(hannahMainShowInterval)
+      return
+    }
+
+    const elapsedSeconds = (performance.now() - hannahMainShowStartTime) / 1000
+
+    // Update debug timer
+    updateHannahDebugTimer(elapsedSeconds)
+
+    // Process choreography events
+    for (let i = lastHannahMainShowIndex + 1; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
+      const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
+      if (event.time <= elapsedSeconds) {
+        executeHannahMainShowEvent(event)
+        lastHannahMainShowIndex = i
+      } else {
+        break
+      }
+    }
+  }, 100)
+
+  showNotification('🎤 Hannah Montana Show started!', 'success')
+}
+
+// Execute a choreography event
+function executeHannahMainShowEvent(event) {
+  console.log('MyVMK Genie: Hannah Main Show event:', event)
+
+  try {
+  switch (event.action) {
+    case 'showLayer':
+      showHannahMainShowLayer(event.layer, event.asset)
+      break
+
+    case 'riseLayer':
+      riseHannahMainShowLayer(event.layer, event.asset)
+      break
+
+    case 'hideLayer':
+      hideHannahMainShowLayer(event.layer)
+      break
+
+    case 'wind':
+      if (event.enabled) {
+        startShakeEffect('wind')
+      } else {
+        stopShakeEffect()
+      }
+      break
+
+    case 'helicopterFlyIn':
+      startHelicopterFlyIn(event.asset)
+      break
+
+    case 'replaceHelicopter':
+      replaceHelicopterImage(event.asset)
+      break
+
+    case 'gatorParade':
+      spawnGatorParade()
+      break
+
+    case 'lantern':
+      spawnHannahMainShowLantern()
+      break
+
+    case 'spawnFlyingProps':
+      spawnHannahFlyingProps(event.props)
+      break
+
+    case 'spawnPalmTrees':
+      spawnHannahPalmTrees(event.colors)
+      break
+
+    case 'spotlights':
+      if (event.enabled === false) {
+        stopSpotlights()
+      } else {
+        const colors = event.colors || [event.color, event.color, 'white']
+        startColoredSpotlights(colors)
+      }
+      break
+
+    case 'stagePulse':
+      if (event.enabled) {
+        startHannahStagePulse()
+      } else {
+        stopHannahStagePulse()
+      }
+      break
+
+    case 'helicopterBackForth':
+      startHelicopterBackForth(event.asset)
+      break
+
+    case 'butterflies':
+      startButterflyEffect()  // Uses existing butterfly system
+      break
+
+    case 'discoBall':
+      if (event.enabled) {
+        startHannahDiscoBall(event.color)
+      } else {
+        stopHannahDiscoBall()
+      }
+      break
+
+    case 'lightning':
+      triggerLightning(event.color)
+      break
+
+    case 'dropFilmStrips':
+      dropFilmStrips()
+      break
+
+    case 'fireworks':
+      // Trigger a burst of fireworks
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          if (isHannahMainShowActive) {
+            const bounds = getGameCanvasBounds()
+            const x = bounds.left + bounds.width * (0.2 + Math.random() * 0.6)
+            const y = bounds.top + bounds.height * (0.2 + Math.random() * 0.4)
+            createFirework(x, y, event.color || 'pink')
+          }
+        }, i * 200)
+      }
+      break
+
+    case 'helicopterFlyInSlow':
+      startHelicopterFlyInSlow(event.asset, event.duration || 5)
+      break
+
+    case 'spawnProjector':
+      spawnProjectorFromRight()
+      break
+
+    case 'spawnSpeakerLeft':
+      spawnSpeakerFromLeft()
+      break
+
+    case 'helicopterWander':
+      startHelicopterWander()
+      break
+
+    case 'spawnDarkStar':
+      spawnDarkStarFromRight()
+      break
+
+    case 'hideDarkStar':
+      hideDarkStar()
+      break
+
+    case 'planeFlyOffLeft':
+      planeFlyOffLeft(event.asset)
+      break
+
+    case 'spawnButterfliesAndFlyAway':
+      spawnButterfliesAndFlyAway()
+      break
+
+    case 'gatorParadeSlow':
+      spawnGatorParadeSlow()
+      break
+
+    case 'helicopterReenter':
+      helicopterReenterFromTopRight(event.asset)
+      break
+
+    case 'centerLayerFlyAway':
+      centerLayerFlyAway(event.duration || 5)
+      break
+
+    case 'fireworksContinuous':
+      startContinuousFireworks(event.color)
+      break
+
+    case 'helicopterFlyOffTopLeft':
+      helicopterFlyOffTopLeft()
+      break
+
+    case 'helicopterDescend':
+      startHelicopterDescend()
+      break
+
+    case 'jackJackBubbles':
+      if (event.enabled) {
+        startJackJackBubbles()
+      } else {
+        stopJackJackBubbles()
+      }
+      break
+
+    case 'hannahLanterns':
+      if (event.enabled) {
+        startHannahLanterns()
+      } else {
+        stopHannahLanterns()
+      }
+      break
+
+    case 'floatLogoDown':
+      floatHMLogoDown()
+      break
+
+    case 'lightwall':
+      if (event.enabled) {
+        startLightWall([event.color || 'gold'], 'wave', 'background')
+      } else {
+        stopLightWall()
+      }
+      break
+
+    case 'projectorSpotlight':
+      triggerProjectorSpotlight(event.color || 'white', event.duration || 1500)
+      break
+
+    case 'end':
+      stopHannahMainShow()
+      break
+  }
+  } catch (error) {
+    console.error('MyVMK Genie: Error executing Hannah Main Show event:', event.action, error)
+  }
+}
+
+// Stop the Hannah Montana Main Show
+function stopHannahMainShow() {
+  if (!isHannahMainShowActive) return
+
+  isHannahMainShowActive = false
+  console.log('MyVMK Genie: Stopping Hannah Montana Main Show')
+
+  // Remove resize listener
+  if (hannahMainShowResizeHandler) {
+    window.removeEventListener('resize', hannahMainShowResizeHandler)
+    hannahMainShowResizeHandler = null
+  }
+
+  // Clear choreography interval
+  if (hannahMainShowInterval) {
+    clearInterval(hannahMainShowInterval)
+    hannahMainShowInterval = null
+  }
+
+  // Remove debug timer
+  removeHannahDebugTimer()
+
+  // Stop audio and restore game audio
+  if (hannahMainShowAudio) {
+    hannahMainShowAudio.onended = null // Remove listener to prevent double-stop
+    hannahMainShowAudio.pause()
+    hannahMainShowAudio = null
+  }
+  unmuteGameAudio()
+
+  // Hide and remove all layers
+  for (const layerId of Object.keys(hannahMainShowLayers)) {
+    const layer = hannahMainShowLayers[layerId]
+    if (layer) {
+      layer.style.opacity = '0'
+      setTimeout(() => {
+        if (layer.parentNode) {
+          layer.parentNode.removeChild(layer)
+        }
+      }, 500)
+    }
+    hannahMainShowLayers[layerId] = null
+  }
+
+  // Stop effects
+  stopNightOverlay()
+  stopLightWall()
+  stopGatorParade()
+  stopShakeEffect()  // Stop wind if active
+  stopHelicopterFloat()  // Stop floating animation
+  stopAllStageFloats()   // Stop stage floating animations
+  stopHannahFlyingProps()  // Stop flying speakers/lights/palm trees
+  stopHannahStagePulse()   // Stop stage pulsing
+  stopHelicopterBackForth()  // Stop helicopter back-and-forth
+  stopHannahDiscoBall()    // Stop disco ball effect
+  stopSpotlights()         // Stop spotlights
+  stopButterflies()        // Stop butterflies
+  stopFireworks()          // Stop fireworks
+  stopContinuousFireworks()  // Stop continuous fireworks
+  stopJackJackBubbles()    // Stop Jack Jack bubbles
+
+  // Stop helicopter wander animation
+  if (helicopterWanderAnimationId) {
+    cancelAnimationFrame(helicopterWanderAnimationId)
+    helicopterWanderAnimationId = null
+  }
+
+  // Clean up any remaining lanterns
+  document.querySelectorAll('.vmkpal-hannah-main-lantern').forEach(el => el.remove())
+  // Clean up flying props and palm trees
+  document.querySelectorAll('.vmkpal-hannah-flying-prop').forEach(el => el.remove())
+  document.querySelectorAll('.vmkpal-hannah-palm-tree').forEach(el => el.remove())
+  // Clean up film strips
+  cleanupFilmStrips()
+  document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => el.remove())
+  // Clean up dark star
+  if (darkStarElement) {
+    darkStarElement.remove()
+    darkStarElement = null
+  }
+  document.querySelectorAll('.vmkpal-hannah-dark-star').forEach(el => el.remove())
+  // Clean up slow gator parade elements
+  document.querySelectorAll('.vmkpal-hannah-gator-slow').forEach(el => el.remove())
+  // Clean up spawned butterflies
+  document.querySelectorAll('.vmkpal-hannah-spawn-butterfly').forEach(el => el.remove())
+  // Clean up Jack Jack bubbles
+  document.querySelectorAll('.vmkpal-hannah-jackjack-bubble').forEach(el => el.remove())
+  // Clean up HM logo
+  document.querySelectorAll('.vmkpal-hannah-hm-logo').forEach(el => el.remove())
+  // Clean up disco ball
+  document.querySelectorAll('#vmkpal-hannah-disco-ball').forEach(el => el.remove())
+  // Clean up all layers
+  document.querySelectorAll('.vmkpal-hannah-main-layer').forEach(el => el.remove())
+  // Clean up performance lanterns
+  document.querySelectorAll('.vmkpal-hannah-lantern').forEach(el => el.remove())
+  document.querySelectorAll('.vmkpal-hannah-lantern-performance').forEach(el => el.remove())
+  // Catch-all cleanup for any remaining Hannah elements
+  document.querySelectorAll('[class*="vmkpal-hannah-"]').forEach(el => el.remove())
+  document.querySelectorAll('[id*="vmkpal-hannah-"]').forEach(el => el.remove())
+
+  // Reset state
+  hannahMainShowStartTime = null
+  lastHannahMainShowIndex = -1
+
+  showNotification('🎤 Hannah Montana Show ended', 'info')
+}
+
+// Password prompt for Hannah Main Show beta testing
+function showHannahPasswordPrompt(onSuccess) {
+  // Create overlay
+  const overlay = document.createElement('div')
+  overlay.id = 'vmkpal-hannah-password-overlay'
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
+
+  // Create modal
+  const modal = document.createElement('div')
+  modal.style.cssText = `
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 2px solid #e94560;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+  `
+
+  modal.innerHTML = `
+    <div style="color: #e94560; font-size: 24px; margin-bottom: 8px;">🎤 Hannah Montana Show</div>
+    <div style="color: #aaa; font-size: 14px; margin-bottom: 16px;">Beta Testing - Enter Password</div>
+    <input type="password" id="vmkpal-hannah-password-input" placeholder="Enter password..." style="
+      width: 200px;
+      padding: 10px 14px;
+      border: 1px solid #e94560;
+      border-radius: 6px;
+      background: #0f0f1a;
+      color: white;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 12px;
+    " />
+    <div style="display: flex; gap: 10px; justify-content: center;">
+      <button id="vmkpal-hannah-password-submit" style="
+        padding: 8px 20px;
+        background: #e94560;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+      ">Unlock</button>
+      <button id="vmkpal-hannah-password-cancel" style="
+        padding: 8px 20px;
+        background: #333;
+        border: 1px solid #555;
+        border-radius: 6px;
+        color: #aaa;
+        cursor: pointer;
+      ">Cancel</button>
+    </div>
+    <div id="vmkpal-hannah-password-error" style="color: #ff6b6b; font-size: 12px; margin-top: 10px; display: none;">
+      Incorrect password
+    </div>
+  `
+
+  overlay.appendChild(modal)
+  document.body.appendChild(overlay)
+
+  const input = document.getElementById('vmkpal-hannah-password-input')
+  const submitBtn = document.getElementById('vmkpal-hannah-password-submit')
+  const cancelBtn = document.getElementById('vmkpal-hannah-password-cancel')
+  const errorDiv = document.getElementById('vmkpal-hannah-password-error')
+
+  input.focus()
+
+  function checkPassword() {
+    if (input.value === HANNAH_BETA_PASSWORD) {
+      hannahMainShowUnlocked = true
+      overlay.remove()
+      onSuccess()
+    } else {
+      errorDiv.style.display = 'block'
+      input.value = ''
+      input.focus()
+    }
+  }
+
+  submitBtn.addEventListener('click', checkPassword)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') checkPassword()
+    if (e.key === 'Escape') overlay.remove()
+  })
+  cancelBtn.addEventListener('click', () => overlay.remove())
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove()
+  })
+}
+
+// Toggle the Hannah Montana Main Show
+function toggleHannahMainShow() {
+  if (isHannahMainShowActive) {
+    stopHannahMainShow()
+  } else {
+    // Check if unlocked (DEV_MODE bypasses password)
+    if (DEV_MODE || hannahMainShowUnlocked) {
+      startHannahMainShow()
+    } else {
+      showHannahPasswordPrompt(() => startHannahMainShow())
+    }
+  }
+}
+
+// Spawn gator parade - gator leads white palm trees flying right to left
+// Uses proportional positioning (0-1 range relative to canvas)
+function spawnGatorParade() {
+  const bounds = getGameCanvasBounds()
+  const gatorUrl = chrome.runtime.getURL(HANNAH_MAIN_ASSETS['gator'])
+  const treeUrl = chrome.runtime.getURL(HANNAH_MAIN_ASSETS['tree_white'])
+
+  // Calculate proportional sizes (relative to canvas width)
+  const gatorWidth = bounds.width * 0.25  // 25% of canvas width
+  const treeWidth = bounds.width * 0.18   // 18% of canvas width
+
+  // Spawn gator first - position as proportion of canvas width (1.1 = just off right edge)
+  const gator = document.createElement('img')
+  gator.src = gatorUrl
+  gator.className = 'vmkpal-gator-parade'
+  gator.style.cssText = `
+    position: fixed;
+    width: ${gatorWidth}px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2147483642;
+    transform: scaleX(-1);
+  `
+  document.body.appendChild(gator)
+  gatorParadeElements.push({
+    element: gator,
+    xProp: 1.1,  // Proportional X (0 = left edge, 1 = right edge of canvas)
+    yProp: 0.3,  // Proportional Y
+    speed: 0.002, // Speed as proportion per frame (slower)
+    widthProp: 0.25,  // For resize handling
+    isGator: true
+  })
+
+  // Spawn white palm trees following the gator (staggered)
+  const treeCount = 4
+  for (let i = 0; i < treeCount; i++) {
+    setTimeout(() => {
+      if (!isHannahMainShowActive) return // Don't spawn if show stopped
+      const currentBounds = getGameCanvasBounds()
+      const currentTreeWidth = currentBounds.width * 0.18
+      const tree = document.createElement('img')
+      tree.src = treeUrl
+      tree.className = 'vmkpal-gator-parade'
+      tree.style.cssText = `
+        position: fixed;
+        width: ${currentTreeWidth}px;
+        height: auto;
+        pointer-events: none;
+        z-index: 2147483641;
+        transform: scaleX(-1);
+      `
+      document.body.appendChild(tree)
+      gatorParadeElements.push({
+        element: tree,
+        xProp: 1.2 + (i * 0.15),  // Staggered start positions
+        yProp: 0.25 + Math.random() * 0.3,
+        speed: 0.0015 + Math.random() * 0.001,  // Slower speed
+        widthProp: 0.18,  // For resize handling
+        bobPhase: Math.random() * Math.PI * 2,
+        bobAmount: 0.02 + Math.random() * 0.01
+      })
+    }, 500 + i * 600)  // More time between tree spawns
+  }
+
+  // Start animation if not already running
+  if (!gatorParadeAnimationId) {
+    animateGatorParade()
+  }
+}
+
+function animateGatorParade() {
+  const bounds = getGameCanvasBounds()
+
+  gatorParadeElements = gatorParadeElements.filter(item => {
+    // Move left (decrease xProp)
+    item.xProp -= item.speed
+
+    // Calculate actual pixel positions from proportions
+    const actualX = bounds.left + (item.xProp * bounds.width)
+    let actualY = bounds.top + (item.yProp * bounds.height)
+
+    // Bob up and down for trees
+    if (item.bobPhase !== undefined) {
+      item.bobPhase += 0.05
+      actualY += Math.sin(item.bobPhase) * (item.bobAmount * bounds.height)
+    }
+
+    item.element.style.left = actualX + 'px'
+    item.element.style.top = actualY + 'px'
+    // Update width proportionally on resize
+    if (item.widthProp) {
+      item.element.style.width = (bounds.width * item.widthProp) + 'px'
+    }
+
+    // Remove when off screen left (xProp < -0.2)
+    if (item.xProp < -0.2) {
+      if (item.element.parentNode) {
+        item.element.parentNode.removeChild(item.element)
+      }
+      return false
+    }
+    return true
+  })
+
+  if (gatorParadeElements.length > 0) {
+    gatorParadeAnimationId = requestAnimationFrame(animateGatorParade)
+  } else {
+    gatorParadeAnimationId = null
+  }
+}
+
+function stopGatorParade() {
+  if (gatorParadeAnimationId) {
+    cancelAnimationFrame(gatorParadeAnimationId)
+    gatorParadeAnimationId = null
+  }
+  gatorParadeElements.forEach(el => {
+    if (el && el.parentNode) {
+      el.parentNode.removeChild(el)
+    }
+  })
+  gatorParadeElements = []
+}
+
+// ============================================================================
+// HANNAH MAIN SHOW - Additional Effects
+// ============================================================================
+
+// Flying props (speakers, lights) - fly in from sides
+let hannahFlyingPropsElements = []
+let hannahFlyingPropsAnimationId = null
+
+function spawnHannahFlyingProps(props) {
+  const bounds = getGameCanvasBounds()
+
+  props.forEach((propKey, index) => {
+    const assetPath = HANNAH_MAIN_ASSETS[propKey]
+    if (!assetPath) return
+
+    setTimeout(() => {
+      if (!isHannahMainShowActive) return
+
+      const prop = document.createElement('img')
+      prop.src = chrome.runtime.getURL(assetPath)
+      prop.className = 'vmkpal-hannah-flying-prop'
+
+      const propWidth = bounds.width * 0.06  // Half size (was 0.12)
+      const fromLeft = index % 2 === 0  // Alternate sides
+
+      prop.style.cssText = `
+        position: fixed;
+        width: ${propWidth}px;
+        height: auto;
+        pointer-events: none;
+        z-index: 2147483641;
+        opacity: 0;
+        transition: opacity 0.5s;
+      `
+      document.body.appendChild(prop)
+
+      // Animate flying in
+      const startX = fromLeft ? -0.2 : 1.2
+      const endX = fromLeft ? 0.1 + Math.random() * 0.15 : 0.75 + Math.random() * 0.15
+      const yPos = 0.68 + Math.random() * 0.10  // Even lower on canvas
+      let xProp = startX
+      const speed = 0.008
+
+      hannahFlyingPropsElements.push({
+        element: prop,
+        xProp: xProp,
+        yProp: yPos,
+        endX: endX,
+        speed: speed,
+        fromLeft: fromLeft,
+        widthProp: 0.12,
+        bobPhase: Math.random() * Math.PI * 2
+      })
+
+      setTimeout(() => prop.style.opacity = '1', 50)
+
+      if (!hannahFlyingPropsAnimationId) {
+        animateHannahFlyingProps()
+      }
+    }, index * 300)
+  })
+}
+
+function animateHannahFlyingProps() {
+  const bounds = getGameCanvasBounds()
+
+  hannahFlyingPropsElements = hannahFlyingPropsElements.filter(item => {
+    // Move toward end position
+    if (item.fromLeft && item.xProp < item.endX) {
+      item.xProp += item.speed
+    } else if (!item.fromLeft && item.xProp > item.endX) {
+      item.xProp -= item.speed
+    }
+
+    // Bob up and down
+    item.bobPhase += 0.03
+    const bobOffset = Math.sin(item.bobPhase) * 0.02
+
+    const actualX = bounds.left + (item.xProp * bounds.width)
+    const actualY = bounds.top + ((item.yProp + bobOffset) * bounds.height)
+
+    item.element.style.left = actualX + 'px'
+    item.element.style.top = actualY + 'px'
+    item.element.style.width = (bounds.width * item.widthProp) + 'px'
+
+    return true  // Keep all props
+  })
+
+  if (hannahFlyingPropsElements.length > 0 && isHannahMainShowActive) {
+    hannahFlyingPropsAnimationId = requestAnimationFrame(animateHannahFlyingProps)
+  } else {
+    hannahFlyingPropsAnimationId = null
+  }
+}
+
+function stopHannahFlyingProps() {
+  if (hannahFlyingPropsAnimationId) {
+    cancelAnimationFrame(hannahFlyingPropsAnimationId)
+    hannahFlyingPropsAnimationId = null
+  }
+  hannahFlyingPropsElements.forEach(item => item.element.remove())
+  hannahFlyingPropsElements = []
+}
+
+// Palm trees (pink/blue) - fly in from sides with floating effect
+function spawnHannahPalmTrees(colors) {
+  const bounds = getGameCanvasBounds()
+
+  colors.forEach((color, index) => {
+    const assetKey = `tree_${color}`
+    const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+    if (!assetPath) return
+
+    // Spawn 2 trees per color (left and right)
+    for (let side = 0; side < 2; side++) {
+      setTimeout(() => {
+        if (!isHannahMainShowActive) return
+
+        const tree = document.createElement('img')
+        tree.src = chrome.runtime.getURL(assetPath)
+        tree.className = 'vmkpal-hannah-palm-tree'
+
+        const treeWidth = bounds.width * 0.15
+        const fromLeft = side === 0
+
+        tree.style.cssText = `
+          position: fixed;
+          width: ${treeWidth}px;
+          height: auto;
+          pointer-events: none;
+          z-index: 2147483644;
+          opacity: 0;
+          transition: opacity 0.8s;
+          transform: scaleX(${fromLeft ? 1 : -1});
+        `
+        document.body.appendChild(tree)
+
+        const endX = fromLeft ? 0.02 + index * 0.08 : 0.83 - index * 0.08
+        const yPos = 0.08 + index * 0.06  // Higher on canvas (swapped with speakers)
+
+        hannahFlyingPropsElements.push({
+          element: tree,
+          xProp: fromLeft ? -0.2 : 1.2,
+          yProp: yPos,
+          endX: endX,
+          speed: 0.002,  // Slower entrance (was 0.006)
+          fromLeft: fromLeft,
+          widthProp: 0.15,
+          bobPhase: Math.random() * Math.PI * 2
+        })
+
+        setTimeout(() => tree.style.opacity = '1', 100)
+
+        if (!hannahFlyingPropsAnimationId) {
+          animateHannahFlyingProps()
+        }
+      }, (index * 2 + side) * 400)
+    }
+  })
+}
+
+// Film strip drop effect - drops from top of screen
+let hannahFilmStripElements = []
+
+function dropFilmStrips() {
+  const bounds = getGameCanvasBounds()
+
+  // Spawn tape1 on left side, tape2 on right side
+  const tapes = ['tape1', 'tape2']
+
+  tapes.forEach((tapeKey, index) => {
+    const assetPath = HANNAH_MAIN_ASSETS[tapeKey]
+    if (!assetPath) return
+
+    setTimeout(() => {
+      if (!isHannahMainShowActive) return
+
+      const tape = document.createElement('img')
+      tape.src = chrome.runtime.getURL(assetPath)
+      tape.className = 'vmkpal-hannah-film-strip'
+
+      const tapeWidth = bounds.width * 0.25  // 25% of canvas width (1/4 of canvas)
+      const isLeft = index === 0
+
+      // Position: left tape on left edge, right tape on right edge
+      const xPos = isLeft ? bounds.left : bounds.left + bounds.width * 0.75
+
+      tape.style.cssText = `
+        position: fixed;
+        left: ${xPos}px;
+        top: ${bounds.top - bounds.height * 0.3}px;
+        width: ${tapeWidth}px;
+        height: auto;
+        pointer-events: none;
+        z-index: 2147483642;
+        opacity: 0;
+        transition: opacity 0.3s, top 2s ease-out;
+      `
+      document.body.appendChild(tape)
+      hannahFilmStripElements.push(tape)
+
+      // Fade in then drop
+      setTimeout(() => {
+        tape.style.opacity = '1'
+        setTimeout(() => {
+          // Drop to final position (hanging from top)
+          tape.style.top = `${bounds.top + bounds.height * 0.05}px`
+        }, 100)
+      }, 50)
+    }, index * 300)  // Stagger the drops slightly
+  })
+}
+
+function cleanupFilmStrips() {
+  hannahFilmStripElements.forEach(el => el.remove())
+  hannahFilmStripElements = []
+}
+
+// Stage pulse effect - stages scale/pulse to music
+let hannahStagePulseId = null
+let hannahStagePulsePhase = 0
+
+function startHannahStagePulse() {
+  if (hannahStagePulseId) return
+
+  function animatePulse() {
+    if (!isHannahMainShowActive) {
+      hannahStagePulseId = null
+      return
+    }
+
+    hannahStagePulsePhase += 0.1
+    const scale = 1 + Math.sin(hannahStagePulsePhase) * 0.03
+
+    const leftStage = hannahMainShowLayers['left']
+    const rightStage = hannahMainShowLayers['right']
+
+    if (leftStage && leftStage.style.opacity !== '0') {
+      leftStage.style.transform = `scale(${scale})`
+    }
+    if (rightStage && rightStage.style.opacity !== '0') {
+      rightStage.style.transform = `scale(${scale})`
+    }
+
+    hannahStagePulseId = requestAnimationFrame(animatePulse)
+  }
+
+  animatePulse()
+}
+
+function stopHannahStagePulse() {
+  if (hannahStagePulseId) {
+    cancelAnimationFrame(hannahStagePulseId)
+    hannahStagePulseId = null
+  }
+
+  // Reset transforms
+  const leftStage = hannahMainShowLayers['left']
+  const rightStage = hannahMainShowLayers['right']
+  if (leftStage) leftStage.style.transform = ''
+  if (rightStage) rightStage.style.transform = ''
+}
+
+// Helicopter back and forth movement
+let helicopterBackForthId = null
+
+function startHelicopterBackForth(assetKey) {
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  let layer = hannahMainShowLayers['helicopter']
+  if (!layer) {
+    layer = document.createElement('img')
+    layer.id = 'vmkpal-hannah-main-helicopter'
+    layer.className = 'vmkpal-hannah-main-layer'
+    layer.style.cssText = `
+      position: fixed;
+      height: auto;
+      pointer-events: none;
+      z-index: 2147483642;
+      opacity: 1;
+    `
+    document.body.appendChild(layer)
+    hannahMainShowLayers['helicopter'] = layer
+  }
+
+  layer.src = chrome.runtime.getURL(assetPath)
+  layer.style.opacity = '1'
+
+  const bounds = getGameCanvasBounds()
+  const width = bounds.width * 0.4
+  layer.style.width = width + 'px'
+
+  let phase = 0
+  const duration = 8000  // 8 seconds for full cycle
+  const startTime = performance.now()
+
+  function animateBackForth() {
+    if (!isHannahMainShowActive) {
+      helicopterBackForthId = null
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+    const elapsed = performance.now() - startTime
+    phase = (elapsed / duration) * Math.PI * 2
+
+    // Swing back and forth
+    const xOffset = Math.sin(phase) * 0.2  // 20% of canvas width swing
+    const xPos = 0.3 + xOffset
+    const yPos = 0.15 + Math.sin(phase * 2) * 0.02  // Slight vertical bob
+
+    layer.style.left = (bounds.left + xPos * bounds.width) + 'px'
+    layer.style.top = (bounds.top + yPos * bounds.height) + 'px'
+    layer.style.width = (bounds.width * 0.4) + 'px'
+
+    helicopterBackForthId = requestAnimationFrame(animateBackForth)
+  }
+
+  animateBackForth()
+}
+
+function stopHelicopterBackForth() {
+  if (helicopterBackForthId) {
+    cancelAnimationFrame(helicopterBackForthId)
+    helicopterBackForthId = null
+  }
+}
+
+// Disco ball effect - rotating sparkles/light beams
+let hannahDiscoBallId = null
+let hannahDiscoBallElement = null
+
+function startHannahDiscoBall(color = 'pink') {
+  if (hannahDiscoBallElement) return
+
+  const bounds = getGameCanvasBounds()
+
+  // Create disco ball container
+  const discoBall = document.createElement('div')
+  discoBall.id = 'vmkpal-hannah-disco-ball'
+  discoBall.style.cssText = `
+    position: fixed;
+    left: ${bounds.left + bounds.width * 0.35}px;
+    top: ${bounds.top + bounds.height * 0.05}px;
+    width: ${bounds.width * 0.3}px;
+    height: ${bounds.height * 0.3}px;
+    pointer-events: none;
+    z-index: 2147483639;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,192,203,0.3) 0%, transparent 70%);
+    animation: disco-rotate 3s linear infinite;
+  `
+
+  // Add rotating light beams
+  for (let i = 0; i < 8; i++) {
+    const beam = document.createElement('div')
+    const angle = (i / 8) * 360
+    beam.style.cssText = `
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 150%;
+      background: linear-gradient(to bottom, ${color}, transparent);
+      transform-origin: top center;
+      transform: rotate(${angle}deg);
+      opacity: 0.4;
+    `
+    discoBall.appendChild(beam)
+  }
+
+  document.body.appendChild(discoBall)
+  hannahDiscoBallElement = discoBall
+
+  // Add CSS animation if not exists
+  if (!document.getElementById('vmkpal-disco-styles')) {
+    const style = document.createElement('style')
+    style.id = 'vmkpal-disco-styles'
+    style.textContent = `
+      @keyframes disco-rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  // Animate position with canvas
+  function updateDiscoBall() {
+    if (!hannahDiscoBallElement || !isHannahMainShowActive) {
+      hannahDiscoBallId = null
+      return
+    }
+    const bounds = getGameCanvasBounds()
+    hannahDiscoBallElement.style.left = (bounds.left + bounds.width * 0.35) + 'px'
+    hannahDiscoBallElement.style.top = (bounds.top + bounds.height * 0.05) + 'px'
+    hannahDiscoBallElement.style.width = (bounds.width * 0.3) + 'px'
+    hannahDiscoBallElement.style.height = (bounds.height * 0.3) + 'px'
+    hannahDiscoBallId = requestAnimationFrame(updateDiscoBall)
+  }
+  updateDiscoBall()
+}
+
+function stopHannahDiscoBall() {
+  if (hannahDiscoBallId) {
+    cancelAnimationFrame(hannahDiscoBallId)
+    hannahDiscoBallId = null
+  }
+  if (hannahDiscoBallElement) {
+    hannahDiscoBallElement.remove()
+    hannahDiscoBallElement = null
+  }
+}
+
+// Spawn performance lantern for Hannah Main Show (uses lantern1)
+// Uses proportional positioning relative to canvas
+function spawnHannahMainShowLantern() {
+  const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN1_IMAGE)
+  const bounds = getGameCanvasBounds()
+
+  const lantern = document.createElement('img')
+  lantern.src = imageUrl
+  lantern.className = 'vmkpal-hannah-main-lantern'
+
+  // Store proportional position (xProp: 0-1 across canvas, yProp: 0-1 down canvas)
+  const xProp = 0.1 + Math.random() * 0.8  // Random X between 10% and 90%
+  let yProp = 1.1  // Start just below canvas
+
+  // Proportional width (8% of canvas width)
+  const lanternWidthProp = 0.08
+  const lanternWidth = bounds.width * lanternWidthProp
+
+  lantern.style.cssText = `
+    position: fixed;
+    width: ${lanternWidth}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483639;
+    filter: drop-shadow(0 0 10px rgba(255, 200, 100, 0.8))
+            drop-shadow(0 0 20px rgba(255, 150, 50, 0.5));
+    transition: opacity 1.5s ease-in-out;
+  `
+  lantern.dataset.widthProp = lanternWidthProp
+
+  document.body.appendChild(lantern)
+
+  // Fade in
+  setTimeout(() => lantern.style.opacity = '0.95', 50)
+
+  // Animate rising using proportional coordinates
+  const riseSpeed = 0.002 + Math.random() * 0.001  // Rise speed as proportion per frame
+  const driftAmount = 0.03 + Math.random() * 0.02  // Drift as proportion of width
+  let phase = Math.random() * Math.PI * 2
+
+  function animateLantern() {
+    if (!isHannahMainShowActive) {
+      if (lantern.parentNode) lantern.parentNode.removeChild(lantern)
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+
+    yProp -= riseSpeed
+    phase += 0.02
+    const driftX = Math.sin(phase) * driftAmount
+
+    const actualX = bounds.left + ((xProp + driftX) * bounds.width)
+    const actualY = bounds.top + (yProp * bounds.height)
+
+    lantern.style.left = actualX + 'px'
+    lantern.style.top = actualY + 'px'
+    // Update width proportionally on resize
+    if (lantern.dataset.widthProp) {
+      lantern.style.width = (bounds.width * parseFloat(lantern.dataset.widthProp)) + 'px'
+    }
+
+    // Fade out near top and remove
+    if (yProp < -0.1) {
+      lantern.style.opacity = '0'
+      setTimeout(() => {
+        if (lantern.parentNode) lantern.parentNode.removeChild(lantern)
+      }, 1500)
+      return
+    }
+
+    requestAnimationFrame(animateLantern)
+  }
+
+  animateLantern()
+}
+
+// Jack Jack Bubble effect - floats up like lanterns
+let jackJackBubbleInterval = null
+let jackJackBubbleElements = []
+
+function startJackJackBubbles() {
+  if (jackJackBubbleInterval) return  // Already running
+
+  // Spawn a bubble immediately
+  spawnJackJackBubble()
+
+  // Then spawn one every 3 seconds
+  jackJackBubbleInterval = setInterval(() => {
+    if (isHannahMainShowActive) {
+      spawnJackJackBubble()
+    }
+  }, 3000)
+}
+
+function stopJackJackBubbles() {
+  if (jackJackBubbleInterval) {
+    clearInterval(jackJackBubbleInterval)
+    jackJackBubbleInterval = null
+  }
+  // Clean up existing bubbles
+  jackJackBubbleElements.forEach(el => {
+    if (el && el.parentNode) el.parentNode.removeChild(el)
+  })
+  jackJackBubbleElements = []
+}
+
+function spawnJackJackBubble() {
+  const bounds = getGameCanvasBounds()
+
+  // Randomly choose left or right facing
+  const facingLeft = Math.random() > 0.5
+  const assetKey = facingLeft ? 'jackjack_left' : 'jackjack_right'
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  const bubble = document.createElement('img')
+  bubble.src = chrome.runtime.getURL(assetPath)
+  bubble.className = 'vmkpal-hannah-jackjack-bubble'
+
+  // Store proportional position
+  const xProp = 0.1 + Math.random() * 0.8  // Random X between 10% and 90%
+  let yProp = 1.1  // Start just below canvas
+
+  // Proportional width (10% of canvas width)
+  const bubbleWidthProp = 0.10
+  const bubbleWidth = bounds.width * bubbleWidthProp
+
+  bubble.style.cssText = `
+    position: fixed;
+    width: ${bubbleWidth}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483639;
+    transition: opacity 1s ease-in-out;
+  `
+  bubble.dataset.widthProp = bubbleWidthProp
+
+  document.body.appendChild(bubble)
+  jackJackBubbleElements.push(bubble)
+
+  // Fade in
+  setTimeout(() => bubble.style.opacity = '1', 50)
+
+  // Animate rising
+  const riseSpeed = 0.0015 + Math.random() * 0.001  // Rise speed
+  const driftAmount = 0.03 + Math.random() * 0.02  // Drift
+  let phase = Math.random() * Math.PI * 2
+
+  function animateBubble() {
+    if (!isHannahMainShowActive || !bubble.parentNode) {
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+
+    yProp -= riseSpeed
+    phase += 0.02
+    const driftX = Math.sin(phase) * driftAmount
+
+    const actualX = bounds.left + ((xProp + driftX) * bounds.width)
+    const actualY = bounds.top + (yProp * bounds.height)
+
+    bubble.style.left = actualX + 'px'
+    bubble.style.top = actualY + 'px'
+    bubble.style.width = (bounds.width * parseFloat(bubble.dataset.widthProp)) + 'px'
+
+    // Fade out near top and remove
+    if (yProp < -0.1) {
+      bubble.style.opacity = '0'
+      setTimeout(() => {
+        if (bubble.parentNode) bubble.parentNode.removeChild(bubble)
+        jackJackBubbleElements = jackJackBubbleElements.filter(el => el !== bubble)
+      }, 1000)
+      return
+    }
+
+    requestAnimationFrame(animateBubble)
+  }
+
+  animateBubble()
+}
+
+// Float HM logo down behind Hannah during transformation
+function floatHMLogoDown() {
+  const bounds = getGameCanvasBounds()
+  const assetPath = HANNAH_MAIN_ASSETS['hm_logo']
+  if (!assetPath) return
+
+  const logo = document.createElement('img')
+  logo.src = chrome.runtime.getURL(assetPath)
+  logo.className = 'vmkpal-hannah-hm-logo'
+
+  // Start above canvas, centered
+  let yProp = -0.3
+  const xProp = 0.35  // Centered horizontally
+
+  // Logo size (30% of canvas width)
+  const logoWidthProp = 0.30
+  const logoWidth = bounds.width * logoWidthProp
+
+  logo.style.cssText = `
+    position: fixed;
+    width: ${logoWidth}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483638;
+    transition: opacity 1s ease-in-out;
+  `
+  logo.dataset.widthProp = logoWidthProp
+
+  document.body.appendChild(logo)
+
+  // Fade in
+  setTimeout(() => logo.style.opacity = '1', 50)
+
+  // Animate floating down
+  const fallSpeed = 0.003  // Slow descent
+  const driftAmount = 0.02
+  let phase = Math.random() * Math.PI * 2
+  const endYProp = 0.35  // Stop at center of canvas
+
+  function animateLogo() {
+    if (!isHannahMainShowActive || !logo.parentNode) {
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+
+    // Float down until reaching end position
+    if (yProp < endYProp) {
+      yProp += fallSpeed
+    }
+
+    phase += 0.015
+    const driftX = Math.sin(phase) * driftAmount
+
+    const actualX = bounds.left + ((xProp + driftX) * bounds.width)
+    const actualY = bounds.top + (yProp * bounds.height)
+
+    logo.style.left = actualX + 'px'
+    logo.style.top = actualY + 'px'
+    logo.style.width = (bounds.width * parseFloat(logo.dataset.widthProp)) + 'px'
+
+    // Fade out after a few seconds at rest
+    if (yProp >= endYProp) {
+      setTimeout(() => {
+        if (logo.parentNode) {
+          logo.style.opacity = '0'
+          setTimeout(() => {
+            if (logo.parentNode) logo.parentNode.removeChild(logo)
+          }, 1000)
+        }
+      }, 3000)
+      return
+    }
+
+    requestAnimationFrame(animateLogo)
+  }
+
+  animateLogo()
+}
+
 function checkMatterhornRoom() {
   // Only check if we've actually detected a room via audio this session
   // This prevents snow from auto-enabling due to stale room data from storage
@@ -4868,7 +9117,8 @@ function checkKingdomSyncEffects() {
 const SHAKE_INTENSITIES = {
   light: { offset: 3, interval: 50 },
   medium: { offset: 7, interval: 40 },
-  heavy: { offset: 14, interval: 30 }
+  heavy: { offset: 14, interval: 30 },
+  wind: { offset: 4, interval: 80 } // Helicopter wind - slower, gentler
 }
 
 function startShakeEffect(intensity) {
@@ -4900,7 +9150,6 @@ function startShakeEffect(intensity) {
   }
 
   shake()
-  showNotification(`📳 ${intensity.charAt(0).toUpperCase() + intensity.slice(1)} shake enabled`, 'success')
 }
 
 function stopShakeEffect() {
@@ -4916,9 +9165,7 @@ function stopShakeEffect() {
     shakeAnimationId = null
   }
 
-  const wasIntensity = activeShakeIntensity
   activeShakeIntensity = null
-  showNotification(`📳 ${wasIntensity.charAt(0).toUpperCase() + wasIntensity.slice(1)} shake disabled`, 'info')
 }
 
 function toggleShakeEffect(intensity) {
@@ -5549,6 +9796,21 @@ function startEffect(effectName, eventMode = false, offsetSeconds = 0) {
     case 'spotlights':
       startSpotlights()
       break
+    case 'hannah-lanterns':
+      startHannahLanterns()
+      break
+    case 'hannah-performance':
+      startHannahPerformance(offsetSeconds)
+      break
+    case 'hannah-hangout':
+      // Hangout mode: just lanterns and film strips
+      startHannahLanterns()
+      dropFilmStrips()
+      break
+    case 'hannah-main':
+      // Full choreographed main show
+      startHannahMainShow(offsetSeconds)
+      break
   }
 }
 
@@ -5589,6 +9851,22 @@ function stopEffect(effectName) {
       break
     case 'spotlights':
       stopSpotlights()
+      break
+    case 'hannah-lanterns':
+      stopHannahLanterns()
+      break
+    case 'hannah-performance':
+      stopHannahPerformance()
+      break
+    case 'hannah-hangout':
+      // Stop hangout mode effects
+      stopHannahLanterns()
+      // Film strips auto-remove after animation, but clean up any remaining
+      document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => el.remove())
+      break
+    case 'hannah-main':
+      // Stop full choreographed show
+      stopHannahMainShow()
       break
   }
 }
@@ -6061,7 +10339,7 @@ function updateNightOverlayBounds(darker = false) {
     width: ${bounds.width}px;
     height: ${bounds.height}px;
     pointer-events: none;
-    z-index: 2147483647;
+    z-index: 2147483640;
     background: linear-gradient(
       to bottom,
       rgba(5, 10, 30, ${opacity1}) 0%,
@@ -6189,7 +10467,148 @@ function createOverlaysPanel() {
       () => isRaveEnabled,
       toggleRaveEffect
     ))
+
+    // Hannah Montana Party Effects
+    // Test background swap (replaces themed bg image)
+    grid.appendChild(createOverlayToggle(
+      '🖼️',
+      'Test BG',
+      () => isTestBgActive,
+      toggleTestBackground
+    ))
+
+    // Light Wall - Background mode (replaces game background)
+    grid.appendChild(createOverlayToggle(
+      '💡',
+      'LW BG',
+      () => isLightWallActive && lightWallMode === 'background',
+      () => {
+        if (isLightWallActive) {
+          stopLightWall()
+        } else {
+          startLightWall(['gold'], 'wave', 'background')
+        }
+      }
+    ))
+
+    // Light Wall - Overlay mode (transparent on top)
+    grid.appendChild(createOverlayToggle(
+      '✨',
+      'LW Over',
+      () => isLightWallActive && lightWallMode === 'overlay',
+      () => {
+        if (isLightWallActive) {
+          stopLightWall()
+        } else {
+          startLightWall(['gold', 'pink', 'purple'], 'wave', 'overlay')
+        }
+      }
+    ))
+
+    grid.appendChild(createOverlayToggle(
+      '🩷',
+      'Pink Spots',
+      () => isSpotlightsEnabled,
+      () => {
+        if (isSpotlightsEnabled) {
+          stopSpotlights()
+        } else {
+          startColoredSpotlights(['pink', 'purple', 'gold'])
+        }
+      }
+    ))
+
+    grid.appendChild(createOverlayToggle(
+      '✨',
+      'Sparkles',
+      () => isSparklesActive,
+      () => {
+        if (isSparklesActive) {
+          stopSparkles()
+        } else {
+          startSparkles('gold')
+        }
+      }
+    ))
+
+    grid.appendChild(createOverlayAction(
+      '⚡',
+      'Lightning',
+      () => triggerLightning('pink')
+    ))
+
+    grid.appendChild(createOverlayToggle(
+      '🌬️',
+      'Wind',
+      () => activeShakeIntensity === 'wind',
+      () => toggleShakeEffect('wind')
+    ))
+
+    // Hannah Montana Lanterns
+    grid.appendChild(createOverlayToggle(
+      '🏮',
+      'Lanterns',
+      () => isHannahLanternsActive,
+      () => {
+        if (isHannahLanternsActive) {
+          stopHannahLanterns()
+        } else {
+          startHannahLanterns()
+        }
+      }
+    ))
+
+    // Hannah Billboard Video
+    grid.appendChild(createOverlayToggle(
+      '📺',
+      'Billboard',
+      () => isHannahBillboardActive,
+      () => {
+        if (isHannahBillboardActive) {
+          hideHannahBillboard()
+        } else {
+          showHannahBillboard(HANNAH_YOUTUBE_URL)
+        }
+      }
+    ))
+
+    // Hannah Flying Props
+    grid.appendChild(createOverlayToggle(
+      '🌴',
+      'Props',
+      () => isHannahPropsActive,
+      () => {
+        if (isHannahPropsActive) {
+          stopHannahProps()
+        } else {
+          startHannahProps()
+        }
+      }
+    ))
+
+    // Hannah Full Performance
+    grid.appendChild(createOverlayToggle(
+      '🎤',
+      'HM Show',
+      () => isHannahPerformanceActive,
+      () => {
+        if (isHannahPerformanceActive) {
+          stopHannahPerformance()
+        } else {
+          startHannahPerformance()
+        }
+      }
+    ))
+
   }
+
+  // Hannah Montana Main Show (password protected for beta testing)
+  grid.appendChild(createOverlayToggle(
+    '🌟',
+    'HM Main',
+    () => isHannahMainShowActive,
+    toggleHannahMainShow
+  ))
 
   div.appendChild(grid)
 
@@ -6914,7 +11333,7 @@ function createSettingsPanel() {
   const defaultTheme = createThemeOption('default', chrome.runtime.getURL('myvmk-genie.png'))
   const pinkTheme = createThemeOption('pink', chrome.runtime.getURL('myvmk-genie-lamp-logo-pink.png'))
   const darkTheme = createThemeOption('dark', chrome.runtime.getURL('myvmk-genie-lamp-logo-jafar.png'), !isDarkUnlocked, 'Find the hidden item to unlock Dark Theme!')
-  const hannahTheme = createThemeOption('hannah', chrome.runtime.getURL('hannah-logo.png'), !isHannahUnlocked, 'Attend the Hannah Montana party to unlock!')
+  const hannahTheme = createThemeOption('hannah', chrome.runtime.getURL('hannah/hannah-logo.png'), !isHannahUnlocked, 'Attend the Hannah Montana party to unlock!')
 
   themeGrid.appendChild(defaultTheme)
   themeGrid.appendChild(pinkTheme)
@@ -7217,12 +11636,24 @@ function createSettingsPanel() {
 // Changelog data
 const CHANGELOG = [
   {
+    version: '2.1.7',
+    date: '2025-03-23',
+    changes: [
+      'Hannah Montana event updates'
+    ]
+  },
+  {
+    version: '2.1.5',
+    date: '2025-03-22',
+    changes: [
+      'Event times now display in your local timezone'
+    ]
+  },
+  {
     version: '2.1.4',
     date: '2025-03-20',
     changes: [
-      'Performance: Removed ~200 lines of unused code',
-      'Performance: Fixed ticker interval memory leak',
-      'Performance: Optimized room ID lookups'
+      'Performance: Code cleanup and memory leak fixes'
     ]
   },
   {
@@ -8007,8 +12438,8 @@ function getThemeColors() {
       gradient: 'linear-gradient(135deg, #7b1fa2, #e91e63)',
       gradientRgba: 'linear-gradient(135deg, rgba(123, 31, 162, 0.98), rgba(233, 30, 99, 0.98))',
       glow: '0 0 15px 5px rgba(233, 30, 99, 0.5), 0 0 30px 10px rgba(233, 30, 99, 0.3)',
-      bgImage: chrome.runtime.getURL('hannah-bg.png'),
-      logo: chrome.runtime.getURL('hannah-logo.png'),
+      bgImage: chrome.runtime.getURL('hannah/hannah-bg.png'),
+      logo: chrome.runtime.getURL('hannah/hannah-logo.png'),
       bgGradient: 'linear-gradient(135deg, #7b1fa2 0%, #e91e63 50%, #7b1fa2 100%)'
     }
   }
@@ -8113,6 +12544,33 @@ function applyBackgroundColor() {
       }`
     )
   }
+}
+
+// Test function to swap in-game background image via network interception
+let isTestBgActive = false
+const TEST_BG_TARGET_PATTERN = 'ec291dae.png'  // Specific host background image
+
+function toggleTestBackground() {
+  isTestBgActive = !isTestBgActive
+  const testBgUrl = chrome.runtime.getURL('myvmk-genie.png')
+
+  if (isTestBgActive) {
+    // Enable image replacement in page context interceptor
+    window.postMessage({
+      type: 'vmkgenie-enable-image-replace',
+      targetPattern: TEST_BG_TARGET_PATTERN,
+      replacementUrl: testBgUrl
+    }, '*')
+    console.log('MyVMK Genie: Test background enabled - intercept pattern:', TEST_BG_TARGET_PATTERN)
+    console.log('MyVMK Genie: NOTE - You must change rooms for the new image to load')
+  } else {
+    // Disable image replacement in page context interceptor
+    window.postMessage({ type: 'vmkgenie-disable-image-replace' }, '*')
+    console.log('MyVMK Genie: Test background disabled')
+    console.log('MyVMK Genie: NOTE - You must change rooms for the original image to reload')
+  }
+
+  return isTestBgActive
 }
 
 // Load settings on startup
@@ -10214,13 +14672,18 @@ function formatDateStr(date) {
   return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`
 }
 
+// Get user's timezone abbreviation (e.g., "EST", "PST", "CST")
+function getTimezoneAbbr() {
+  return new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop()
+}
+
 // Format time string for Genie events
 function formatTimeStr(date) {
   let hours = date.getHours()
   const minutes = date.getMinutes().toString().padStart(2, '0')
   const ampm = hours >= 12 ? 'PM' : 'AM'
   hours = hours % 12 || 12
-  return `${hours}:${minutes} ${ampm} ET`
+  return `${hours}:${minutes} ${ampm} ${getTimezoneAbbr()}`
 }
 
 // Simple ICS parser - returns array of {title, timestamp, location, dateStr, timeStr}
@@ -10314,12 +14777,12 @@ function parseICSDateSimple(dateStr) {
     date = new Date(trialUtc.getTime() + etOffsetMs)
   }
 
-  // Format for display in Eastern Time
-  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }
-  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' }
+  // Format for display in user's local timezone
+  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric' }
+  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true }
 
   const dateStr2 = date.toLocaleDateString('en-US', dateOptions)
-  const timeStr  = date.toLocaleTimeString('en-US', timeOptions) + ' ET'
+  const timeStr  = date.toLocaleTimeString('en-US', timeOptions) + ' ' + getTimezoneAbbr()
 
   return {
     timestamp: date.getTime(),
