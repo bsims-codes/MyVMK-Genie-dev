@@ -3228,18 +3228,19 @@ function triggerProjectorSpotlight(color = 'white', duration = 1500) {
   const [r, g, b] = colorMap[color] || colorMap.white
 
   // Draw a cone beam pointing toward center-left
-  const beamLength = bounds.width * 0.6
-  const beamAngle = Math.PI * 0.85  // Point toward left/center
-  const beamWidth = 40
+  const beamLength = bounds.width * 0.7
+  const beamAngle = Math.PI * 0.82  // Point toward left/center (about 147 degrees)
+  const beamWidth = 60  // Wider beam
 
   // Calculate end points
   const endX = projectorX + Math.cos(beamAngle) * beamLength
   const endY = projectorY + Math.sin(beamAngle) * beamLength
 
-  // Create gradient along beam
+  // Create gradient along beam - more visible
   const gradient = ctx.createLinearGradient(projectorX, projectorY, endX, endY)
-  gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.5)`)
-  gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, 0.25)`)
+  gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.8)`)
+  gradient.addColorStop(0.2, `rgba(${r}, ${g}, ${b}, 0.5)`)
+  gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.2)`)
   gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
 
   // Draw cone
@@ -3248,10 +3249,10 @@ function triggerProjectorSpotlight(color = 'white', duration = 1500) {
   ctx.rotate(beamAngle)
 
   ctx.beginPath()
-  ctx.moveTo(0, -beamWidth / 4)
-  ctx.lineTo(beamLength, -beamWidth * 2)
-  ctx.lineTo(beamLength, beamWidth * 2)
-  ctx.lineTo(0, beamWidth / 4)
+  ctx.moveTo(0, -beamWidth / 3)
+  ctx.lineTo(beamLength, -beamWidth * 3)
+  ctx.lineTo(beamLength, beamWidth * 3)
+  ctx.lineTo(0, beamWidth / 3)
   ctx.closePath()
 
   ctx.fillStyle = gradient
@@ -5927,6 +5928,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 240, action: 'spotlights', enabled: false },  // Stop spotlights
 
   // === END (4:08) ===
+  { time: 247, action: 'explode' },  // Explode effect right before end
   { time: 248, action: 'end' }
 ]
 
@@ -6735,14 +6737,16 @@ function planeFlyOffLeft(assetKey) {
 // Spawn butterflies that fly away off screen
 function spawnButterfliesAndFlyAway() {
   const bounds = getGameCanvasBounds()
+  // Spawn in center behind Hannah (aligned with center layer position)
   const centerX = bounds.left + bounds.width * 0.5
-  const centerY = bounds.top + bounds.height * 0.3
+  const centerY = bounds.top + bounds.height * 0.42
 
-  // Use pink Hannah Montana butterfly
+  // Use pink Hannah Montana butterfly only
   const pinkButterflyPath = HANNAH_MAIN_ASSETS['pink_butterfly']
+  const numButterflies = 18  // More butterflies
 
-  // Create several butterflies
-  for (let i = 0; i < 8; i++) {
+  // Create butterflies
+  for (let i = 0; i < numButterflies; i++) {
     setTimeout(() => {
       if (!isHannahMainShowActive) return
 
@@ -6750,32 +6754,36 @@ function spawnButterfliesAndFlyAway() {
       butterfly.src = chrome.runtime.getURL(pinkButterflyPath)
       butterfly.className = 'vmkpal-hannah-spawn-butterfly'
 
-      const size = 20 + Math.random() * 15
+      const size = 18 + Math.random() * 12
+
+      // Spawn with slight offset from center for more natural look
+      const spawnOffsetX = (Math.random() - 0.5) * bounds.width * 0.1
+      const spawnOffsetY = (Math.random() - 0.5) * bounds.height * 0.1
 
       butterfly.style.cssText = `
         position: fixed;
         width: ${size}px;
         height: auto;
         pointer-events: none;
-        z-index: 2147483645;
+        z-index: 2147483638;
         opacity: 1;
-        left: ${centerX}px;
-        top: ${centerY}px;
-        transition: left 3s ease-out, top 3s ease-out, opacity 2s;
+        left: ${centerX + spawnOffsetX}px;
+        top: ${centerY + spawnOffsetY}px;
+        transition: left 3.5s ease-out, top 3.5s ease-out, opacity 2.5s;
       `
       document.body.appendChild(butterfly)
 
       // Fly away in random directions
       setTimeout(() => {
-        const angle = (Math.PI * 2 / 8) * i + Math.random() * 0.5
-        const distance = bounds.width * 0.6
+        const angle = (Math.PI * 2 / numButterflies) * i + (Math.random() - 0.5) * 0.8
+        const distance = bounds.width * (0.5 + Math.random() * 0.3)
         butterfly.style.left = (centerX + Math.cos(angle) * distance) + 'px'
-        butterfly.style.top = (centerY + Math.sin(angle) * distance) + 'px'
+        butterfly.style.top = (centerY + Math.sin(angle) * distance * 0.7) + 'px'
         butterfly.style.opacity = '0'
 
-        setTimeout(() => butterfly.remove(), 3500)
+        setTimeout(() => butterfly.remove(), 4000)
       }, 100)
-    }, i * 150)
+    }, i * 80)  // Faster spawn rate
   }
 }
 
@@ -7354,6 +7362,10 @@ function executeHannahMainShowEvent(event) {
       triggerProjectorSpotlight(event.color || 'white', event.duration || 1500)
       break
 
+    case 'explode':
+      explodeCanvas()
+      break
+
     case 'end':
       stopHannahMainShow()
       break
@@ -7890,11 +7902,11 @@ function dropFilmStrips() {
       tape.src = chrome.runtime.getURL(assetPath)
       tape.className = 'vmkpal-hannah-film-strip'
 
-      const tapeWidth = bounds.width * 0.25  // 25% of canvas width (1/4 of canvas)
+      const tapeWidth = bounds.width * 0.40  // 40% of canvas width
       const isLeft = index === 0
 
       // Position: left tape on left edge, right tape on right edge
-      const xPos = isLeft ? bounds.left : bounds.left + bounds.width * 0.75
+      const xPos = isLeft ? bounds.left : bounds.left + bounds.width * 0.60
 
       tape.style.cssText = `
         position: fixed;
@@ -8347,7 +8359,7 @@ function floatHMLogoDown() {
   const fallSpeed = 0.003  // Slow descent
   const driftAmount = 0.02
   let phase = Math.random() * Math.PI * 2
-  const endYProp = 0.35  // Stop at center of canvas
+  const endYProp = 0.18  // Stop higher on screen
 
   function animateLogo() {
     if (!isHannahMainShowActive || !logo.parentNode) {
@@ -8371,7 +8383,7 @@ function floatHMLogoDown() {
     logo.style.top = actualY + 'px'
     logo.style.width = (bounds.width * parseFloat(logo.dataset.widthProp)) + 'px'
 
-    // Fade out after a few seconds at rest
+    // Fade out after 10 seconds at rest
     if (yProp >= endYProp) {
       setTimeout(() => {
         if (logo.parentNode) {
@@ -8380,7 +8392,7 @@ function floatHMLogoDown() {
             if (logo.parentNode) logo.parentNode.removeChild(logo)
           }, 1000)
         }
-      }, 3000)
+      }, 10000)
       return
     }
 
