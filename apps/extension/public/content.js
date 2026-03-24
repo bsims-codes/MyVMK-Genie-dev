@@ -5925,6 +5925,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 230, action: 'helicopterFlyOffTopLeft' },  // Helicopter flies off to top left
   { time: 235, action: 'hideLayer', layer: 'left' },
   { time: 235, action: 'hideLayer', layer: 'right' },
+  { time: 235, action: 'hideFilmStrips' },  // Fade out film strips
   { time: 240, action: 'spotlights', enabled: false },  // Stop spotlights
 
   // === END (4:08) ===
@@ -7260,6 +7261,10 @@ function executeHannahMainShowEvent(event) {
       dropFilmStrips()
       break
 
+    case 'hideFilmStrips':
+      cleanupFilmStrips()
+      break
+
     case 'fireworks':
       // Trigger a burst of fireworks
       for (let i = 0; i < 5; i++) {
@@ -7935,8 +7940,23 @@ function dropFilmStrips() {
 }
 
 function cleanupFilmStrips() {
-  hannahFilmStripElements.forEach(el => el.remove())
+  // Fade out then remove
+  hannahFilmStripElements.forEach(el => {
+    if (el && el.parentNode) {
+      el.style.transition = 'opacity 0.5s'
+      el.style.opacity = '0'
+      setTimeout(() => {
+        if (el.parentNode) el.remove()
+      }, 500)
+    }
+  })
   hannahFilmStripElements = []
+  // Also catch any that weren't tracked
+  document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => {
+    el.style.transition = 'opacity 0.5s'
+    el.style.opacity = '0'
+    setTimeout(() => el.remove(), 500)
+  })
 }
 
 // Stage pulse effect - stages scale/pulse to music
