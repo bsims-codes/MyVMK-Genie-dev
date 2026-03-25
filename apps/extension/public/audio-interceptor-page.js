@@ -4,6 +4,48 @@
 (function() {
   'use strict';
 
+  // Store image replacement config
+  window.__vmkGenieImageReplace = {
+    enabled: false,
+    targetPattern: null,  // URL pattern to match
+    replacementUrl: null  // URL to replace with
+  };
+
+  // ==========================================
+  // INTERCEPT Image() constructor for image replacement
+  // ==========================================
+  const OriginalImage = window.Image;
+  window.Image = function(width, height) {
+    const img = new OriginalImage(width, height);
+
+    // Override the src setter to intercept image loads
+    const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+    let _src = '';
+
+    Object.defineProperty(img, 'src', {
+      get: function() {
+        return _src;
+      },
+      set: function(value) {
+        if (window.__vmkGenieImageReplace.enabled &&
+            window.__vmkGenieImageReplace.targetPattern &&
+            window.__vmkGenieImageReplace.replacementUrl &&
+            value && value.includes(window.__vmkGenieImageReplace.targetPattern)) {
+          console.log('[VMK Genie] Intercepting Image src:', value, '-> replacing with:', window.__vmkGenieImageReplace.replacementUrl);
+          _src = window.__vmkGenieImageReplace.replacementUrl;
+          originalSrcDescriptor.set.call(this, window.__vmkGenieImageReplace.replacementUrl);
+        } else {
+          _src = value;
+          originalSrcDescriptor.set.call(this, value);
+        }
+      },
+      configurable: true
+    });
+
+    return img;
+  };
+  window.Image.prototype = OriginalImage.prototype;
+
   // Store tracked audio globally
   window.__vmkGenieAudio = {
     trackedContexts: [],
@@ -145,11 +187,20 @@
   };
 
   // ==========================================
-  // 4. INTERCEPT fetch() for audio files
+  // 4. INTERCEPT fetch() for audio files AND image replacement
   // ==========================================
   const originalFetch = window.fetch;
   window.fetch = function(url, options) {
     const urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : String(url));
+
+    // IMAGE REPLACEMENT: If enabled and URL matches target pattern, redirect to replacement
+    if (window.__vmkGenieImageReplace.enabled &&
+        window.__vmkGenieImageReplace.targetPattern &&
+        window.__vmkGenieImageReplace.replacementUrl &&
+        urlStr.includes(window.__vmkGenieImageReplace.targetPattern)) {
+      console.log('[VMK Genie] Intercepting image:', urlStr, '-> replacing with:', window.__vmkGenieImageReplace.replacementUrl);
+      return originalFetch.call(this, window.__vmkGenieImageReplace.replacementUrl, options);
+    }
 
     // Broadcast audio file fetches for room detection
     if (urlStr && urlStr.match(/\.(mp3|ogg|wav|webm|m4a|aac)(\?|$)/i)) {
@@ -161,19 +212,66 @@
       window.postMessage({ type: 'vmkgenie-hm-game-entered' }, '*');
     }
 
+    // Detect NPC sound files for room detection (backup)
+    if (urlStr && urlStr.includes('/sound/npcs/')) {
+      window.postMessage({ type: 'vmkgenie-npc-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect room_sound files for room detection (backup)
+    if (urlStr && urlStr.includes('/room_sound/')) {
+      window.postMessage({ type: 'vmkgenie-room-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect room JSON config files (e.g., vmk_inthesky.json, vmk_snd_inthesky.json)
+    // Exclude non-room files like vmk_avatar_*, vmk_npc_*, etc.
+    if (urlStr && urlStr.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)[a-z_]+\.json$/i)) {
+      window.postMessage({ type: 'vmkgenie-room-json-detected', url: urlStr }, '*');
+    }
+
     return originalFetch.apply(this, arguments);
   };
 
   // ==========================================
-  // 5. INTERCEPT XMLHttpRequest for audio files
+  // 5. INTERCEPT XMLHttpRequest for audio files AND image replacement
   // ==========================================
   const originalXHROpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    const urlStr = String(url);
+    let urlStr = String(url);
+
+    // IMAGE REPLACEMENT: If enabled and URL matches target pattern, redirect to replacement
+    if (window.__vmkGenieImageReplace.enabled &&
+        window.__vmkGenieImageReplace.targetPattern &&
+        window.__vmkGenieImageReplace.replacementUrl &&
+        urlStr.includes(window.__vmkGenieImageReplace.targetPattern)) {
+      console.log('[VMK Genie] Intercepting XHR image:', urlStr, '-> replacing with:', window.__vmkGenieImageReplace.replacementUrl);
+      urlStr = window.__vmkGenieImageReplace.replacementUrl;
+      url = urlStr;
+    }
 
     // Broadcast audio file XHR for room detection
     if (urlStr && urlStr.match(/\.(mp3|ogg|wav|webm|m4a|aac)(\?|$)/i)) {
       window.postMessage({ type: 'vmkgenie-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect NPC sound files for room detection (backup)
+    if (urlStr && urlStr.includes('/sound/npcs/')) {
+      window.postMessage({ type: 'vmkgenie-npc-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect room_sound files for room detection (backup)
+    if (urlStr && urlStr.includes('/room_sound/')) {
+      window.postMessage({ type: 'vmkgenie-room-audio-detected', url: urlStr }, '*');
+    }
+
+    // Detect room JSON config files (e.g., vmk_inthesky.json, vmk_snd_inthesky.json)
+    // Exclude non-room files like vmk_avatar_*, vmk_npc_*, etc.
+    if (urlStr && urlStr.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)[a-z_]+\.json$/i)) {
+      window.postMessage({ type: 'vmkgenie-room-json-detected', url: urlStr }, '*');
+    }
+
+    // Detect HM GAME stage data
+    if (urlStr && urlStr.includes('/hm_stage_data/')) {
+      window.postMessage({ type: 'vmkgenie-hm-game-entered' }, '*');
     }
 
     return originalXHROpen.call(this, method, url, ...rest);
@@ -232,5 +330,27 @@
 
   window.addEventListener('vmkgenie-unmute', function() {
     window.__vmkGenieAudio.unmute();
+  });
+
+  // ==========================================
+  // 7. IMAGE REPLACEMENT COMMANDS
+  // ==========================================
+  // Listen for image replacement enable/disable from content script
+  window.addEventListener('message', function(event) {
+    if (event.source !== window) return;
+
+    if (event.data && event.data.type === 'vmkgenie-enable-image-replace') {
+      window.__vmkGenieImageReplace.enabled = true;
+      window.__vmkGenieImageReplace.targetPattern = event.data.targetPattern;
+      window.__vmkGenieImageReplace.replacementUrl = event.data.replacementUrl;
+      console.log('[VMK Genie] Image replacement enabled:', event.data.targetPattern, '->', event.data.replacementUrl);
+    }
+
+    if (event.data && event.data.type === 'vmkgenie-disable-image-replace') {
+      window.__vmkGenieImageReplace.enabled = false;
+      window.__vmkGenieImageReplace.targetPattern = null;
+      window.__vmkGenieImageReplace.replacementUrl = null;
+      console.log('[VMK Genie] Image replacement disabled');
+    }
   });
 })();

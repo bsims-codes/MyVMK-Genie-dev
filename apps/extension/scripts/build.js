@@ -62,8 +62,9 @@ const staticFiles = [
   'genie-kingdomsync-logo.png',
   'genie-kingdomsync-logo-on.png',
   'castle-gardens.png',
-  'hannah-logo.png',
-  'hannah-bg.png'
+  'genie-cal-basic.png',
+  'genie-cal-pink.png',
+  'genie-cal-jafar.png'
 ];
 
 // Transform Chrome manifest to Firefox manifest
@@ -169,6 +170,50 @@ function copyStaticFiles(outputDir) {
   }
 }
 
+// Copy asset folders (e.g., hannah/)
+const assetFolders = ['hannah'];
+
+// Recursively copy a directory
+function copyDirRecursive(src, dest) {
+  let fileCount = 0;
+
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(src);
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    const stat = fs.statSync(srcPath);
+
+    if (stat.isDirectory()) {
+      fileCount += copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+      fileCount++;
+    }
+  }
+
+  return fileCount;
+}
+
+function copyAssetFolders(outputDir) {
+  for (const folder of assetFolders) {
+    const sourceFolderPath = path.join(sourceDir, folder);
+    const outputFolderPath = path.join(outputDir, folder);
+
+    if (!fs.existsSync(sourceFolderPath)) {
+      console.log(`⚠️  Skipping ${folder}/ (not found)`);
+      continue;
+    }
+
+    // Recursively copy the folder and all subdirectories
+    const fileCount = copyDirRecursive(sourceFolderPath, outputFolderPath);
+    console.log(`📁 ${folder}/ (${fileCount} files)`);
+  }
+}
+
 // Build for a specific browser
 async function buildForBrowser(browser) {
   const suffix = isRelease ? 'release' : 'dev';
@@ -185,6 +230,9 @@ async function buildForBrowser(browser) {
 
   // Copy static files
   copyStaticFiles(outputDir);
+
+  // Copy asset folders
+  copyAssetFolders(outputDir);
 
   // Process and copy manifest
   const manifestPath = path.join(sourceDir, 'manifest.json');

@@ -1,6 +1,44 @@
 # MyVMK Genie Changelog
 
-## 2.1.4 (In Progress)
+## 2.1.11
+
+### Features
+- **Africa Room Audio**: Automatically plays Toto's "Africa" when entering Africa rooms (Kingdom Sync)
+  - Audio plays seamlessly in the background without any visible player
+  - Stops automatically when leaving Africa or disabling Kingdom Sync
+
+## 2.1.10
+
+### Fixes
+- Fixed late-join handling for Hannah Montana show - effects now properly sync when joining mid-show
+- Reduced event check interval for more responsive event detection
+
+## 2.1.9
+
+### Fixes
+- Fixed Hannah Montana Main Show not triggering from scheduled events
+
+## 2.1.8
+
+### Features
+- **Hannah Montana Main Show**: Full choreographed event with synchronized audio, GIF sequences, and visual effects
+- Hannah theme now unlocks during the show for attendees to keep permanently
+
+### Improvements
+- Removed beta testing restrictions from Hannah Montana show
+- Optimized show ending with fly-off animations for all assets
+
+## 2.1.7
+
+### Features
+- Hannah Montana event updates
+
+## 2.1.5
+
+### Fixes
+- **Timezone Display**: Event times now display in user's local timezone instead of always showing Eastern Time
+
+## 2.1.4
 
 ### Performance
 - Removed ~200 lines of unused code (commented queue monitoring system)

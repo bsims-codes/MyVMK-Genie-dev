@@ -9,6 +9,7 @@
     "package": "node scripts/package.js"
   },
   "devDependencies": {
+    "archiver": "^7.0.0",
     "esbuild": "^0.20.0"
   }
 }

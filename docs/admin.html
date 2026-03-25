@@ -1027,7 +1027,7 @@
 
     // Effect icons
     const EFFECT_ICONS = {
-      fireworks: '🎆', rain: '🌧️', snow: '❄️', money: '💵', emoji: '🎉', night: '🌙', stars: '✨'
+      fireworks: '🎆', rain: '🌧️', snow: '❄️', money: '💵', emoji: '🎉', night: '🌙', stars: '✨', 'hannah-main': '🎤'
     };
 
     // State
@@ -1260,6 +1260,7 @@
       const effects = event.effects || (event.effect ? [event.effect] : []);
       let icons = effects.map(e => EFFECT_ICONS[e] || e);
       if (event.includeTinkerbell) icons.push('🧚');
+      if (event.hannahMainShow) icons.push('🎤');
       return icons.join(' ');
     }
 
@@ -1295,6 +1296,7 @@
                   ${e.title}
                   <span class="event-badge ${past ? 'past' : 'upcoming'}">${past ? 'Past' : 'Upcoming'}</span>
                   ${e.test ? '<span class="event-badge test">TEST</span>' : ''}
+                  ${e.hannahMainShow ? `<span class="event-badge" style="background: rgba(236, 72, 153, 0.2); color: #f472b6;">🎤 SHOW</span>` : ''}
                   ${e.unlockTheme ? `<span class="event-badge" style="background: rgba(139, 92, 246, 0.2); color: #a78bfa;">🎁 UNLOCK</span>` : ''}
                 </div>
                 <div class="event-meta">
@@ -1401,7 +1403,12 @@
       document.getElementById('genie-date').value = formatEtDate(event.startTime);
       document.getElementById('genie-time').value = formatEtTime(event.startTime);
       document.getElementById('genie-duration').value = event.durationMinutes || 5;
-      setSelectedEffects(event.effects || event.effect);
+      // Include hannah-main in effects if this is a Hannah Main Show event
+      let effectsToSet = event.effects || event.effect || [];
+      if (event.hannahMainShow) {
+        effectsToSet = Array.isArray(effectsToSet) ? [...effectsToSet, 'hannah-main'] : ['hannah-main'];
+      }
+      setSelectedEffects(effectsToSet);
       document.getElementById('genie-room').value = event.roomId || '';
       document.getElementById('genie-audio').value = event.audioUrl || '';
       document.getElementById('genie-tinkerbell').checked = event.includeTinkerbell === true;
@@ -1436,11 +1443,18 @@
       const roomId = document.getElementById('genie-room').value;
       const editIndex = parseInt(document.getElementById('genie-edit-index').value);
       const isEditing = editIndex >= 0;
-      const selectedEffects = getSelectedEffects();
+      let selectedEffects = getSelectedEffects();
       const includeTinkerbell = document.getElementById('genie-tinkerbell').checked;
 
       const isTest = document.getElementById('genie-test').checked;
       const unlockTheme = document.getElementById('genie-unlock-theme').value;
+
+      // Check if Hannah Main Show is selected - it's a special choreographed event
+      const isHannahMainShow = selectedEffects.includes('hannah-main');
+      if (isHannahMainShow) {
+        // Remove hannah-main from effects array - it's handled as a separate property
+        selectedEffects = selectedEffects.filter(e => e !== 'hannah-main');
+      }
 
       const event = {
         id: isEditing ? genieEvents[editIndex].id : generateId('genie'),
@@ -1449,13 +1463,14 @@
         roomId: roomId ? parseInt(roomId) : undefined,
         roomName: roomId ? ROOMS[roomId] : undefined,
         startTime: parseAsEasternTime(date, time),
-        durationMinutes: parseInt(document.getElementById('genie-duration').value) || 5,
+        durationMinutes: isHannahMainShow ? 5 : (parseInt(document.getElementById('genie-duration').value) || 5),
         effects: selectedEffects.length > 0 ? selectedEffects : undefined,
         includeTinkerbell: includeTinkerbell || undefined,
         audioUrl: document.getElementById('genie-audio').value || undefined,
         enabled: document.getElementById('genie-enabled').checked,
         test: isTest || undefined,
-        unlockTheme: unlockTheme || undefined
+        unlockTheme: unlockTheme || undefined,
+        hannahMainShow: isHannahMainShow || undefined
       };
       Object.keys(event).forEach(k => event[k] === undefined && delete event[k]);
 

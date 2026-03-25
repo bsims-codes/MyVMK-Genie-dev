@@ -31,7 +31,9 @@ When the user asks to "create a package", "build the extension", or similar:
    cd apps/extension && npm run package
    ```
 
-5. **Output location**: `dist/myvmk-genie-extension.zip`
+5. **Output locations**:
+   - `dist/myvmk-genie-chrome.zip` - Chrome Web Store
+   - `dist/myvmk-genie-firefox.zip` - Firefox Add-ons
 
 ## Version Management
 
@@ -102,9 +104,15 @@ if (DEV_MODE) {
 ### Build Commands
 | Command | Output | Description |
 |---------|--------|-------------|
-| `npm run dev` | `dist/extension-dev` | DEV_MODE=true, unminified, logs included |
-| `npm run build` | `dist/extension-release` | DEV_MODE=false, minified, logs stripped |
-| `npm run package` | `dist/myvmk-genie-extension.zip` | Release zip for Chrome Web Store |
+| `npm run dev` | `dist/extension-dev` | DEV_MODE=true, unminified, logs included (Chrome only) |
+| `npm run build` | `dist/extension-release` + `dist/extension-release-firefox` | DEV_MODE=false, minified, logs stripped (both browsers) |
+| `npm run package` | `dist/myvmk-genie-chrome.zip` + `dist/myvmk-genie-firefox.zip` | Release zips for both stores |
+
+### Firefox Build
+The build system automatically creates a Firefox-compatible version with these changes:
+- Adds `browser_specific_settings.gecko` with extension ID
+- Converts `background.service_worker` to `background.scripts`
+- Removes `tabCapture` permission (not supported in Firefox)
 
 ## Pre-Release Checklist
 

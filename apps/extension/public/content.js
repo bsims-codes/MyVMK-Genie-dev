@@ -530,16 +530,14 @@ const HANNAH_MAIN_AUDIO = 'hannah/Hannah-Montana-Main/hannah-party.mp3'
 let gatorParadeElements = []
 let gatorParadeAnimationId = null
 
-// Hannah Main Show beta testing password protection
-const HANNAH_BETA_PASSWORD = 'geniegeniegenie'  // Change this for each test build
-let hannahMainShowUnlocked = false
 
 // Snow Effect for Matterhorn
 const MATTERHORN_ID = 33
 let matterhornSnowDisabledByUser = false // Track if user manually disabled snow in Matterhorn
 
-// Kingdom Sync - enhanced ambient experience
-let isKingdomSyncEnabled = false
+// Kingdom Sync - master toggle for all automatic room effects and events
+// Includes: room ambiance (Tinkerbell, butterflies, ghost), events, fireflies, fog, night mode
+let isKingdomSyncEnabled = true // Default ON
 let kingdomSyncFireflyRooms = new Map()  // Track which rooms got rare effect this session
 
 // Firefly effect (Kingdom Sync)
@@ -561,10 +559,16 @@ let isKingdomSyncNightActive = false
 let castleOverlay = null
 let isCastleOverlayActive = false
 
+// Africa room audio (Kingdom Sync) - plays Toto's Africa when in Africa rooms
+const AFRICA_ROOM_AUDIO_URL = 'https://www.youtube.com/watch?v=yxRToW7-RmI'
+let isAfricaRoomAudioActive = false
+let africaAudioIframe = null
+
 // Map button overlay - detects when user clicks globe icon
 let mapButtonOverlay = null
 let onMapButtonClick = null // Callback function when map is clicked
 let isMapOpen = false // Track if map is currently open
+let mapOpenedInRoomId = null // Track which room the map was opened in
 let overlaysHiddenForMap = {} // Track which overlays were active before map opened
 
 // Room IDs for Kingdom Sync effects
@@ -810,8 +814,14 @@ function onRoomChange(oldRoom, newRoom) {
 function checkRoomAmbientEffects() {
   // Small delay to ensure currentRoomId is updated
   setTimeout(() => {
-    // If map was open, restore overlays now that we're in a room
+    // If map is open, only process if we've moved to a DIFFERENT room
+    // This prevents audio detection from the same room behind the map from restarting effects
     if (isMapOpen) {
+      if (currentRoomId === mapOpenedInRoomId) {
+        // Still in the same room (audio playing behind map) - don't restart effects
+        return
+      }
+      // Different room detected - user navigated via map, restore overlays
       restoreOverlaysAfterMap()
     }
 
@@ -822,6 +832,10 @@ function checkRoomAmbientEffects() {
     checkRoomCollectibles()
     checkKingdomSyncEffects()
     checkCastleGardensRoom()
+    checkAfricaRoomAudio()
+
+    // Check if room-specific events should start/stop based on new room
+    checkGenieEvents()
   }, 100)
 }
 
@@ -831,6 +845,9 @@ let ambientEffectWatcherInterval = null
 function startAmbientEffectWatcher() {
   // Check every 5 seconds as a backup
   ambientEffectWatcherInterval = setInterval(() => {
+    // Don't restart effects while map is open
+    if (isMapOpen) return
+
     checkGhostEffectRoom()
     checkTinkerbellRoom()
     checkButterflyRoom()
@@ -2104,6 +2121,115 @@ function createToolbar() {
   //   content.appendChild(roomInfoBox)
   // }
 
+  // Kingdom Sync + Events row (2/3 + 1/3 width to match grid below)
+  const kingdomSyncRow = document.createElement('div')
+  kingdomSyncRow.style.cssText = `
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  `
+
+  // Kingdom Sync toggle - master control for room effects and events
+  const kingdomSyncBtn = document.createElement('button')
+  kingdomSyncBtn.id = 'vmkpal-kingdom-sync-btn'
+  kingdomSyncBtn.title = 'Enable or Disable All Genie Effects'
+
+  const kingdomSyncLogoOn = chrome.runtime.getURL('genie-kingdomsync-logo-on.png')
+  const kingdomSyncLogoOff = chrome.runtime.getURL('genie-kingdomsync-logo.png')
+
+  function updateKingdomSyncBtn() {
+    kingdomSyncBtn.style.cssText = `
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `
+    kingdomSyncBtn.innerHTML = `<img src="${isKingdomSyncEnabled ? kingdomSyncLogoOn : kingdomSyncLogoOff}" style="height: 36px; opacity: ${isKingdomSyncEnabled ? '1' : '0.5'}; transition: opacity 0.2s;">`
+  }
+
+  updateKingdomSyncBtn()
+
+  kingdomSyncBtn.onclick = () => {
+    isKingdomSyncEnabled = !isKingdomSyncEnabled
+    chrome.storage.local.set({ isKingdomSyncEnabled })
+    updateKingdomSyncBtn()
+
+    if (isKingdomSyncEnabled) {
+      // Re-enable effects - reset rare effect decisions for fresh experience
+      kingdomSyncFireflyRooms.clear()
+      checkRoomAmbientEffects()
+      checkGenieEvents()
+      showNotification('Kingdom Sync enabled', 'success', 1500)
+    } else {
+      // Stop all Kingdom Sync controlled effects
+      stopAllEffects()
+      showNotification('Kingdom Sync disabled', 'info', 1500)
+    }
+  }
+  kingdomSyncBtn.onmouseenter = () => {
+    kingdomSyncBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+  }
+  kingdomSyncBtn.onmouseleave = () => {
+    kingdomSyncBtn.style.background = 'rgba(255, 255, 255, 0.05)'
+  }
+
+  // Events button with theme-specific icon
+  const eventsBtn = document.createElement('button')
+  eventsBtn.id = 'vmkpal-events-btn'
+  eventsBtn.title = 'Event Calendar'
+  eventsBtn.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  `
+
+  function getEventsCalIcon() {
+    if (isHannahTheme || isPinkTheme) return chrome.runtime.getURL('genie-cal-pink.png')
+    if (isDarkTheme) return chrome.runtime.getURL('genie-cal-jafar.png')
+    return chrome.runtime.getURL('genie-cal-basic.png')
+  }
+
+  function updateEventsBtnIcon() {
+    const iconUrl = getEventsCalIcon()
+    eventsBtn.innerHTML = `<img src="${iconUrl}" style="height: 36px; object-fit: contain;">`
+  }
+
+  updateEventsBtnIcon()
+
+  eventsBtn.onmouseover = () => {
+    eventsBtn.style.background = 'rgba(255,255,255,0.1)'
+    eventsBtn.style.borderColor = 'rgba(255,255,255,0.2)'
+    eventsBtn.style.transform = 'scale(1.05)'
+  }
+  eventsBtn.onmouseout = () => {
+    eventsBtn.style.background = 'rgba(255,255,255,0.05)'
+    eventsBtn.style.borderColor = 'rgba(255,255,255,0.1)'
+    eventsBtn.style.transform = 'scale(1)'
+  }
+  eventsBtn.onclick = () => {
+    updateEventsBtnIcon() // Update icon in case theme changed
+    openFeaturePanel('📅', 'Events', createEventsPanel)
+    eventsBtn.blur()
+  }
+
+  kingdomSyncRow.appendChild(kingdomSyncBtn)
+  kingdomSyncRow.appendChild(eventsBtn)
+  content.appendChild(kingdomSyncRow)
+
   // Quick actions row (Screenshot & Record)
   const quickActions = document.createElement('div')
   quickActions.style.cssText = `
@@ -2181,9 +2307,8 @@ function createToolbar() {
   // featureGrid.appendChild(createFeatureButton('👤', 'Accounts', createAccountsPanel))
   featureGrid.appendChild(createFeatureButton('💬', 'Phrases', createPhrasesPanel))
   featureGrid.appendChild(createFeatureButton('🎵', 'Audio', createAudioPanel))
-  featureGrid.appendChild(createFeatureButton('📅', 'Events', createEventsPanel))
+  featureGrid.appendChild(createFeatureButton('✨', 'Effects', createOverlaysPanel))
   // featureGrid.appendChild(createFeatureButton('🎮', 'Find Game', createLfgPanel)) // Hidden until feature is ready
-  featureGrid.appendChild(createFeatureButton('✨', 'Overlays', createOverlaysPanel))
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
   featureGrid.appendChild(createActionButton('🏆', 'Prizes', createPrizeTrackerPanel))
   if (DEV_MODE) {
@@ -2588,6 +2713,76 @@ function toggleFireworks() {
   }
 
   chrome.storage.local.set({ fireworksEnabled: isFireworksEnabled })
+}
+
+// Create a firework explosion at a specific position with a specific color
+function createFirework(x, y, color = 'pink') {
+  // Enable fireworks BEFORE initializing (renderFireworks checks this flag)
+  if (!isFireworksEnabled) {
+    isFireworksEnabled = true
+  }
+
+  // Ensure fireworks system is initialized
+  if (!fireworksCanvas || !fireworksCtx) {
+    startFireworks()
+  }
+
+  // Map color name to color set (RGB format: { core, mid, outer })
+  const colorMap = {
+    'pink': [
+      { core: '255,255,255', mid: '255,105,180', outer: '255,20,147' },
+      { core: '255,220,230', mid: '255,130,190', outer: '255,80,160' }
+    ],
+    'purple': [
+      { core: '255,255,255', mid: '147,112,219', outer: '138,43,226' },
+      { core: '230,220,255', mid: '186,85,211', outer: '148,0,211' }
+    ],
+    'gold': [
+      { core: '255,255,255', mid: '255,215,0', outer: '255,165,0' },
+      { core: '255,255,220', mid: '255,200,50', outer: '255,140,0' }
+    ],
+    'blue': [
+      { core: '255,255,255', mid: '0,191,255', outer: '30,144,255' },
+      { core: '220,240,255', mid: '135,206,235', outer: '70,130,180' }
+    ],
+    'red': [
+      { core: '255,255,255', mid: '255,69,0', outer: '255,0,0' },
+      { core: '255,220,200', mid: '255,99,71', outer: '220,20,60' }
+    ],
+    'white': [
+      { core: '255,255,255', mid: '240,240,255', outer: '220,220,240' },
+      { core: '255,255,255', mid: '245,245,255', outer: '230,230,250' }
+    ]
+  }
+
+  const colorSets = colorMap[color] || colorMap['pink']
+  const colors = colorSets[Math.floor(Math.random() * colorSets.length)]
+
+  // Adjust position relative to canvas (x, y are in page coordinates)
+  const bounds = getGameCanvasBounds()
+  const relX = x - bounds.left
+  const relY = y - bounds.top
+
+  // Create explosion particles directly at the position (starburst style)
+  const count = 80
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 80 + Math.random() * 140
+    particles.push(createParticle(relX, relY, colors, 'starburst', angle, speed))
+  }
+
+  // Add some trailing sparkles
+  setTimeout(() => {
+    if (!isFireworksEnabled) return
+    for (let i = 0; i < 25; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 40 + Math.random() * 60
+      const p = createParticle(relX, relY, colors, 'crackle', angle, speed)
+      p.decay *= 2
+      p.size *= 0.6
+      particles.push(p)
+    }
+  }, 150)
 }
 
 function createRocket() {
@@ -4682,6 +4877,12 @@ function stopGhostEffect() {
 
 // Check if ghost effect should be active based on current room
 function checkGhostEffectRoom() {
+  // Kingdom Sync must be enabled for room ambient effects
+  if (!isKingdomSyncEnabled) {
+    if (isGhostEffectActive) stopGhostEffect()
+    return
+  }
+
   // Show ghost only in HM Lobby
   if (currentRoomId === HAUNTED_MANSION_LOBBY_ID && !isInHMGame) {
     if (!isGhostEffectActive) {
@@ -4893,6 +5094,12 @@ function stopTinkerbellEffect() {
 }
 
 function checkTinkerbellRoom() {
+  // Kingdom Sync must be enabled for room ambient effects
+  if (!isKingdomSyncEnabled) {
+    if (isTinkerbellActive) stopTinkerbellEffect()
+    return
+  }
+
   // Show Tinkerbell only in Fantasyland Courtyard
   if (currentRoomId === FANTASYLAND_COURTYARD_ID) {
     if (!isTinkerbellActive) {
@@ -5081,6 +5288,12 @@ function stopButterflyEffect() {
 }
 
 function checkButterflyRoom() {
+  // Kingdom Sync must be enabled for room ambient effects
+  if (!isKingdomSyncEnabled) {
+    if (isButterflyActive) stopButterflyEffect()
+    return
+  }
+
   // Show butterflies only in Snow White Forest
   if (currentRoomId === SNOW_WHITE_FOREST_ID) {
     if (!isButterflyActive) {
@@ -5875,68 +6088,92 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 106, action: 'spawnDarkStar' },  // Dark star PNG enters from right, centers below
   { time: 109, action: 'replaceHelicopter', asset: '9_getting_on_star' },  // GIF 8 → GIF 9
   { time: 110, action: 'replaceHelicopter', asset: '10_standing_star' },  // GIF 9 one cycle (1s) → GIF 10
-  { time: 115, action: 'planeFlyOffLeft', asset: '11_plane_3' },  // GIF 11 plane floats off left
+  // === STAR SEQUENCE CONTINUED (1:52-1:58) ===
   { time: 112, action: 'hideDarkStar' },  // Remove dark star when light star appears
+  { time: 115, action: 'planeFlyOffLeft', asset: '11_plane_3' },  // GIF 11 plane floats off left
   { time: 115, action: 'showLayer', layer: 'center', asset: '11_star_lightup' },  // Star lighting up (one lifetime)
   { time: 118, action: 'hideLayer', layer: 'helicopter' },  // Hide helicopter layer
   { time: 118, action: 'showLayer', layer: 'center', asset: '12_dancing_star' },  // GIF 12 centered with stages
-  { time: 118, action: 'butterflies', color: 'pink' },  // Pink butterflies start
 
-  // === JACK JACK BUBBLES (2:00-3:00) - Float upward like lanterns ===
-  { time: 120, action: 'jackJackBubbles', enabled: true },   // Start Jack Jack bubbles
-  { time: 120, action: 'hannahLanterns', enabled: true },    // Start lanterns 2, 3, 4 (same time as Jack Jack)
-  { time: 180, action: 'jackJackBubbles', enabled: false },  // Stop Jack Jack bubbles
-  { time: 180, action: 'hannahLanterns', enabled: false },   // Stop lanterns 2, 3, 4
+  // === LANTERNS START (2:00) ===
+  { time: 120, action: 'hannahLanterns', enabled: true },
 
-  // === DISCO BALL (2:30) - Pink disco effect behind GIF 12 ===
+  // === DISCO BALL (2:30) ===
   { time: 150, action: 'discoBall', color: 'pink', enabled: true },
 
-  // === LIGHTNING & TRANSFORM (2:46-2:49) ===
-  { time: 166, action: 'lightning', color: 'pink' },
-  { time: 166, action: 'floatLogoDown' },  // HM logo floats down behind Hannah
-  { time: 169, action: 'showLayer', layer: 'center', asset: '13_transform' },  // GIF 12 → GIF 13
-  { time: 169, action: 'spawnButterfliesAndFlyAway' },  // Butterflies spawn and fly off
+  // === STAGE TRANSFORM + JACK JACK + LANTERNS (2:32.6) ===
+  { time: 153, action: 'showLayer', layer: 'left', asset: '13.5_left_change' },
+  { time: 153, action: 'showLayer', layer: 'right', asset: '13.5_right_change' },
+  { time: 153, action: 'whiteLanterns', count: 4 },  // Release 4 white lanterns
+
+  // 2:34 - Replace with 13.75
+  { time: 154, action: 'showLayer', layer: 'left', asset: '13.75_left' },
+  { time: 154, action: 'showLayer', layer: 'right', asset: '13.75_right' },
+
+  // === CROWD SEQUENCE (2:44-3:17) - All events in chronological order ===
+  // 2:44 - Hannah disappears from star
+  { time: 164, action: 'showLayer', layer: 'center', asset: '15_disappearing' },
+
+  // 2:45 - Lightning, HM logo descends, butterflies spawn
+  { time: 165, action: 'lightning', color: 'pink' },
+  { time: 165, action: 'floatLogoDown' },
+  { time: 165, action: 'spawnButterfliesAndFlyAway' },
+
+  // 2:46 - Star animating
+  { time: 166, action: 'showLayer', layer: 'center', asset: '15.25_star_animate' },
+
+  // 2:49 - Hannah appears in crowd (replaces right stage), disco off
+  { time: 169, action: 'showLayer', layer: 'right', asset: '15.25_crowd_appear' },
   { time: 169, action: 'discoBall', enabled: false },
-  { time: 177, action: 'showLayer', layer: 'center', asset: '14_winged_dancing' },  // GIF 13 one cycle (7.6s) → GIF 14
 
-  // === GATOR PARADE (2:51) - Slow movement behind other effects ===
-  { time: 171, action: 'gatorParadeSlow' },  // Gator + white palm trees, slow movement
-  { time: 171, action: 'lantern1', enabled: true },  // White lantern spawns with gator parade
+  // 2:51 - Gator parade with white trees
+  { time: 171, action: 'gatorParadeSlow' },
+  { time: 171, action: 'lantern1', enabled: true },
 
-  // === CROWD SEQUENCE (2:57) ===
-  { time: 177, action: 'showLayer', layer: 'left', asset: '13.5_left_change' },  // Stages → GIF 13 (one cycle)
-  { time: 177, action: 'showLayer', layer: 'right', asset: '13.5_right_change' },
-  { time: 180, action: 'showLayer', layer: 'center', asset: '15_disappearing' },  // GIF 14 → GIF 15 (disappearing)
-  { time: 180, action: 'showLayer', layer: 'left', asset: '13.75_left' },  // Stages cycle to 13.75
-  { time: 180, action: 'showLayer', layer: 'right', asset: '13.75_right_dance' },
-  { time: 183, action: 'showLayer', layer: 'center', asset: '15.25_star_animate' },  // → 15.25 star animating
-  { time: 183, action: 'showLayer', layer: 'crowd', asset: '15.25_crowd_appear' },  // Crowd appears (one cycle)
-  { time: 186, action: 'showLayer', layer: 'crowd', asset: '15.5_crowd_fly' },  // 15.50 (two cycles)
+  // 2:52 - Crowd flying (replaces right stage)
+  { time: 172, action: 'showLayer', layer: 'right', asset: '15.5_crowd_fly' },
 
-  // === HELICOPTER RE-ENTRY (3:09) - From top right ===
-  { time: 189, action: 'helicopterReenter', asset: '11_plane_3' },  // GIF 11 plane re-enters from top right
+  // 2:55 - Crowd hovering (replaces right stage) + Jack Jack wanders
+  { time: 175, action: 'showLayer', layer: 'right', asset: '15.75_crowd_hover' },
+  { time: 175, action: 'jackJackWander' },  // Single Jack Jack floats around for 30s then exits
 
-  { time: 193, action: 'showLayer', layer: 'crowd', asset: '15.75_crowd_hover' },  // 15.75 (two cycles)
-  { time: 200, action: 'showLayer', layer: 'crowd', asset: '16_floating_down' },  // 15.75 → few seconds
-  { time: 200, action: 'spotlights', colors: ['white', 'white', 'white'] },  // White spotlights for end
-  { time: 203, action: 'showLayer', layer: 'crowd', asset: '17_crowd_disappear' },  // → 17 hannah disappearing
-  { time: 206, action: 'showLayer', layer: 'center', asset: '17_reverse_star' },  // 15.25 star → 17 reverse
-  { time: 209, action: 'hideLayer', layer: 'crowd' },
-  { time: 209, action: 'showLayer', layer: 'center', asset: '18_finale' },  // GIF 17 → GIF 18 persistent
-  { time: 209, action: 'showLayer', layer: 'left', asset: '17.5_left_floors' },  // Stages → 17.5
-  { time: 209, action: 'showLayer', layer: 'right', asset: '17.5_stage_colors' },
+  // 3:00 - Helicopter re-enters, crowd floating down, stop lanterns
+  { time: 180, action: 'hannahLanterns', enabled: false },
+  { time: 180, action: 'helicopterReenter', asset: '11_plane_3' },
+  { time: 180, action: 'showLayer', layer: 'right', asset: '16_floating_down' },
+
+  // 3:03 - Hannah disappearing from crowd (replaces right stage)
+  { time: 183, action: 'showLayer', layer: 'right', asset: '17_crowd_disappear' },
+
+  // 3:06 - Stages change to 13.75
+  { time: 186, action: 'showLayer', layer: 'left', asset: '13.75_left' },
+  { time: 186, action: 'showLayer', layer: 'right', asset: '13.75_right' },
+
+  // 3:09 - Reverse Hannah disappearing off star
+  { time: 189, action: 'showLayer', layer: 'center', asset: '17_reverse_star' },
+
+  // 3:13 - Finale
+  { time: 193, action: 'showLayer', layer: 'center', asset: '18_finale' },
+
+  // 3:17 - Stages change to 17.5
+  { time: 197, action: 'showLayer', layer: 'left', asset: '17.5_left_floors' },
+  { time: 197, action: 'showLayer', layer: 'right', asset: '17.5_stage_colors' },
+
+  // 3:20 - White spotlights for end
+  { time: 200, action: 'spotlights', colors: ['white', 'white', 'white'] },
 
   // === FINALE (3:38-3:50) ===
   { time: 218, action: 'centerLayerFlyAway', duration: 5 },  // GIF 18 floats up and away to top right (5 seconds)
   { time: 223, action: 'fireworksContinuous', color: 'pink' },  // Pink fireworks start and continue
   { time: 230, action: 'helicopterFlyOffTopLeft' },  // Helicopter flies off to top left
-  { time: 235, action: 'hideLayer', layer: 'left' },
-  { time: 235, action: 'hideLayer', layer: 'right' },
-  { time: 235, action: 'hideFilmStrips' },  // Fade out film strips
+  { time: 235, action: 'flyOffLayerLeft' },  // Left stage flies off to the left
+  { time: 235, action: 'flyOffLayerRight' },  // Right stage flies off to the right
+  { time: 235, action: 'flyOffFilmStrips' },  // Film strips fly off screen
+  { time: 235, action: 'flyOffPalmTrees' },  // Palm trees fly off screen
+  { time: 235, action: 'flyOffSpeakerAndProjector' },  // Speaker and projector fly off
+  { time: 235, action: 'fadeOutFireworks' },  // Fireworks fade out with assets
+  // === END (4:00) ===
   { time: 240, action: 'spotlights', enabled: false },  // Stop spotlights
-
-  // === END (4:08) ===
-  { time: 247, action: 'explode' },  // Explode effect right before end
   { time: 248, action: 'end' }
 ]
 
@@ -5976,9 +6213,9 @@ function getHannahLayerPosition(position, bounds) {
       }
     case 'crowd':
       return {
-        left: bounds.left + bounds.width * 0.35,  // Centered
-        top: bounds.top + bounds.height * 0.35,   // Centered vertically
-        width: bounds.width * 0.30  // Smaller size
+        left: bounds.left + bounds.width * 0.60,  // Right side (audience area)
+        top: bounds.top + bounds.height * 0.35,   // Same vertical as center
+        width: bounds.width * 0.35  // Similar to stage width
       }
     default:
       return { left: bounds.left, top: bounds.top, width: bounds.width * 0.5 }
@@ -6028,6 +6265,10 @@ function createHannahMainShowLayer(layerId, position = 'center') {
   // Center layer needs higher z-index to appear above helicopter during transitions
   const zIndex = (layerId === 'center') ? 2147483643 : 2147483641
 
+  // Add subtle teal glow to stage layers (left and right)
+  const isStageLayer = (layerId === 'left' || layerId === 'right')
+  const glowFilter = isStageLayer ? 'filter: drop-shadow(0 0 8px #5bdada) drop-shadow(0 0 20px rgba(91, 218, 218, 0.5));' : ''
+
   layer.style.cssText = `
     position: fixed;
     left: ${pos.left}px;
@@ -6038,6 +6279,7 @@ function createHannahMainShowLayer(layerId, position = 'center') {
     z-index: ${zIndex};
     opacity: 0;
     transition: opacity 0.5s ease-in-out;
+    ${glowFilter}
   `
 
   document.body.appendChild(layer)
@@ -6813,7 +7055,7 @@ function spawnGatorParadeSlow() {
       width: ${gatorWidth}px;
       height: auto;
       pointer-events: none;
-      z-index: 2147483638;
+      z-index: 2147483646;
       opacity: 0;
       transition: opacity 0.5s;
     `
@@ -6838,7 +7080,7 @@ function spawnGatorParadeSlow() {
       width: ${treeWidth}px;
       height: auto;
       pointer-events: none;
-      z-index: 2147483637;
+      z-index: 2147483646;
       opacity: 0;
       transition: opacity 0.5s;
     `
@@ -6860,7 +7102,7 @@ function spawnGatorParadeSlow() {
       }
 
       const bounds = getGameCanvasBounds()
-      paradePhase += 0.0008  // Very slow
+      paradePhase += 0.0004  // Extra slow (half of previous speed)
 
       gatorParadeElements.forEach((el, index) => {
         if (!el || !el.parentNode) return
@@ -6897,12 +7139,14 @@ function helicopterReenterFromTopRight(assetKey) {
       position: fixed;
       height: auto;
       pointer-events: none;
-      z-index: 2147483642;
+      z-index: 2147483636;
       opacity: 1;
     `
     document.body.appendChild(layer)
     hannahMainShowLayers['helicopter'] = layer
   }
+  // Ensure lowest z-index when re-entering
+  layer.style.zIndex = '2147483636'
 
   layer.src = chrome.runtime.getURL(assetPath)
   layer.style.opacity = '1'
@@ -6980,6 +7224,19 @@ let continuousFireworksInterval = null
 function startContinuousFireworks(color) {
   if (continuousFireworksInterval) return
 
+  // Enable fireworks BEFORE initializing (renderFireworks checks this flag)
+  if (!isFireworksEnabled) {
+    isFireworksEnabled = true
+  }
+
+  // Initialize fireworks system if needed
+  if (!fireworksCanvas || !fireworksCtx) {
+    startFireworks()
+  }
+
+  // Disable automatic rocket launching - we only want our colored fireworks
+  fireworksIntensity = 0
+
   function launchFirework() {
     if (!isHannahMainShowActive) {
       clearInterval(continuousFireworksInterval)
@@ -7002,6 +7259,38 @@ function stopContinuousFireworks() {
   if (continuousFireworksInterval) {
     clearInterval(continuousFireworksInterval)
     continuousFireworksInterval = null
+  }
+  // Stop the fireworks system and clear remaining particles
+  if (isFireworksEnabled) {
+    isFireworksEnabled = false
+    stopFireworks()
+  }
+}
+
+// Fade out fireworks gradually over 3 seconds
+function fadeOutFireworks() {
+  // Stop launching new fireworks
+  if (continuousFireworksInterval) {
+    clearInterval(continuousFireworksInterval)
+    continuousFireworksInterval = null
+  }
+
+  // Fade out the canvas over 3 seconds
+  if (fireworksCanvas) {
+    fireworksCanvas.style.transition = 'opacity 3s ease-out'
+    fireworksCanvas.style.opacity = '0'
+
+    // After fade completes, stop the system
+    setTimeout(() => {
+      if (isFireworksEnabled) {
+        isFireworksEnabled = false
+        stopFireworks()
+      }
+      if (fireworksCanvas) {
+        fireworksCanvas.style.transition = ''
+        fireworksCanvas.style.opacity = '1'
+      }
+    }, 3000)
   }
 }
 
@@ -7038,6 +7327,195 @@ function helicopterFlyOffTopLeft() {
   }
 
   animateFlyOff()
+}
+
+// Left stage flies off to the left
+function flyOffLayerLeft() {
+  const layer = hannahMainShowLayers['left']
+  if (!layer) return
+
+  stopStageFloat('left')
+
+  const bounds = getGameCanvasBounds()
+  const startX = parseFloat(layer.style.left) || (bounds.left + bounds.width * 0.02)
+  const startY = parseFloat(layer.style.top) || (bounds.top + bounds.height * 0.40)
+  const endX = bounds.left - bounds.width * 0.4  // Fly off to the left
+
+  const startTime = performance.now()
+  const duration = 3000
+
+  function animateFlyOff() {
+    if (!isHannahMainShowActive) return
+
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    const easedProgress = 1 - Math.pow(1 - progress, 2)  // Ease out
+
+    layer.style.left = (startX + (endX - startX) * easedProgress) + 'px'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateFlyOff)
+    } else {
+      layer.style.opacity = '0'
+    }
+  }
+
+  animateFlyOff()
+}
+
+// Right stage flies off to the right
+function flyOffLayerRight() {
+  const layer = hannahMainShowLayers['right']
+  if (!layer) return
+
+  stopStageFloat('right')
+
+  const bounds = getGameCanvasBounds()
+  const startX = parseFloat(layer.style.left) || (bounds.left + bounds.width * 0.66)
+  const startY = parseFloat(layer.style.top) || (bounds.top + bounds.height * 0.40)
+  const endX = bounds.left + bounds.width * 1.4  // Fly off to the right
+
+  const startTime = performance.now()
+  const duration = 3000
+
+  function animateFlyOff() {
+    if (!isHannahMainShowActive) return
+
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    const easedProgress = 1 - Math.pow(1 - progress, 2)  // Ease out
+
+    layer.style.left = (startX + (endX - startX) * easedProgress) + 'px'
+
+    if (progress < 1) {
+      requestAnimationFrame(animateFlyOff)
+    } else {
+      layer.style.opacity = '0'
+    }
+  }
+
+  animateFlyOff()
+}
+
+// Film strips fly off screen (upward)
+function flyOffFilmStrips() {
+  const strips = document.querySelectorAll('.vmkpal-hannah-film-strip')
+  if (strips.length === 0) return
+
+  const bounds = getGameCanvasBounds()
+  const duration = 2500
+
+  strips.forEach((strip, index) => {
+    const startY = parseFloat(strip.style.top) || 0
+    const endY = bounds.top - 300  // Fly off above screen
+    const startTime = performance.now() + index * 100  // Stagger slightly
+
+    function animateFlyOff() {
+      if (!isHannahMainShowActive) {
+        strip.remove()
+        return
+      }
+
+      const elapsed = performance.now() - startTime
+      if (elapsed < 0) {
+        requestAnimationFrame(animateFlyOff)
+        return
+      }
+
+      const progress = Math.min(elapsed / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 2)
+
+      strip.style.top = (startY + (endY - startY) * easedProgress) + 'px'
+
+      if (progress < 1) {
+        requestAnimationFrame(animateFlyOff)
+      } else {
+        strip.remove()
+      }
+    }
+
+    animateFlyOff()
+  })
+}
+
+// Palm trees fly off screen (to their respective sides)
+function flyOffPalmTrees() {
+  const trees = document.querySelectorAll('.vmkpal-hannah-palm-tree')
+  if (trees.length === 0) return
+
+  const bounds = getGameCanvasBounds()
+  const duration = 3000
+
+  trees.forEach((tree) => {
+    const startX = parseFloat(tree.style.left) || 0
+    const centerX = bounds.left + bounds.width / 2
+    const isLeftSide = startX < centerX
+    const endX = isLeftSide ? bounds.left - 200 : bounds.left + bounds.width + 200
+    const startTime = performance.now()
+
+    function animateFlyOff() {
+      if (!isHannahMainShowActive) {
+        tree.remove()
+        return
+      }
+
+      const elapsed = performance.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 2)
+
+      tree.style.left = (startX + (endX - startX) * easedProgress) + 'px'
+
+      if (progress < 1) {
+        requestAnimationFrame(animateFlyOff)
+      } else {
+        tree.remove()
+      }
+    }
+
+    animateFlyOff()
+  })
+}
+
+// Speaker and projector fly off screen (to their respective sides - bottom corners)
+function flyOffSpeakerAndProjector() {
+  const props = document.querySelectorAll('.vmkpal-hannah-flying-prop')
+  if (props.length === 0) return
+
+  const bounds = getGameCanvasBounds()
+  const duration = 2500
+
+  props.forEach((prop) => {
+    const startX = parseFloat(prop.style.left) || 0
+    const startY = parseFloat(prop.style.top) || 0
+    const centerX = bounds.left + bounds.width / 2
+    const isLeftSide = startX < centerX
+    // Fly off diagonally to bottom corners
+    const endX = isLeftSide ? bounds.left - 200 : bounds.left + bounds.width + 200
+    const endY = bounds.top + bounds.height + 200
+    const startTime = performance.now()
+
+    function animateFlyOff() {
+      if (!isHannahMainShowActive) {
+        prop.remove()
+        return
+      }
+
+      const elapsed = performance.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 2)
+
+      prop.style.left = (startX + (endX - startX) * easedProgress) + 'px'
+      prop.style.top = (startY + (endY - startY) * easedProgress) + 'px'
+
+      if (progress < 1) {
+        requestAnimationFrame(animateFlyOff)
+      } else {
+        prop.remove()
+      }
+    }
+
+    animateFlyOff()
+  })
 }
 
 // Resize handler for Hannah Main Show
@@ -7122,9 +7600,20 @@ function startHannahMainShow(offsetSeconds = 0) {
   hannahMainShowStartTime = performance.now() - (offsetSeconds * 1000)
   lastHannahMainShowIndex = -1
 
-  // For late joiners, apply current state
+  // For late joiners, apply current state by tracking all toggle effects
   if (isLateJoin) {
-    const currentState = {}
+    const layerState = {}
+    const toggleState = {
+      wind: false,
+      spotlights: null,  // null = off, or colors array
+      stagePulse: false,
+      discoBall: null,   // null = off, or color
+      jackJackBubbles: false,
+      hannahLanterns: false,
+      lightwall: null    // null = off, or color
+    }
+    let helicopterAsset = null
+    let helicopterAction = null  // Track last helicopter action
 
     for (let i = 0; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
       const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
@@ -7132,22 +7621,88 @@ function startHannahMainShow(offsetSeconds = 0) {
         lastHannahMainShowIndex = i
 
         // Track layer states
-        if (event.action === 'showLayer') {
-          currentState[event.layer] = event.asset
+        if (event.action === 'showLayer' || event.action === 'riseLayer') {
+          layerState[event.layer] = event.asset
         } else if (event.action === 'hideLayer') {
-          delete currentState[event.layer]
+          delete layerState[event.layer]
+        }
+        // Track toggle effects
+        else if (event.action === 'wind') {
+          toggleState.wind = event.enabled
+        }
+        else if (event.action === 'spotlights') {
+          toggleState.spotlights = event.enabled === false ? null : (event.colors || [event.color, event.color, 'white'])
+        }
+        else if (event.action === 'stagePulse') {
+          toggleState.stagePulse = event.enabled
+        }
+        else if (event.action === 'discoBall') {
+          toggleState.discoBall = event.enabled ? (event.color || 'pink') : null
+        }
+        else if (event.action === 'jackJackBubbles') {
+          toggleState.jackJackBubbles = event.enabled
+        }
+        else if (event.action === 'hannahLanterns') {
+          toggleState.hannahLanterns = event.enabled
+        }
+        else if (event.action === 'lightwall') {
+          toggleState.lightwall = event.enabled ? (event.color || 'gold') : null
+        }
+        // Track helicopter state
+        else if (event.action === 'helicopterFlyInSlow' || event.action === 'helicopterFlyIn' ||
+                 event.action === 'helicopterBackForth' || event.action === 'helicopterWander' ||
+                 event.action === 'helicopterReenter' || event.action === 'replaceHelicopter') {
+          helicopterAsset = event.asset
+          helicopterAction = event.action
+        }
+        else if (event.action === 'helicopterFlyOffTopLeft' || event.action === 'planeFlyOffLeft') {
+          helicopterAsset = null  // Helicopter left
         }
       } else {
         break
       }
     }
 
-    // Apply current state
-    for (const [layer, asset] of Object.entries(currentState)) {
+    // Apply layer states
+    for (const [layer, asset] of Object.entries(layerState)) {
       showHannahMainShowLayer(layer, asset)
     }
 
-    console.log('MyVMK Genie: Late join - Hannah Main Show at index', lastHannahMainShowIndex)
+    // Apply toggle effects
+    if (toggleState.wind) {
+      startShakeEffect('wind')
+    }
+    if (toggleState.spotlights) {
+      startColoredSpotlights(toggleState.spotlights)
+    }
+    if (toggleState.stagePulse) {
+      startHannahStagePulse()
+    }
+    if (toggleState.discoBall) {
+      startHannahDiscoBall(toggleState.discoBall)
+    }
+    if (toggleState.jackJackBubbles) {
+      startJackJackBubbles()
+    }
+    if (toggleState.hannahLanterns) {
+      startHannahLanterns()
+    }
+    if (toggleState.lightwall) {
+      startLightWall([toggleState.lightwall], 'wave', 'background')
+    }
+
+    // Apply helicopter state - show it in place if it should be visible
+    if (helicopterAsset && helicopterAction) {
+      // For late join, just show helicopter in its wandering/hovering position
+      if (helicopterAction === 'helicopterWander' || helicopterAction === 'helicopterBackForth') {
+        startHelicopterWander()  // Start wandering from current position
+      } else if (helicopterAsset) {
+        // Show helicopter in center position
+        showHannahMainShowLayer('helicopter', helicopterAsset)
+      }
+    }
+
+    console.log('MyVMK Genie: Late join - Hannah Main Show at index', lastHannahMainShowIndex, 'toggles:', toggleState)
   }
 
   // Start choreography loop
@@ -7356,6 +7911,18 @@ function executeHannahMainShowEvent(event) {
       }
       break
 
+    case 'jackJackOnce':
+      spawnJackJackBubbleSlow()
+      break
+
+    case 'jackJackWander':
+      spawnJackJackWander()
+      break
+
+    case 'whiteLanterns':
+      spawnWhiteLanterns(event.count || 4)
+      break
+
     case 'floatLogoDown':
       floatHMLogoDown()
       break
@@ -7378,6 +7945,34 @@ function executeHannahMainShowEvent(event) {
 
     case 'forceHannahTheme':
       forceHannahTheme()
+      break
+
+    case 'flyOffLayerLeft':
+      flyOffLayerLeft()
+      break
+
+    case 'flyOffLayerRight':
+      flyOffLayerRight()
+      break
+
+    case 'flyOffFilmStrips':
+      flyOffFilmStrips()
+      break
+
+    case 'flyOffPalmTrees':
+      flyOffPalmTrees()
+      break
+
+    case 'flyOffSpeakerAndProjector':
+      flyOffSpeakerAndProjector()
+      break
+
+    case 'fadeOutFireworks':
+      fadeOutFireworks()
+      break
+
+    case 'stopFireworks':
+      stopContinuousFireworks()
       break
 
     case 'end':
@@ -7492,122 +8087,14 @@ function stopHannahMainShow() {
   // Reset state
   hannahMainShowStartTime = null
   lastHannahMainShowIndex = -1
-
-  showNotification('🎤 Hannah Montana Show ended', 'info')
 }
 
-// Password prompt for Hannah Main Show beta testing
-function showHannahPasswordPrompt(onSuccess) {
-  // Create overlay
-  const overlay = document.createElement('div')
-  overlay.id = 'vmkpal-hannah-password-overlay'
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    z-index: 2147483647;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `
-
-  // Create modal
-  const modal = document.createElement('div')
-  modal.style.cssText = `
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border: 2px solid #e94560;
-    border-radius: 12px;
-    padding: 24px;
-    text-align: center;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
-  `
-
-  modal.innerHTML = `
-    <div style="color: #e94560; font-size: 24px; margin-bottom: 8px;">🎤 Hannah Montana Show</div>
-    <div style="color: #aaa; font-size: 14px; margin-bottom: 16px;">Beta Testing - Enter Password</div>
-    <input type="password" id="vmkpal-hannah-password-input" placeholder="Enter password..." style="
-      width: 200px;
-      padding: 10px 14px;
-      border: 1px solid #e94560;
-      border-radius: 6px;
-      background: #0f0f1a;
-      color: white;
-      font-size: 14px;
-      outline: none;
-      margin-bottom: 12px;
-    " />
-    <div style="display: flex; gap: 10px; justify-content: center;">
-      <button id="vmkpal-hannah-password-submit" style="
-        padding: 8px 20px;
-        background: #e94560;
-        border: none;
-        border-radius: 6px;
-        color: white;
-        font-weight: bold;
-        cursor: pointer;
-      ">Unlock</button>
-      <button id="vmkpal-hannah-password-cancel" style="
-        padding: 8px 20px;
-        background: #333;
-        border: 1px solid #555;
-        border-radius: 6px;
-        color: #aaa;
-        cursor: pointer;
-      ">Cancel</button>
-    </div>
-    <div id="vmkpal-hannah-password-error" style="color: #ff6b6b; font-size: 12px; margin-top: 10px; display: none;">
-      Incorrect password
-    </div>
-  `
-
-  overlay.appendChild(modal)
-  document.body.appendChild(overlay)
-
-  const input = document.getElementById('vmkpal-hannah-password-input')
-  const submitBtn = document.getElementById('vmkpal-hannah-password-submit')
-  const cancelBtn = document.getElementById('vmkpal-hannah-password-cancel')
-  const errorDiv = document.getElementById('vmkpal-hannah-password-error')
-
-  input.focus()
-
-  function checkPassword() {
-    if (input.value === HANNAH_BETA_PASSWORD) {
-      hannahMainShowUnlocked = true
-      overlay.remove()
-      onSuccess()
-    } else {
-      errorDiv.style.display = 'block'
-      input.value = ''
-      input.focus()
-    }
-  }
-
-  submitBtn.addEventListener('click', checkPassword)
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') checkPassword()
-    if (e.key === 'Escape') overlay.remove()
-  })
-  cancelBtn.addEventListener('click', () => overlay.remove())
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove()
-  })
-}
-
-// Toggle the Hannah Montana Main Show
+// Toggle the Hannah Montana Main Show (for DEV_MODE testing only)
 function toggleHannahMainShow() {
   if (isHannahMainShowActive) {
     stopHannahMainShow()
   } else {
-    // Check if unlocked (DEV_MODE bypasses password)
-    if (DEV_MODE || hannahMainShowUnlocked) {
-      startHannahMainShow()
-    } else {
-      showHannahPasswordPrompt(() => startHannahMainShow())
-    }
+    startHannahMainShow()
   }
 }
 
@@ -7865,7 +8352,7 @@ function spawnHannahPalmTrees(colors) {
           width: ${treeWidth}px;
           height: auto;
           pointer-events: none;
-          z-index: 2147483644;
+          z-index: 2147483639;
           opacity: 0;
           transition: opacity 0.8s;
           transform: scaleX(${fromLeft ? 1 : -1});
@@ -8350,6 +8837,271 @@ function spawnJackJackBubble() {
   animateBubble()
 }
 
+// Single slow Jack Jack bubble float up (one-shot)
+function spawnJackJackBubbleSlow() {
+  const bounds = getGameCanvasBounds()
+
+  // Randomly choose left or right facing
+  const facingLeft = Math.random() > 0.5
+  const assetKey = facingLeft ? 'jackjack_left' : 'jackjack_right'
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  const bubble = document.createElement('img')
+  bubble.src = chrome.runtime.getURL(assetPath)
+  bubble.className = 'vmkpal-hannah-jackjack-bubble-slow'
+
+  // Store proportional position
+  const xProp = 0.3 + Math.random() * 0.4  // Center area (30%-70%)
+  let yProp = 1.1  // Start just below canvas
+
+  // Proportional width (12% of canvas width - slightly larger)
+  const bubbleWidthProp = 0.12
+  const bubbleWidth = bounds.width * bubbleWidthProp
+
+  bubble.style.cssText = `
+    position: fixed;
+    width: ${bubbleWidth}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483639;
+    transition: opacity 1.5s ease-in-out;
+  `
+  bubble.dataset.widthProp = bubbleWidthProp
+
+  document.body.appendChild(bubble)
+
+  // Fade in
+  setTimeout(() => bubble.style.opacity = '1', 50)
+
+  // Animate rising - SLOW
+  const riseSpeed = 0.0008  // Much slower than regular
+  const driftAmount = 0.02
+  let phase = Math.random() * Math.PI * 2
+
+  function animateBubble() {
+    if (!isHannahMainShowActive || !bubble.parentNode) {
+      return
+    }
+
+    const bounds = getGameCanvasBounds()
+
+    yProp -= riseSpeed
+    phase += 0.01  // Slower drift
+    const driftX = Math.sin(phase) * driftAmount
+
+    const actualX = bounds.left + ((xProp + driftX) * bounds.width)
+    const actualY = bounds.top + (yProp * bounds.height)
+
+    bubble.style.left = actualX + 'px'
+    bubble.style.top = actualY + 'px'
+    bubble.style.width = (bounds.width * parseFloat(bubble.dataset.widthProp)) + 'px'
+
+    // Fade out near top and remove
+    if (yProp < -0.1) {
+      bubble.style.opacity = '0'
+      setTimeout(() => {
+        if (bubble.parentNode) bubble.parentNode.removeChild(bubble)
+      }, 1500)
+      return
+    }
+
+    requestAnimationFrame(animateBubble)
+  }
+
+  animateBubble()
+}
+
+// Single Jack Jack that wanders around the screen for 30 seconds then exits
+function spawnJackJackWander() {
+  const bounds = getGameCanvasBounds()
+
+  // Randomly choose left or right facing
+  const facingLeft = Math.random() > 0.5
+  const assetKey = facingLeft ? 'jackjack_left' : 'jackjack_right'
+  const assetPath = HANNAH_MAIN_ASSETS[assetKey]
+  if (!assetPath) return
+
+  const bubble = document.createElement('img')
+  bubble.src = chrome.runtime.getURL(assetPath)
+  bubble.className = 'vmkpal-hannah-jackjack-wander'
+
+  // Start position - center area
+  let xProp = 0.4 + Math.random() * 0.2
+  let yProp = 0.4 + Math.random() * 0.2
+
+  // Proportional width (6% of canvas width - half size)
+  const bubbleWidthProp = 0.06
+  const bubbleWidth = bounds.width * bubbleWidthProp
+
+  bubble.style.cssText = `
+    position: fixed;
+    width: ${bubbleWidth}px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2147483638;
+    transition: opacity 1.5s ease-in-out;
+  `
+  bubble.dataset.widthProp = bubbleWidthProp
+
+  document.body.appendChild(bubble)
+
+  // Fade in
+  setTimeout(() => bubble.style.opacity = '1', 50)
+
+  // Wandering parameters
+  let targetXProp = xProp
+  let targetYProp = yProp
+  let phase = Math.random() * Math.PI * 2
+  const startTime = performance.now()
+  const wanderDuration = 30000  // 30 seconds of wandering
+  let isExiting = false
+
+  // Pick new random target every few seconds
+  function pickNewTarget() {
+    targetXProp = 0.15 + Math.random() * 0.7  // 15% to 85%
+    targetYProp = 0.2 + Math.random() * 0.5   // 20% to 70%
+  }
+
+  // Pick initial target
+  pickNewTarget()
+  let lastTargetChange = startTime
+
+  function animateWander() {
+    if (!isHannahMainShowActive || !bubble.parentNode) {
+      return
+    }
+
+    const now = performance.now()
+    const elapsed = now - startTime
+    const bounds = getGameCanvasBounds()
+
+    // Check if time to exit
+    if (elapsed > wanderDuration && !isExiting) {
+      isExiting = true
+      // Set exit target (float up and off to the right)
+      targetXProp = 1.3
+      targetYProp = -0.3
+    }
+
+    // Pick new wander target every 3-5 seconds while not exiting
+    if (!isExiting && (now - lastTargetChange > 3000 + Math.random() * 2000)) {
+      pickNewTarget()
+      lastTargetChange = now
+    }
+
+    // Smoothly move toward target
+    const moveSpeed = isExiting ? 0.003 : 0.001
+    xProp += (targetXProp - xProp) * moveSpeed * 16  // ~60fps adjustment
+    yProp += (targetYProp - yProp) * moveSpeed * 16
+
+    // Add gentle bobbing
+    phase += 0.02
+    const bobX = Math.sin(phase) * 0.01
+    const bobY = Math.cos(phase * 0.7) * 0.008
+
+    const actualX = bounds.left + ((xProp + bobX) * bounds.width)
+    const actualY = bounds.top + ((yProp + bobY) * bounds.height)
+
+    bubble.style.left = actualX + 'px'
+    bubble.style.top = actualY + 'px'
+    bubble.style.width = (bounds.width * parseFloat(bubble.dataset.widthProp)) + 'px'
+
+    // Remove when off screen
+    if (isExiting && (xProp > 1.2 || yProp < -0.2)) {
+      bubble.style.opacity = '0'
+      setTimeout(() => {
+        if (bubble.parentNode) bubble.parentNode.removeChild(bubble)
+      }, 1500)
+      return
+    }
+
+    requestAnimationFrame(animateWander)
+  }
+
+  animateWander()
+}
+
+// Spawn white lanterns (one-shot release)
+function spawnWhiteLanterns(count = 4) {
+  const bounds = getGameCanvasBounds()
+
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      if (!isHannahMainShowActive) return
+
+      const lantern = document.createElement('img')
+      // Use lantern1 (white) - index 0 in HANNAH_LANTERN_IMAGES
+      lantern.src = chrome.runtime.getURL(HANNAH_LANTERN1_IMAGE)
+      lantern.className = 'vmkpal-hannah-white-lantern'
+
+      // Random horizontal position with stagger
+      const xProp = 0.15 + (i / count) * 0.7 + (Math.random() - 0.5) * 0.1
+      let yProp = 1.15  // Start below canvas
+
+      const lanternWidthProp = 0.06
+      const lanternWidth = bounds.width * lanternWidthProp
+
+      lantern.style.cssText = `
+        position: fixed;
+        width: ${lanternWidth}px;
+        height: auto;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 2147483639;
+        filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))
+                drop-shadow(0 0 15px rgba(200, 220, 255, 0.5));
+        transition: opacity 1.5s ease-in-out;
+      `
+      lantern.dataset.widthProp = lanternWidthProp
+
+      document.body.appendChild(lantern)
+
+      // Fade in
+      setTimeout(() => lantern.style.opacity = '1', 100)
+
+      // Animate rising - slow
+      const riseSpeed = 0.0006 + Math.random() * 0.0003
+      const driftAmount = 0.015 + Math.random() * 0.01
+      let phase = Math.random() * Math.PI * 2
+
+      function animateLantern() {
+        if (!isHannahMainShowActive || !lantern.parentNode) {
+          return
+        }
+
+        const bounds = getGameCanvasBounds()
+
+        yProp -= riseSpeed
+        phase += 0.015
+        const driftX = Math.sin(phase) * driftAmount
+
+        const actualX = bounds.left + ((xProp + driftX) * bounds.width)
+        const actualY = bounds.top + (yProp * bounds.height)
+
+        lantern.style.left = actualX + 'px'
+        lantern.style.top = actualY + 'px'
+        lantern.style.width = (bounds.width * parseFloat(lantern.dataset.widthProp)) + 'px'
+
+        // Fade out near top and remove
+        if (yProp < -0.15) {
+          lantern.style.opacity = '0'
+          setTimeout(() => {
+            if (lantern.parentNode) lantern.parentNode.removeChild(lantern)
+          }, 1500)
+          return
+        }
+
+        requestAnimationFrame(animateLantern)
+      }
+
+      animateLantern()
+    }, i * 400)  // Stagger spawns
+  }
+}
+
 // Float HM logo down behind Hannah during transformation
 function floatHMLogoDown() {
   const bounds = getGameCanvasBounds()
@@ -8412,7 +9164,7 @@ function floatHMLogoDown() {
     logo.style.top = actualY + 'px'
     logo.style.width = (bounds.width * parseFloat(logo.dataset.widthProp)) + 'px'
 
-    // Fade out after 10 seconds at rest
+    // Fade out after 25 seconds at rest
     if (yProp >= endYProp) {
       setTimeout(() => {
         if (logo.parentNode) {
@@ -8421,7 +9173,7 @@ function floatHMLogoDown() {
             if (logo.parentNode) logo.parentNode.removeChild(logo)
           }, 1000)
         }
-      }, 10000)
+      }, 25000)
       return
     }
 
@@ -8464,6 +9216,12 @@ const CASTLE_GARDENS_ID = 30
 
 function checkCastleGardensRoom() {
   if (!hasDetectedRoomThisSession) return
+
+  // Kingdom Sync must be enabled for room ambient effects
+  if (!isKingdomSyncEnabled) {
+    if (isCastleOverlayActive) stopCastleOverlay()
+    return
+  }
 
   // Show castle overlay in Castle Gardens
   if (currentRoomId === CASTLE_GARDENS_ID) {
@@ -8885,6 +9643,8 @@ function hideOverlaysForMap() {
       spotlights: isSpotlightsEnabled
     }
     console.log('MyVMK Genie: Saved overlay state:', overlaysHiddenForMap)
+    // Remember which room we were in when map was opened
+    mapOpenedInRoomId = currentRoomId
   }
 
   isMapOpen = true
@@ -8948,10 +9708,11 @@ function hideOverlaysForMap() {
   console.log('MyVMK Genie: All overlays hidden for map')
 }
 
-// Restore overlays after map is closed (called when room is detected again)
+// Restore overlays after map is closed (called when a different room is detected)
 function restoreOverlaysAfterMap() {
   if (!isMapOpen) return // Map wasn't open
   isMapOpen = false
+  mapOpenedInRoomId = null // Clear the saved room
 
   console.log('MyVMK Genie: Restoring overlays after map closed')
 
@@ -9151,6 +9912,61 @@ function checkKingdomSyncEffects() {
   checkKingdomSyncNight()
 }
 
+// Africa room audio - automatically plays Toto's Africa when in Africa rooms
+function checkAfricaRoomAudio() {
+  // Kingdom Sync must be enabled for automatic room audio
+  if (!isKingdomSyncEnabled || !hasDetectedRoomThisSession) {
+    if (isAfricaRoomAudioActive) {
+      stopAfricaRoomAudio()
+    }
+    return
+  }
+
+  const roomId = currentRoomId
+  const isInAfrica = KINGDOM_SYNC_ROOMS.AFRICA.has(roomId)
+
+  if (isInAfrica && !isAfricaRoomAudioActive) {
+    startAfricaRoomAudio()
+  } else if (!isInAfrica && isAfricaRoomAudioActive) {
+    stopAfricaRoomAudio()
+  }
+}
+
+function startAfricaRoomAudio() {
+  if (isAfricaRoomAudioActive) return
+  isAfricaRoomAudioActive = true
+  console.log('MyVMK Genie: Starting Africa room audio')
+
+  // Mute game audio
+  muteGameAudio()
+
+  // Create hidden iframe for YouTube audio
+  const videoId = getYouTubeVideoId(AFRICA_ROOM_AUDIO_URL)
+  if (!videoId) return
+
+  africaAudioIframe = document.createElement('iframe')
+  africaAudioIframe.id = 'vmkpal-africa-audio'
+  africaAudioIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}`
+  africaAudioIframe.allow = 'autoplay; encrypted-media'
+  africaAudioIframe.style.cssText = 'position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px;'
+  document.body.appendChild(africaAudioIframe)
+}
+
+function stopAfricaRoomAudio() {
+  if (!isAfricaRoomAudioActive) return
+  isAfricaRoomAudioActive = false
+  console.log('MyVMK Genie: Stopping Africa room audio')
+
+  // Remove hidden iframe
+  if (africaAudioIframe) {
+    africaAudioIframe.remove()
+    africaAudioIframe = null
+  }
+
+  // Restore game audio
+  unmuteGameAudio()
+}
+
 // ============================================
 // SCREEN SHAKE EFFECT
 // ============================================
@@ -9276,7 +10092,6 @@ function flipCanvas(type) {
 function explodeCanvas() {
   const canvas = document.getElementById('gameCanvas') || document.querySelector('canvas')
   if (!canvas) {
-    showNotification('Game canvas not found', 'error')
     return
   }
 
@@ -9371,8 +10186,6 @@ function explodeCanvas() {
       })
     })
   })
-
-  showNotification('💥 Explosion!', 'success')
 
   // Clean up and restore canvas
   setTimeout(() => {
@@ -9669,6 +10482,13 @@ async function fetchGenieEvents() {
 }
 
 function checkGenieEvents() {
+  // Kingdom Sync must be enabled for events to run
+  if (!isKingdomSyncEnabled) {
+    if (activeGenieEvent) stopGenieEvent()
+    if (activeCommunityEvent) stopCommunityEvent()
+    return
+  }
+
   const now = new Date()
 
   // Check Genie events (admin - overlays + audio)
@@ -9912,6 +10732,152 @@ function stopEffect(effectName) {
   }
 }
 
+// Stop ALL effects, events, and overlays - emergency stop button
+function stopAllEffects() {
+  console.log('MyVMK Genie: Stopping ALL effects and events')
+
+  // Stop active Genie events
+  if (activeGenieEvent) {
+    stopGenieEvent()
+  }
+
+  // Stop active Community events
+  if (activeCommunityEvent) {
+    stopCommunityEvent()
+  }
+
+  // Stop all weather/overlay effects
+  if (isRainEnabled) {
+    isRainEnabled = false
+    stopRainEffect()
+  }
+  if (isSnowEnabled) {
+    isSnowEnabled = false
+    stopSnowEffect()
+  }
+  if (isFireworksEnabled) {
+    isFireworksEnabled = false
+    stopFireworks()
+  }
+  if (isMoneyRainEnabled) {
+    isMoneyRainEnabled = false
+    stopMoneyRain()
+  }
+  if (isEmojiRainEnabled) {
+    isEmojiRainEnabled = false
+    stopEmojiRain()
+  }
+  if (isNightOverlayEnabled) {
+    stopNightOverlay()
+  }
+  if (isStarsOverlayEnabled) {
+    toggleStarsOverlay() // This toggles off
+  }
+
+  // Stop spotlights
+  if (isSpotlightsEnabled) {
+    stopSpotlights()
+  }
+
+  // Stop sparkles
+  if (isSparklesActive) {
+    stopSparkles()
+  }
+
+  // Stop light wall
+  if (isLightWallActive) {
+    stopLightWall()
+  }
+
+  // Stop shake effects
+  if (activeShakeIntensity) {
+    stopShakeEffect()
+  }
+
+  // Stop rave effect
+  if (isRaveEnabled) {
+    stopRaveEffect()
+  }
+
+  // Stop ambient room effects
+  if (isGhostEffectActive) {
+    stopGhostEffect()
+  }
+  if (isTinkerbellActive) {
+    stopTinkerbellEffect()
+  }
+  if (isButterflyActive) {
+    stopButterflyEffect()
+  }
+  if (isFirefliesActive) {
+    stopFireflyEffect()
+  }
+  if (isFogActive) {
+    stopFogEffect()
+  }
+
+  // Stop Africa room audio
+  if (isAfricaRoomAudioActive) {
+    stopAfricaRoomAudio()
+  }
+
+  // Stop Kingdom Sync night
+  if (isKingdomSyncNightActive) {
+    stopKingdomSyncNight()
+  }
+
+  // Stop castle overlay
+  if (isCastleOverlayActive) {
+    stopCastleOverlay()
+  }
+
+  // Stop Hannah Montana effects
+  if (isHannahLanternsActive) {
+    stopHannahLanterns()
+  }
+  if (isHannahPropsActive) {
+    stopHannahProps()
+  }
+  if (isHannahPerformanceActive) {
+    stopHannahPerformance()
+  }
+  if (isHannahMainShowActive) {
+    stopHannahMainShow()
+  }
+
+  // Stop Happily Ever After show
+  stopHappilyEverAfterShow()
+
+  // Stop continuous fireworks
+  stopContinuousFireworks()
+
+  // Stop all stage floats
+  stopAllStageFloats()
+
+  // Stop helicopter effects
+  stopHelicopterFloat()
+  stopHelicopterBackForth()
+
+  // Stop disco ball
+  if (typeof stopHannahDiscoBall === 'function') {
+    stopHannahDiscoBall()
+  }
+
+  // Stop Jack-Jack bubbles
+  if (typeof stopJackJackBubbles === 'function') {
+    stopJackJackBubbles()
+  }
+
+  // Stop audio
+  stopAudio()
+
+  // Clean up any remaining Hannah film strips
+  document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => el.remove())
+
+  // Show confirmation
+  showNotification('All effects stopped', 'info', 1500)
+}
+
 // Start night overlay (for events)
 function startNightOverlay(eventMode = false) {
   if (isNightOverlayEnabled) return // Already on
@@ -9985,6 +10951,13 @@ function startGenieEvent(event) {
     console.log('MyVMK Genie: Late join detected, syncing to', Math.floor(elapsedSeconds), 'seconds')
   }
 
+  // Check if this is a Hannah Main Show event - handle before normal effects
+  if (event.hannahMainShow) {
+    // Start the choreographed Hannah Main Show instead of normal effects
+    startHannahMainShow(isLateJoin ? elapsedSeconds : 0)
+    return // The show handles its own audio and effects
+  }
+
   // Trigger effects - support both array (effects) and single (effect) for backwards compat
   const effects = event.effects || (event.effect ? [event.effect] : [])
   console.log('MyVMK Genie: Effects to trigger:', effects)
@@ -10009,8 +10982,8 @@ function startGenieEvent(event) {
     showNotification(`<img src="${beeIconUrl}" style="width: 20px; height: 20px;">${event.title}${isJoiningMidEvent ? ' in progress!' : ' starting!'}`, 'success', 2000, true)
   }
 
-  // Check for theme unlock
-  if (event.unlockTheme && !unlockedThemes.includes(event.unlockTheme)) {
+  // Check for theme unlock (skip for hannahMainShow - theme unlocks during show)
+  if (event.unlockTheme && !event.hannahMainShow && !unlockedThemes.includes(event.unlockTheme)) {
     unlockedThemes.push(event.unlockTheme)
     chrome.storage.local.set({ unlockedThemes })
     const themeName = event.unlockTheme === 'dark' ? 'Dark' : event.unlockTheme === 'pink' ? 'Pink' : event.unlockTheme === 'hannah' ? 'Hannah Montana' : event.unlockTheme
@@ -10046,6 +11019,12 @@ function stopGenieEvent() {
 // Clickable items that appear in specific rooms and unlock themes when clicked
 
 function checkRoomCollectibles() {
+  // Kingdom Sync must be enabled for room collectibles
+  if (!isKingdomSyncEnabled) {
+    if (activeCollectible) removeCollectible()
+    return
+  }
+
   // Remove existing collectible if we changed rooms
   if (activeCollectible) {
     const collectibleRoomId = parseInt(activeCollectible.dataset.roomId)
@@ -10256,7 +11235,7 @@ function startGenieEventSystem() {
   setInterval(fetchGenieEvents, GENIE_EVENTS_FETCH_INTERVAL)
 
   // Check for active events every 10 seconds
-  genieEventCheckInterval = setInterval(checkGenieEvents, 30000) // Check every 30 seconds
+  genieEventCheckInterval = setInterval(checkGenieEvents, 10000) // Check every 10 seconds
 }
 
 // Get scheduled Genie events for calendar display
@@ -10380,7 +11359,7 @@ function updateNightOverlayBounds(darker = false) {
     width: ${bounds.width}px;
     height: ${bounds.height}px;
     pointer-events: none;
-    z-index: 2147483640;
+    z-index: 2147483635;
     background: linear-gradient(
       to bottom,
       rgba(5, 10, 30, ${opacity1}) 0%,
@@ -10642,14 +11621,6 @@ function createOverlaysPanel() {
     ))
 
   }
-
-  // Hannah Montana Main Show (password protected for beta testing)
-  grid.appendChild(createOverlayToggle(
-    '🌟',
-    'HM Main',
-    () => isHannahMainShowActive,
-    toggleHannahMainShow
-  ))
 
   div.appendChild(grid)
 
@@ -11383,60 +12354,6 @@ function createSettingsPanel() {
   themeSection.appendChild(themeGrid)
   div.appendChild(themeSection)
 
-  // Kingdom Sync Toggle - full width image
-  const kingdomSyncSection = document.createElement('div')
-  kingdomSyncSection.style.cssText = `
-    padding: 12px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 8px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: background 0.2s;
-  `
-
-  const kingdomSyncIcon = document.createElement('img')
-  kingdomSyncIcon.src = chrome.runtime.getURL(isKingdomSyncEnabled ? 'genie-kingdomsync-logo-on.png' : 'genie-kingdomsync-logo.png')
-  kingdomSyncIcon.title = 'Kingdom Sync - Room ambiance & night mode'
-  kingdomSyncIcon.style.cssText = `
-    width: 80%;
-    display: block;
-    margin: 0 auto;
-    border-radius: 6px;
-    transition: transform 0.2s, opacity 0.2s;
-    opacity: ${isKingdomSyncEnabled ? '1' : '0.6'};
-  `
-  kingdomSyncIcon.addEventListener('mouseenter', () => {
-    kingdomSyncIcon.style.transform = 'scale(1.02)'
-  })
-  kingdomSyncIcon.addEventListener('mouseleave', () => {
-    kingdomSyncIcon.style.transform = 'scale(1)'
-  })
-
-  function updateKingdomSyncToggle() {
-    kingdomSyncIcon.src = chrome.runtime.getURL(isKingdomSyncEnabled ? 'genie-kingdomsync-logo-on.png' : 'genie-kingdomsync-logo.png')
-    kingdomSyncIcon.style.opacity = isKingdomSyncEnabled ? '1' : '0.6'
-  }
-
-  kingdomSyncSection.onclick = () => {
-    isKingdomSyncEnabled = !isKingdomSyncEnabled
-    chrome.storage.local.set({ isKingdomSyncEnabled })
-    updateKingdomSyncToggle()
-
-    if (isKingdomSyncEnabled) {
-      // Reset rare effect decisions for fresh experience
-      kingdomSyncFireflyRooms.clear()
-      checkKingdomSyncEffects()
-    } else {
-      // Stop all Kingdom Sync effects
-      stopFireflyEffect()
-      stopFogEffect()
-      stopKingdomSyncNight()
-    }
-  }
-
-  kingdomSyncSection.appendChild(kingdomSyncIcon)
-  div.appendChild(kingdomSyncSection)
-
   // Test Mode Toggle (admin only - shows test events)
   const testModeToggle = createSettingToggle(
     '🧪',
@@ -11676,6 +12593,37 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.11',
+    date: '2025-03-25',
+    changes: [
+      'Africa Room Audio: Plays Toto\'s "Africa" when in Africa rooms (Kingdom Sync)',
+      'Audio plays seamlessly in background without visible player'
+    ]
+  },
+  {
+    version: '2.1.10',
+    date: '2025-03-24',
+    changes: [
+      'Fixed late-join sync for Hannah Montana show - effects now work properly',
+      'Improved event detection responsiveness'
+    ]
+  },
+  {
+    version: '2.1.9',
+    date: '2025-03-24',
+    changes: [
+      'Fixed Hannah Montana Main Show not triggering from scheduled events'
+    ]
+  },
+  {
+    version: '2.1.8',
+    date: '2025-03-24',
+    changes: [
+      'Hannah Montana Main Show: Full choreographed event experience',
+      'Hannah theme unlocks during show for attendees to keep'
+    ]
+  },
   {
     version: '2.1.7',
     date: '2025-03-23',
@@ -12521,7 +13469,13 @@ function forceHannahTheme() {
   isHannahTheme = true
   chrome.storage.local.set({ isPinkTheme, isDarkTheme, isHannahTheme })
   applyTheme()
-  showNotification('🎀 Hannah Montana theme activated!', 'success', 3000)
+
+  // Also unlock the theme permanently for attendees
+  if (!unlockedThemes.includes('hannah')) {
+    unlockedThemes.push('hannah')
+    chrome.storage.local.set({ unlockedThemes })
+    console.log('MyVMK Genie: Hannah Montana theme unlocked for attendee!')
+  }
 }
 
 // Apply theme (blue or pink)
@@ -12558,6 +13512,20 @@ function applyTheme() {
 
   // Update floating icon via applyIconSize (handles both small and large modes)
   applyIconSize()
+
+  // Update Events button icon to match theme
+  const eventsBtn = document.getElementById('vmkpal-events-btn')
+  if (eventsBtn) {
+    let iconUrl
+    if (isHannahTheme || isPinkTheme) {
+      iconUrl = chrome.runtime.getURL('genie-cal-pink.png')
+    } else if (isDarkTheme) {
+      iconUrl = chrome.runtime.getURL('genie-cal-jafar.png')
+    } else {
+      iconUrl = chrome.runtime.getURL('genie-cal-basic.png')
+    }
+    eventsBtn.innerHTML = `<img src="${iconUrl}" style="height: 36px; object-fit: contain;">`
+  }
 
   // Update page background (if no custom color set)
   const existingStyle = document.getElementById('vmkpal-border-fill')
@@ -12653,7 +13621,8 @@ function loadSettings() {
     if (result.isTestModeEnabled) {
       isTestModeEnabled = result.isTestModeEnabled
     }
-    if (result.isKingdomSyncEnabled) {
+    // Kingdom Sync defaults to ON, but respect user preference if they explicitly disabled it
+    if (result.isKingdomSyncEnabled !== undefined) {
       isKingdomSyncEnabled = result.isKingdomSyncEnabled
     }
   })
