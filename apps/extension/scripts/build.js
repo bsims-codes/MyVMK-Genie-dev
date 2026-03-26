@@ -64,7 +64,9 @@ const staticFiles = [
   'castle-gardens.png',
   'genie-cal-basic.png',
   'genie-cal-pink.png',
-  'genie-cal-jafar.png'
+  'genie-cal-jafar.png',
+  'hannah-lantern5.PNG',
+  'hannah-lantern6.PNG'
 ];
 
 // Transform Chrome manifest to Firefox manifest

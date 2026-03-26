@@ -585,6 +585,13 @@ const KINGDOM_SYNC_ROOMS = {
 }
 
 // Sci-Fi Dine-In lanterns (Kingdom Sync) - glowing rising lanterns
+const SCIFI_LANTERN_IMAGES = [
+  'hannah/hannah-lantern2.PNG',
+  'hannah/hannah-lantern3.PNG',
+  'hannah/hannah-lantern4.PNG',
+  'hannah-lantern5.PNG',
+  'hannah-lantern6.PNG'
+]
 let isSciFiLanternsActive = false
 let sciFiLanternElements = []
 let sciFiLanternData = []
@@ -5514,9 +5521,9 @@ function stopHannahLanterns() {
 function createSciFiLantern() {
   const bounds = getGameCanvasBounds()
 
-  // Use the Hannah lantern images
-  const idx = Math.floor(Math.random() * HANNAH_LANTERN_IMAGES.length)
-  const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN_IMAGES[idx])
+  // Use the Sci-Fi lantern images
+  const idx = Math.floor(Math.random() * SCIFI_LANTERN_IMAGES.length)
+  const imageUrl = chrome.runtime.getURL(SCIFI_LANTERN_IMAGES[idx])
 
   const lantern = document.createElement('img')
   lantern.src = imageUrl
@@ -5529,15 +5536,15 @@ function createSciFiLantern() {
   // Add yellow/orange glow effect
   lantern.style.cssText = `
     position: fixed;
-    width: 45px;
+    width: 50px;
     height: auto;
     pointer-events: none;
-    opacity: 0.9;
-    z-index: 10000;
+    opacity: 0.95;
+    z-index: 999999;
     transition: none;
     left: ${startX}px;
     top: ${startY}px;
-    filter: drop-shadow(0 0 8px rgba(255, 180, 50, 0.8)) drop-shadow(0 0 15px rgba(255, 140, 0, 0.5)) drop-shadow(0 0 25px rgba(255, 100, 0, 0.3));
+    filter: drop-shadow(0 0 10px rgba(255, 180, 50, 0.9)) drop-shadow(0 0 18px rgba(255, 140, 0, 0.6)) drop-shadow(0 0 28px rgba(255, 100, 0, 0.4));
   `
 
   document.body.appendChild(lantern)
@@ -5618,8 +5625,8 @@ function spawnSciFiLantern() {
     }, i * 1200)
   }
 
-  // Schedule next spawn (12-25 seconds)
-  const nextSpawn = (12 + Math.random() * 13) * 1000
+  // Schedule next spawn (8-20 seconds)
+  const nextSpawn = (8 + Math.random() * 12) * 1000
   sciFiLanternSpawnTimer = setTimeout(spawnSciFiLantern, nextSpawn)
 }
 
@@ -5632,13 +5639,16 @@ function startSciFiLanterns() {
   createSciFiLantern()
   setTimeout(() => {
     if (isSciFiLanternsActive) createSciFiLantern()
-  }, 3000)
+  }, 1500)
+  setTimeout(() => {
+    if (isSciFiLanternsActive) createSciFiLantern()
+  }, 3500)
 
   // Start animation loop
   updateSciFiLanterns()
 
-  // Start spawn timer
-  const firstSpawn = (8 + Math.random() * 8) * 1000
+  // Start spawn timer (first additional spawn in 4-8 seconds)
+  const firstSpawn = (4 + Math.random() * 4) * 1000
   sciFiLanternSpawnTimer = setTimeout(spawnSciFiLantern, firstSpawn)
 }
 
