@@ -855,6 +855,7 @@ function startAmbientEffectWatcher() {
     checkRoomCollectibles()
     checkKingdomSyncEffects()
     checkCastleGardensRoom()
+    checkAfricaRoomAudio()
   }, 5000)
 }
 
@@ -937,6 +938,7 @@ function monitorNetworkForRooms() {
           checkTinkerbellRoom()
           checkButterflyRoom()
           checkMatterhornRoom()
+          checkAfricaRoomAudio()
           checkGenieEvents()
         }
 
@@ -985,8 +987,9 @@ function monitorNetworkForRooms() {
             updateRoomInfoDisplay()
             checkGhostEffectRoom() // Check if ghost effect should change
             checkTinkerbellRoom()
-          checkButterflyRoom()
-          checkMatterhornRoom()
+            checkButterflyRoom()
+            checkMatterhornRoom()
+            checkAfricaRoomAudio()
             checkGenieEvents()
           }
         }
@@ -1014,6 +1017,7 @@ function monitorNetworkForRooms() {
                 checkTinkerbellRoom()
                 checkButterflyRoom()
                 checkMatterhornRoom()
+                checkAfricaRoomAudio()
                 checkGenieEvents()
               }
             }
@@ -15861,6 +15865,7 @@ function updateRoomInfoDisplay() {
   checkTinkerbellRoom()
   checkButterflyRoom()
   checkMatterhornRoom()
+  checkAfricaRoomAudio()
   checkGenieEvents()
 }
 
@@ -16120,6 +16125,7 @@ async function init() {
         checkTinkerbellRoom()
         checkButterflyRoom()
         checkMatterhornRoom()
+        checkAfricaRoomAudio()
         checkGenieEvents()
       }
     }
@@ -16136,6 +16142,7 @@ async function init() {
       checkTinkerbellRoom()
       checkButterflyRoom()
       checkMatterhornRoom()
+      checkAfricaRoomAudio()
       checkGenieEvents()
     }
 
@@ -16151,6 +16158,7 @@ async function init() {
       checkTinkerbellRoom()
       checkButterflyRoom()
       checkMatterhornRoom()
+      checkAfricaRoomAudio()
       checkGenieEvents()
     }
 
@@ -16190,6 +16198,7 @@ async function init() {
         checkTinkerbellRoom()
         checkButterflyRoom()
         checkMatterhornRoom()
+        checkAfricaRoomAudio()
         checkGenieEvents()
       }
     }
@@ -16217,6 +16226,7 @@ async function init() {
             checkTinkerbellRoom()
             checkButterflyRoom()
             checkMatterhornRoom()
+            checkAfricaRoomAudio()
             checkGenieEvents()
           }
         }
