@@ -61,6 +61,67 @@ The Settings menu version will automatically match `manifest.json`. The in-app c
 
 ## Common Tasks
 
+### Adding New Ambient Room Effects (Kingdom Sync)
+
+When adding a new room-specific effect that triggers based on `currentRoomId` (like Africa audio, fireflies, fog, Tinkerbell, etc.):
+
+**1. Add constants and tracking variables** (around line 535-580 in content.js):
+```javascript
+// Example: My New Effect (Kingdom Sync)
+const MY_EFFECT_ROOM_IDS = new Set([70, 299]) // or add to KINGDOM_SYNC_ROOMS
+let isMyEffectActive = false
+```
+
+**2. Create the check/start/stop functions:**
+```javascript
+function checkMyEffectRoom() {
+  // Kingdom Sync must be enabled
+  if (!isKingdomSyncEnabled || !hasDetectedRoomThisSession) {
+    if (isMyEffectActive) stopMyEffect()
+    return
+  }
+
+  const roomId = currentRoomId
+  const shouldBeActive = MY_EFFECT_ROOM_IDS.has(roomId)
+
+  if (shouldBeActive && !isMyEffectActive) {
+    startMyEffect()
+  } else if (!shouldBeActive && isMyEffectActive) {
+    stopMyEffect()
+  }
+}
+
+function startMyEffect() { /* ... */ }
+function stopMyEffect() { /* ... */ }
+```
+
+**3. Add the check function to ALL room detection locations:**
+
+This is critical - room changes are detected in multiple places. Search for `checkMatterhornRoom()` to find all locations:
+
+| Location | Description | ~Line |
+|----------|-------------|-------|
+| `checkRoomAmbientEffects()` | Main room change handler (inside setTimeout) | ~830 |
+| `startAmbientEffectWatcher()` | Periodic 5-second backup check | ~855 |
+| PerformanceObserver | HM game detection via `/hm_stage_data/` | ~940 |
+| PerformanceObserver | Audio room detection via `room_sound/` | ~990 |
+| PerformanceObserver | JSON room detection via `vmk_*.json` | ~1018 |
+| `updateRoomInfoDisplay()` | Room info display update | ~15865 |
+| Message listener | `vmkgenie-audio-detected` from interceptor | ~16125 |
+| Message listener | `vmkgenie-hm-lobby-detected` | ~16143 |
+| Message listener | `vmkgenie-hm-game-entered` | ~16160 |
+| Message listener | Interceptor audio detection | ~16195 |
+| Message listener | Interceptor JSON detection | ~16225 |
+
+**4. Add cleanup to `stopAllEffects()`** (~line 10795):
+```javascript
+if (isMyEffectActive) {
+  stopMyEffect()
+}
+```
+
+**Quick verification:** After adding, search for your function name - it should appear 10+ times (once per detection location + the function definition).
+
 ### Adding new images/assets
 1. Add file to `apps/extension/public/`
 2. Add to `staticFiles` array in `scripts/build.js`
