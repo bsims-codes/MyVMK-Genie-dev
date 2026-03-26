@@ -5339,25 +5339,18 @@ function checkButterflyRoom() {
 
 function createHannahLantern(imageIndex = null) {
   const bounds = getGameCanvasBounds()
-  console.log('MyVMK Genie: Creating lantern, bounds:', bounds)
 
   // Pick random lantern image if not specified
   const idx = imageIndex !== null ? imageIndex : Math.floor(Math.random() * HANNAH_LANTERN_IMAGES.length)
   const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN_IMAGES[idx])
-  console.log('MyVMK Genie: Lantern image URL:', imageUrl)
 
   const lantern = document.createElement('img')
   lantern.src = imageUrl
   lantern.className = 'vmkpal-hannah-lantern'
 
-  // Debug: log when image loads or errors
-  lantern.onload = () => console.log('MyVMK Genie: Lantern image loaded')
-  lantern.onerror = (e) => console.error('MyVMK Genie: Lantern image failed to load', e)
-
   // Random horizontal position
   const startX = bounds.left + 50 + Math.random() * (bounds.width - 100)
   const startY = bounds.top + bounds.height - 20 // Start at bottom of visible area
-  console.log('MyVMK Genie: Lantern position:', startX, startY)
 
   lantern.style.cssText = `
     position: fixed;
@@ -5372,7 +5365,6 @@ function createHannahLantern(imageIndex = null) {
   `
 
   document.body.appendChild(lantern)
-  console.log('MyVMK Genie: Lantern appended to DOM, element:', lantern)
 
   const data = {
     element: lantern,
@@ -5397,15 +5389,8 @@ function createHannahLantern(imageIndex = null) {
   return data
 }
 
-let lanternDebugCounter = 0
 function updateHannahLanterns() {
   if (!isHannahLanternsActive) return
-
-  // Log every 60 frames (~1 second)
-  lanternDebugCounter++
-  if (lanternDebugCounter % 60 === 0) {
-    console.log('MyVMK Genie: Lantern animation running, count:', hannahLanternData.length)
-  }
 
   const bounds = getGameCanvasBounds()
   const now = performance.now()
