@@ -580,8 +580,16 @@ const KINGDOM_SYNC_ROOMS = {
   PIXAR_PIER: 300,
   PIRATE_TREEHOUSE: 36,
   EXPLORERS_TENT: 9,
-  CASTLE_GARDENS: 30
+  CASTLE_GARDENS: 30,
+  SCI_FI_DINE_IN: 72
 }
+
+// Sci-Fi Dine-In lanterns (Kingdom Sync) - glowing rising lanterns
+let isSciFiLanternsActive = false
+let sciFiLanternElements = []
+let sciFiLanternData = []
+let sciFiLanternAnimationId = null
+let sciFiLanternSpawnTimer = null
 
 // Genie Events System - remote scheduled events via JSONBin.io
 // >>> EDIT THESE TWO VALUES <<<
@@ -833,6 +841,7 @@ function checkRoomAmbientEffects() {
     checkKingdomSyncEffects()
     checkCastleGardensRoom()
     checkAfricaRoomAudio()
+    checkSciFiLanterns()
 
     // Check if room-specific events should start/stop based on new room
     checkGenieEvents()
@@ -856,6 +865,7 @@ function startAmbientEffectWatcher() {
     checkKingdomSyncEffects()
     checkCastleGardensRoom()
     checkAfricaRoomAudio()
+    checkSciFiLanterns()
   }, 5000)
 }
 
@@ -939,6 +949,7 @@ function monitorNetworkForRooms() {
           checkButterflyRoom()
           checkMatterhornRoom()
           checkAfricaRoomAudio()
+          checkSciFiLanterns()
           checkGenieEvents()
         }
 
@@ -990,6 +1001,7 @@ function monitorNetworkForRooms() {
             checkButterflyRoom()
             checkMatterhornRoom()
             checkAfricaRoomAudio()
+            checkSciFiLanterns()
             checkGenieEvents()
           }
         }
@@ -1018,6 +1030,7 @@ function monitorNetworkForRooms() {
                 checkButterflyRoom()
                 checkMatterhornRoom()
                 checkAfricaRoomAudio()
+                checkSciFiLanterns()
                 checkGenieEvents()
               }
             }
@@ -5491,6 +5504,190 @@ function stopHannahLanterns() {
     hannahLanternElements = []
     hannahLanternData = []
   }, 1500)
+}
+
+// ============================================================================
+// SCI-FI DINE-IN LANTERNS (KINGDOM SYNC)
+// Glowing lanterns that rise in the Sci-Fi Dine-In room
+// ============================================================================
+
+function createSciFiLantern() {
+  const bounds = getGameCanvasBounds()
+
+  // Use the Hannah lantern images
+  const idx = Math.floor(Math.random() * HANNAH_LANTERN_IMAGES.length)
+  const imageUrl = chrome.runtime.getURL(HANNAH_LANTERN_IMAGES[idx])
+
+  const lantern = document.createElement('img')
+  lantern.src = imageUrl
+  lantern.className = 'vmkpal-scifi-lantern'
+
+  // Random horizontal position
+  const startX = bounds.left + 50 + Math.random() * (bounds.width - 100)
+  const startY = bounds.top + bounds.height - 20
+
+  // Add yellow/orange glow effect
+  lantern.style.cssText = `
+    position: fixed;
+    width: 45px;
+    height: auto;
+    pointer-events: none;
+    opacity: 0.9;
+    z-index: 10000;
+    transition: none;
+    left: ${startX}px;
+    top: ${startY}px;
+    filter: drop-shadow(0 0 8px rgba(255, 180, 50, 0.8)) drop-shadow(0 0 15px rgba(255, 140, 0, 0.5)) drop-shadow(0 0 25px rgba(255, 100, 0, 0.3));
+  `
+
+  document.body.appendChild(lantern)
+
+  const data = {
+    element: lantern,
+    x: startX,
+    y: startY,
+    riseSpeed: 0.3 + Math.random() * 0.25,
+    driftAmount: 15 + Math.random() * 20,
+    driftSpeed: 0.3 + Math.random() * 0.3,
+    driftPhase: Math.random() * Math.PI * 2,
+    // Glow flicker
+    glowPhase: Math.random() * Math.PI * 2,
+    glowSpeed: 2 + Math.random() * 2,
+    createdAt: performance.now()
+  }
+
+  sciFiLanternElements.push(lantern)
+  sciFiLanternData.push(data)
+
+  return data
+}
+
+function updateSciFiLanterns() {
+  if (!isSciFiLanternsActive) return
+
+  const bounds = getGameCanvasBounds()
+  const now = performance.now()
+
+  for (let i = sciFiLanternData.length - 1; i >= 0; i--) {
+    const data = sciFiLanternData[i]
+    const lantern = data.element
+
+    // Rise upward
+    data.y -= data.riseSpeed
+
+    // Horizontal drift
+    data.driftPhase += data.driftSpeed * 0.016
+    const driftX = Math.sin(data.driftPhase) * data.driftAmount
+
+    // Glow flicker - subtle intensity variation
+    data.glowPhase += data.glowSpeed * 0.016
+    const glowIntensity = 0.7 + Math.sin(data.glowPhase) * 0.3
+    const glowColor1 = `rgba(255, 180, 50, ${0.6 + glowIntensity * 0.4})`
+    const glowColor2 = `rgba(255, 140, 0, ${0.3 + glowIntensity * 0.3})`
+    const glowColor3 = `rgba(255, 100, 0, ${0.2 + glowIntensity * 0.2})`
+
+    lantern.style.left = `${data.x + driftX}px`
+    lantern.style.top = `${data.y}px`
+    lantern.style.filter = `drop-shadow(0 0 8px ${glowColor1}) drop-shadow(0 0 15px ${glowColor2}) drop-shadow(0 0 25px ${glowColor3})`
+
+    // Remove if off top of screen
+    if (data.y < bounds.top - 80) {
+      lantern.style.opacity = '0'
+      setTimeout(() => {
+        if (lantern.parentNode) {
+          lantern.parentNode.removeChild(lantern)
+        }
+      }, 500)
+      sciFiLanternElements.splice(i, 1)
+      sciFiLanternData.splice(i, 1)
+    }
+  }
+
+  sciFiLanternAnimationId = requestAnimationFrame(updateSciFiLanterns)
+}
+
+function spawnSciFiLantern() {
+  if (!isSciFiLanternsActive) return
+
+  const count = Math.random() > 0.7 ? 2 : 1
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      if (isSciFiLanternsActive) {
+        createSciFiLantern()
+      }
+    }, i * 1200)
+  }
+
+  // Schedule next spawn (12-25 seconds)
+  const nextSpawn = (12 + Math.random() * 13) * 1000
+  sciFiLanternSpawnTimer = setTimeout(spawnSciFiLantern, nextSpawn)
+}
+
+function startSciFiLanterns() {
+  if (isSciFiLanternsActive) return
+  isSciFiLanternsActive = true
+  console.log('MyVMK Genie: Starting Sci-Fi Dine-In lanterns')
+
+  // Spawn initial lanterns
+  createSciFiLantern()
+  setTimeout(() => {
+    if (isSciFiLanternsActive) createSciFiLantern()
+  }, 3000)
+
+  // Start animation loop
+  updateSciFiLanterns()
+
+  // Start spawn timer
+  const firstSpawn = (8 + Math.random() * 8) * 1000
+  sciFiLanternSpawnTimer = setTimeout(spawnSciFiLantern, firstSpawn)
+}
+
+function stopSciFiLanterns() {
+  if (!isSciFiLanternsActive) return
+  isSciFiLanternsActive = false
+  console.log('MyVMK Genie: Stopping Sci-Fi Dine-In lanterns')
+
+  if (sciFiLanternAnimationId) {
+    cancelAnimationFrame(sciFiLanternAnimationId)
+    sciFiLanternAnimationId = null
+  }
+  if (sciFiLanternSpawnTimer) {
+    clearTimeout(sciFiLanternSpawnTimer)
+    sciFiLanternSpawnTimer = null
+  }
+
+  // Fade out lanterns
+  sciFiLanternElements.forEach(lantern => {
+    lantern.style.transition = 'opacity 1.5s ease-out'
+    lantern.style.opacity = '0'
+  })
+
+  setTimeout(() => {
+    sciFiLanternElements.forEach(lantern => {
+      if (lantern.parentNode) {
+        lantern.parentNode.removeChild(lantern)
+      }
+    })
+    sciFiLanternElements = []
+    sciFiLanternData = []
+  }, 1500)
+}
+
+function checkSciFiLanterns() {
+  // Kingdom Sync must be enabled
+  if (!isKingdomSyncEnabled || !hasDetectedRoomThisSession) {
+    if (isSciFiLanternsActive) stopSciFiLanterns()
+    return
+  }
+
+  const roomId = currentRoomId
+  const isInSciFi = roomId === KINGDOM_SYNC_ROOMS.SCI_FI_DINE_IN
+
+  if (isInSciFi && !isSciFiLanternsActive) {
+    startSciFiLanterns()
+  } else if (!isInSciFi && isSciFiLanternsActive) {
+    stopSciFiLanterns()
+  }
 }
 
 // ============================================================================
@@ -10825,6 +11022,11 @@ function stopAllEffects() {
     stopAfricaRoomAudio()
   }
 
+  // Stop Sci-Fi Dine-In lanterns
+  if (isSciFiLanternsActive) {
+    stopSciFiLanterns()
+  }
+
   // Stop Kingdom Sync night
   if (isKingdomSyncNightActive) {
     stopKingdomSyncNight()
@@ -12597,6 +12799,14 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.12',
+    date: '2025-03-25',
+    changes: [
+      'Sci-Fi Dine-In Lanterns: Glowing lanterns rise with warm flickering glow (Kingdom Sync)',
+      'Lanterns activate automatically when entering Sci-Fi Dine-In'
+    ]
+  },
   {
     version: '2.1.11',
     date: '2025-03-25',
@@ -15866,6 +16076,7 @@ function updateRoomInfoDisplay() {
   checkButterflyRoom()
   checkMatterhornRoom()
   checkAfricaRoomAudio()
+  checkSciFiLanterns()
   checkGenieEvents()
 }
 
@@ -16126,6 +16337,7 @@ async function init() {
         checkButterflyRoom()
         checkMatterhornRoom()
         checkAfricaRoomAudio()
+        checkSciFiLanterns()
         checkGenieEvents()
       }
     }
@@ -16143,6 +16355,7 @@ async function init() {
       checkButterflyRoom()
       checkMatterhornRoom()
       checkAfricaRoomAudio()
+      checkSciFiLanterns()
       checkGenieEvents()
     }
 
@@ -16159,6 +16372,7 @@ async function init() {
       checkButterflyRoom()
       checkMatterhornRoom()
       checkAfricaRoomAudio()
+      checkSciFiLanterns()
       checkGenieEvents()
     }
 
@@ -16199,6 +16413,7 @@ async function init() {
         checkButterflyRoom()
         checkMatterhornRoom()
         checkAfricaRoomAudio()
+        checkSciFiLanterns()
         checkGenieEvents()
       }
     }
@@ -16227,6 +16442,7 @@ async function init() {
             checkButterflyRoom()
             checkMatterhornRoom()
             checkAfricaRoomAudio()
+            checkSciFiLanterns()
             checkGenieEvents()
           }
         }

@@ -1,5 +1,12 @@
 # MyVMK Genie Changelog
 
+## 2.1.12
+
+### Features
+- **Sci-Fi Dine-In Lanterns**: Glowing lanterns rise in the Sci-Fi Dine-In room (Kingdom Sync)
+  - Lanterns have a warm yellow/orange flickering glow effect
+  - Activates automatically when entering the room with Kingdom Sync enabled
+
 ## 2.1.11
 
 ### Features
