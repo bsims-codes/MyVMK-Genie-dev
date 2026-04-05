@@ -55,12 +55,18 @@ const AUDIO_ROOM_MAP = {
   'PTR': { id: 88, land: 'Adventureland' },
   'vmk_snd_treehouse': { id: 36, land: 'Adventureland' },
   'vmk_snd_explorers_tent': { id: 9, land: 'Adventureland' },
+  'vmk_snd_pirates_lobby_II': { id: 1001, land: 'Adventureland' },
+  'vmk_snd_jungle_cruise_lobby': { id: 1102, land: 'Adventureland' },
   
 
   // Animal Kingdom
   'vmk_snd_africa': { id: 299, land: 'Animal Kingdom' },
   'vmk_snd_folk': { id: 322, land: 'Animal Kingdom' },
+  'vmk_snd_ksafari': { id: 323, land: 'Animal Kingdom' },
 
   // California Adventure
   'vmk_snd_pixar_pier_entrance': { id: 300, land: 'California Adventure' },
+
+  // Guest Rooms
+  'vmk_snd_big_room': { id: 324, land: 'Guest Rooms' },
 }

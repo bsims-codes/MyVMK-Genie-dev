@@ -4,7 +4,9 @@
 // DEV_MODE: Enables internal/testing features
 // - true: Local development (includes test effects, internal features)
 // - false: Production release (automatically set by build script)
-const DEV_MODE = true
+// Can be toggled at runtime in dev builds by tapping version number 5 times in Settings
+let DEV_MODE = true
+const IS_DEV_BUILD = DEV_MODE // Captures original build type before runtime toggle
 
 console.log('MyVMK Genie loaded on:', window.location.href)
 
@@ -31,6 +33,7 @@ let currentLand = null
 let detectedAudioUrl = null
 let audioRoomMappings = {} // Maps audio URL patterns to room IDs
 let hasDetectedRoomThisSession = false // Track if we've detected a room via audio this session
+let firstRoomDetectedAt = 0 // Timestamp of first room detection (for delayed effects on initial load)
 
 // Find room info by matching audio URL
 // Returns { id, land } object or null
@@ -258,6 +261,7 @@ let selectedEmoji = '🎉'
 let activeShakeIntensity = null // null, 'light', 'medium', 'heavy'
 let shakeAnimationId = null
 let isPositionLocked = false
+let isAllAudioMuted = false
 let isSmallIconEnabled = false
 let customBackgroundColor = null // null means use default image
 let isPinkTheme = false // Theme toggle: false = blue, true = pink
@@ -513,6 +517,7 @@ const HANNAH_MAIN_ASSETS = {
   'tree_blue': 'hannah/hannah-flying-treeblue.gif',
   'flying_speaker': 'hannah/hannah-flying-speaker.gif',
   'flying_light': 'hannah/hannah-flying-light.gif',
+  'hm_plane_reenter': 'hannah/Hannah-Montana-Main/HMPlane_Flying_Away_WIthout_Hannah.gif',
   // Film strip assets
   'tape1': 'hannah/Hannah-Montana-Main/hannah-tape1.png',
   'tape2': 'hannah/Hannah-Montana-Main/hannah-tape2.png',
@@ -563,6 +568,7 @@ let isCastleOverlayActive = false
 const AFRICA_ROOM_AUDIO_URL = 'https://www.youtube.com/watch?v=yxRToW7-RmI'
 let isAfricaRoomAudioActive = false
 let africaAudioIframe = null
+let africaAudioStartTimeout = null
 
 // Map button overlay - detects when user clicks globe icon
 let mapButtonOverlay = null
@@ -584,13 +590,24 @@ const KINGDOM_SYNC_ROOMS = {
   SCI_FI_DINE_IN: 72
 }
 
+// Game lobby room IDs - when detected, night mode stays OFF until a non-lobby room is detected
+// This keeps night mode off during the entire game session (lobby + unmapped game levels)
+const GAME_LOBBY_ROOMS = new Set([
+  1001,  // Pirates of the Caribbean Game Lobby
+  1100,  // Castle Fireworks Remixed Lobby
+  1120,  // Castle Fireworks Classic Lobby
+  1102,  // Jungle Cruise Photo Safari Game (lobby and game are same room)
+  1104   // Haunted Mansion Lobby
+])
+let isInGameSession = false  // Tracks if we're in a game (entered via lobby)
+
 // Sci-Fi Dine-In lanterns (Kingdom Sync) - glowing rising lanterns
 const SCIFI_LANTERN_IMAGES = [
   'hannah/hannah-lantern2.PNG',
   'hannah/hannah-lantern3.PNG',
   'hannah/hannah-lantern4.PNG',
-  'hannah-lantern5.PNG',
-  'hannah-lantern6.PNG'
+  'hannah/hannah-lantern5.PNG',
+  'hannah/hannah-lantern6.PNG'
 ]
 let isSciFiLanternsActive = false
 let sciFiLanternElements = []
@@ -825,6 +842,31 @@ function onRoomChange(oldRoom, newRoom) {
   })
 }
 
+// Consolidated helper to check all room-specific effects
+// Call this whenever room detection occurs to ensure all effects are updated
+// Debounced to avoid redundant work when multiple detection paths fire for the same room change
+let _checkAllRoomEffectsTimeout = null
+function checkAllRoomEffects() {
+  if (_checkAllRoomEffectsTimeout) return
+  _checkAllRoomEffectsTimeout = setTimeout(() => {
+    _checkAllRoomEffectsTimeout = null
+    _checkAllRoomEffectsNow()
+  }, 150)
+}
+
+function _checkAllRoomEffectsNow() {
+  checkGhostEffectRoom()
+  checkTinkerbellRoom()
+  checkButterflyRoom()
+  checkMatterhornRoom()
+  checkRoomCollectibles()
+  checkKingdomSyncEffects()
+  checkCastleGardensRoom()
+  checkAfricaRoomAudio()
+  checkSciFiLanterns()
+  checkGenieEvents()
+}
+
 // Check all room-specific ambient effects and start/stop as needed
 function checkRoomAmbientEffects() {
   // Small delay to ensure currentRoomId is updated
@@ -840,18 +882,7 @@ function checkRoomAmbientEffects() {
       restoreOverlaysAfterMap()
     }
 
-    checkGhostEffectRoom()
-    checkTinkerbellRoom()
-    checkButterflyRoom()
-    checkMatterhornRoom()
-    checkRoomCollectibles()
-    checkKingdomSyncEffects()
-    checkCastleGardensRoom()
-    checkAfricaRoomAudio()
-    checkSciFiLanterns()
-
-    // Check if room-specific events should start/stop based on new room
-    checkGenieEvents()
+    checkAllRoomEffects()
   }, 100)
 }
 
@@ -859,21 +890,13 @@ function checkRoomAmbientEffects() {
 // This serves as a safety net in case room changes are missed
 let ambientEffectWatcherInterval = null
 function startAmbientEffectWatcher() {
-  // Check every 5 seconds as a backup
+  // Safety net check in case room changes are missed by primary detection
   ambientEffectWatcherInterval = setInterval(() => {
     // Don't restart effects while map is open
     if (isMapOpen) return
 
-    checkGhostEffectRoom()
-    checkTinkerbellRoom()
-    checkButterflyRoom()
-    checkMatterhornRoom()
-    checkRoomCollectibles()
-    checkKingdomSyncEffects()
-    checkCastleGardensRoom()
-    checkAfricaRoomAudio()
-    checkSciFiLanterns()
-  }, 5000)
+    checkAllRoomEffects()
+  }, 15000)
 }
 
 // Update room display in the toolbar
@@ -946,18 +969,13 @@ function monitorNetworkForRooms() {
         // Detect HM GAME by stage data JSON files
         if (entry.name.includes('/hm_stage_data/')) {
           hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
           isInHMGame = true
           currentRoomId = HAUNTED_MANSION_GAME_ID
           currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
           currentLand = 'New Orleans Square'
           updateRoomInfoDisplay()
-          checkGhostEffectRoom()
-          checkTinkerbellRoom()
-          checkButterflyRoom()
-          checkMatterhornRoom()
-          checkAfricaRoomAudio()
-          checkSciFiLanterns()
-          checkGenieEvents()
+          checkAllRoomEffects()
         }
 
         // Check if it's an NPC sound file request
@@ -998,26 +1016,20 @@ function monitorNetworkForRooms() {
           const matchedRoom = findRoomByAudio(entry.name)
           if (matchedRoom !== null) {
             hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
             currentRoomId = matchedRoom.id
             currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
             currentLand = matchedRoom.land
             console.log('MyVMK Genie: Auto-detected room from audio:', currentRoom, currentLand ? `(${currentLand})` : '')
             updateRoomInfoDisplay()
-            checkGhostEffectRoom() // Check if ghost effect should change
-            checkTinkerbellRoom()
-            checkButterflyRoom()
-            checkMatterhornRoom()
-            checkAfricaRoomAudio()
-            checkSciFiLanterns()
-            checkGenieEvents()
+            checkAllRoomEffects()
           }
         }
 
         // Check for room JSON config files (e.g., vmk_inthesky.json, vmk_snd_inthesky.json)
         // Exclude non-room files like vmk_avatar_*, vmk_npc_*, etc.
-        if (entry.name.includes('download.myvmk.com') && entry.name.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)) {
-          const jsonMatch = entry.name.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)
-          if (jsonMatch && jsonMatch[1]) {
+        const jsonMatch = entry.name.includes('download.myvmk.com') && entry.name.match(/vmk_(?:snd_)?(?!avatar_|npc_|item_|furniture_|pin_|badge_)([a-z_]+)\.json$/i)
+        if (jsonMatch && jsonMatch[1]) {
             const roomKey = jsonMatch[1]
             console.log('MyVMK Genie: Detected room JSON:', roomKey)
 
@@ -1025,23 +1037,21 @@ function monitorNetworkForRooms() {
             const sndKey = `vmk_snd_${roomKey}`
             if (typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[sndKey]) {
               const roomInfo = AUDIO_ROOM_MAP[sndKey]
+              const wasFirstDetection = !hasDetectedRoomThisSession
+              hasDetectedRoomThisSession = true
+              if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
               if (roomInfo.id !== currentRoomId) {
-                hasDetectedRoomThisSession = true
                 currentRoomId = roomInfo.id
                 currentRoom = ROOM_MAP[roomInfo.id] || `Room ${roomInfo.id}`
                 currentLand = roomInfo.land
                 console.log('MyVMK Genie: Auto-detected room from JSON:', currentRoom, currentLand ? `(${currentLand})` : '')
                 updateRoomInfoDisplay()
-                checkGhostEffectRoom()
-                checkTinkerbellRoom()
-                checkButterflyRoom()
-                checkMatterhornRoom()
-                checkAfricaRoomAudio()
-                checkSciFiLanterns()
-                checkGenieEvents()
+                checkAllRoomEffects()
+              } else if (wasFirstDetection) {
+                // Same room as saved, but first detection this session - trigger effects
+                checkAllRoomEffects()
               }
             }
-          }
         }
 
         // Also check for room background/asset files
@@ -2030,6 +2040,20 @@ function createToolbar() {
     <div style="flex: 1;">
       <div style="color: white; font-weight: 600; font-size: 16px;">MyVMK Genie</div>
     </div>
+    <button id="vmkpal-mute-btn" style="
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.7);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    " title="Mute All Audio">${isAllAudioMuted ? '🔇' : '🔊'}</button>
     <button id="vmkpal-minimize-btn" style="
       width: 28px;
       height: 28px;
@@ -2046,8 +2070,29 @@ function createToolbar() {
     " title="Minimize">−</button>
   `
 
-  // Add minimize button functionality
+  // Add header button functionality
   setTimeout(() => {
+    // Mute button
+    const muteBtn = document.getElementById('vmkpal-mute-btn')
+    if (muteBtn) {
+      muteBtn.onmouseenter = () => {
+        muteBtn.style.background = 'rgba(255,255,255,0.2)'
+        muteBtn.style.color = 'white'
+      }
+      muteBtn.onmouseleave = () => {
+        muteBtn.style.background = isAllAudioMuted ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.1)'
+        muteBtn.style.color = 'rgba(255,255,255,0.7)'
+      }
+      muteBtn.onclick = (e) => {
+        e.stopPropagation()
+        toggleMuteAllAudio()
+        updateMuteButtonState()
+      }
+      // Set initial state
+      updateMuteButtonState()
+    }
+
+    // Minimize button
     const minimizeBtn = document.getElementById('vmkpal-minimize-btn')
     if (minimizeBtn) {
       minimizeBtn.onmouseenter = () => {
@@ -2788,7 +2833,7 @@ function createFirework(x, y, color = 'pink') {
   const relY = y - bounds.top
 
   // Create explosion particles directly at the position (starburst style)
-  const count = 80
+  const count = 50
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2
     const speed = 80 + Math.random() * 140
@@ -3346,6 +3391,15 @@ function renderSpotlights() {
   const now = performance.now()
   const dt = lastSpotlightTime ? (now - lastSpotlightTime) / 1000 : 1 / 60
   lastSpotlightTime = now
+
+  // Update canvas position/size to track game canvas
+  const bounds = getGameCanvasBounds()
+  spotlightCanvas.style.left = bounds.left + 'px'
+  spotlightCanvas.style.top = bounds.top + 'px'
+  if (spotlightCanvas.width !== bounds.width || spotlightCanvas.height !== bounds.height) {
+    spotlightCanvas.width = bounds.width
+    spotlightCanvas.height = bounds.height
+  }
 
   spotlightCtx.clearRect(0, 0, spotlightCanvas.width, spotlightCanvas.height)
 
@@ -4338,7 +4392,7 @@ function startHappilyEverAfterShow(offsetSeconds = 0) {
         break
       }
     }
-  }, 100) // Check every 100ms
+  }, 250) // Check every 250ms (reduced from 100ms to lower CPU during shows)
 }
 
 function executeChoreographyEvent(event) {
@@ -5737,10 +5791,13 @@ function showHannahBillboard(youtubeUrl, seekSeconds = 0) {
     overflow: hidden;
   `
 
-  // Build embed URL with autoplay and seek
-  let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&modestbranding=1&rel=0`
+  // Build embed URL with autoplay and seek (enablejsapi=1 required for mute commands)
+  let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&modestbranding=1&rel=0&enablejsapi=1`
   if (seekSeconds > 0) {
     embedUrl += `&start=${Math.floor(seekSeconds)}`
+  }
+  if (isAllAudioMuted) {
+    embedUrl += '&mute=1'
   }
 
   hannahBillboardContainer.innerHTML = `
@@ -6083,7 +6140,7 @@ function startHannahPerformance(offsetSeconds = 0) {
         break
       }
     }
-  }, 100)
+  }, 250) // Reduced from 100ms to lower CPU during shows
 }
 
 function executeHannahChoreographyEvent(event) {
@@ -6226,6 +6283,21 @@ function stopHannahPerformance() {
 // Synced to hannah-party.mp3 (~248 seconds / 4m 8s)
 // ============================================================================
 
+// Show sections - named bookmarks for the scrubber and documentation
+const HANNAH_MAIN_SHOW_SECTIONS = [
+  { name: 'Intro',               start: 0,   end: 10  },
+  { name: 'Helicopter Entrance', start: 10,  end: 18  },
+  { name: 'Plane Sequence',      start: 18,  end: 35  },
+  { name: 'Hannah Appears',      start: 35,  end: 44  },
+  { name: 'Stage Setup',         start: 44,  end: 54  },
+  { name: 'Performance',         start: 54,  end: 76  },
+  { name: 'Stage Transform',     start: 76,  end: 96  },
+  { name: 'Wander + Stars',      start: 96,  end: 120 },
+  { name: 'Lanterns + Disco',    start: 120, end: 164 },
+  { name: 'Crowd Sequence',      start: 164, end: 200 },
+  { name: 'Finale',              start: 197, end: 245 },
+]
+
 // Choreography timeline - times in seconds
 // Each event specifies which layer(s) to show and what asset to display
 // Layers: center (main Hannah), left (left side), right (right side), plane (flying plane), helicopter
@@ -6285,7 +6357,7 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 109, action: 'replaceHelicopter', asset: '9_getting_on_star' },  // GIF 8 → GIF 9
   { time: 110, action: 'replaceHelicopter', asset: '10_standing_star' },  // GIF 9 one cycle (1s) → GIF 10
   // === STAR SEQUENCE CONTINUED (1:52-1:58) ===
-  { time: 112, action: 'hideDarkStar' },  // Remove dark star when light star appears
+  { time: 110, action: 'hideDarkStar' },  // Remove dark star when light star appears
   { time: 115, action: 'planeFlyOffLeft', asset: '11_plane_3' },  // GIF 11 plane floats off left
   { time: 115, action: 'showLayer', layer: 'center', asset: '11_star_lightup' },  // Star lighting up (one lifetime)
   { time: 118, action: 'hideLayer', layer: 'helicopter' },  // Hide helicopter layer
@@ -6307,70 +6379,76 @@ const HANNAH_MAIN_SHOW_CHOREOGRAPHY = [
   { time: 154, action: 'showLayer', layer: 'right', asset: '13.75_right' },
 
   // === CROWD SEQUENCE (2:44-3:17) - All events in chronological order ===
-  // 2:44 - Hannah disappears from star
-  { time: 164, action: 'showLayer', layer: 'center', asset: '15_disappearing' },
+  // 2:44 - Hannah transforms on star
+  { time: 164, action: 'showLayer', layer: 'center', asset: '13_transform' },
 
   // 2:45 - Lightning, HM logo descends, butterflies spawn
   { time: 165, action: 'lightning', color: 'pink' },
   { time: 165, action: 'floatLogoDown' },
   { time: 165, action: 'spawnButterfliesAndFlyAway' },
 
-  // 2:46 - Star animating
-  { time: 166, action: 'showLayer', layer: 'center', asset: '15.25_star_animate' },
+  // 2:49 - Hannah disappearing from star (after transform completes)
+  { time: 169, action: 'showLayer', layer: 'center', asset: '15_disappearing' },
 
-  // 2:49 - Hannah appears in crowd (replaces right stage), disco off
-  { time: 169, action: 'showLayer', layer: 'right', asset: '15.25_crowd_appear' },
-  { time: 169, action: 'discoBall', enabled: false },
+  // 2:52 - Star animating, Hannah appears in crowd (replaces right stage), disco off
+  { time: 172, action: 'showLayer', layer: 'center', asset: '15.25_star_animate' },
+  { time: 172, action: 'showLayer', layer: 'right', asset: '15.25_crowd_appear' },
+  { time: 172, action: 'discoBall', enabled: false },
 
-  // 2:51 - Gator parade with white trees
-  { time: 171, action: 'gatorParadeSlow' },
-  { time: 171, action: 'lantern1', enabled: true },
+  // 2:54 - Gator parade with white trees
+  { time: 174, action: 'gatorParadeSlow' },
+  { time: 174, action: 'lantern1', enabled: true },
 
-  // 2:52 - Crowd flying (replaces right stage)
-  { time: 172, action: 'showLayer', layer: 'right', asset: '15.5_crowd_fly' },
+  // 2:55 - Crowd flying (replaces right stage)
+  { time: 175, action: 'showLayer', layer: 'right', asset: '15.5_crowd_fly' },
 
-  // 2:55 - Crowd hovering (replaces right stage) + Jack Jack wanders
-  { time: 175, action: 'showLayer', layer: 'right', asset: '15.75_crowd_hover' },
-  { time: 175, action: 'jackJackWander' },  // Single Jack Jack floats around for 30s then exits
+  // 2:58 - Crowd hovering (replaces right stage) + Jack Jack wanders
+  { time: 178, action: 'showLayer', layer: 'right', asset: '15.75_crowd_hover' },
+  { time: 178, action: 'jackJackWander' },  // Single Jack Jack floats around for 30s then exits
 
-  // 3:00 - Helicopter re-enters, crowd floating down, stop lanterns
-  { time: 180, action: 'hannahLanterns', enabled: false },
-  { time: 180, action: 'helicopterReenter', asset: '11_plane_3' },
-  { time: 180, action: 'showLayer', layer: 'right', asset: '16_floating_down' },
+  // 3:03 - Helicopter re-enters, crowd floating down, stop lanterns
+  { time: 183, action: 'hannahLanterns', enabled: false },
+  { time: 183, action: 'helicopterReenter', asset: 'hm_plane_reenter' },
+  { time: 183, action: 'showLayer', layer: 'right', asset: '16_floating_down' },
 
-  // 3:03 - Hannah disappearing from crowd (replaces right stage)
-  { time: 183, action: 'showLayer', layer: 'right', asset: '17_crowd_disappear' },
+  // 3:06 - Hannah disappearing from crowd (replaces right stage)
+  { time: 186, action: 'showLayer', layer: 'right', asset: '17_crowd_disappear' },
 
-  // 3:06 - Stages change to 13.75
-  { time: 186, action: 'showLayer', layer: 'left', asset: '13.75_left' },
-  { time: 186, action: 'showLayer', layer: 'right', asset: '13.75_right' },
+  // 3:09 - Stages change to 13.75
+  { time: 189, action: 'showLayer', layer: 'left', asset: '13.75_left' },
+  { time: 189, action: 'showLayer', layer: 'right', asset: '13.75_right' },
 
-  // 3:09 - Reverse Hannah disappearing off star
-  { time: 189, action: 'showLayer', layer: 'center', asset: '17_reverse_star' },
+  // 3:12 - Reverse Hannah disappearing off star
+  { time: 192, action: 'showLayer', layer: 'center', asset: '17_reverse_star' },
 
-  // 3:13 - Finale
-  { time: 193, action: 'showLayer', layer: 'center', asset: '18_finale' },
+  // 3:16 - Finale
+  { time: 196, action: 'showLayer', layer: 'center', asset: '18_finale' },
 
-  // 3:17 - Stages change to 17.5
-  { time: 197, action: 'showLayer', layer: 'left', asset: '17.5_left_floors' },
-  { time: 197, action: 'showLayer', layer: 'right', asset: '17.5_stage_colors' },
+  // 3:20 - Stages change to 17.5
+  { time: 200, action: 'showLayer', layer: 'left', asset: '17.5_left_floors' },
+  { time: 200, action: 'showLayer', layer: 'right', asset: '17.5_stage_colors' },
 
   // 3:20 - White spotlights for end
   { time: 200, action: 'spotlights', colors: ['white', 'white', 'white'] },
 
-  // === FINALE (3:38-3:50) ===
-  { time: 218, action: 'centerLayerFlyAway', duration: 5 },  // GIF 18 floats up and away to top right (5 seconds)
-  { time: 223, action: 'fireworksContinuous', color: 'pink' },  // Pink fireworks start and continue
-  { time: 230, action: 'helicopterFlyOffTopLeft' },  // Helicopter flies off to top left
-  { time: 235, action: 'flyOffLayerLeft' },  // Left stage flies off to the left
-  { time: 235, action: 'flyOffLayerRight' },  // Right stage flies off to the right
-  { time: 235, action: 'flyOffFilmStrips' },  // Film strips fly off screen
-  { time: 235, action: 'flyOffPalmTrees' },  // Palm trees fly off screen
-  { time: 235, action: 'flyOffSpeakerAndProjector' },  // Speaker and projector fly off
-  { time: 235, action: 'fadeOutFireworks' },  // Fireworks fade out with assets
-  // === END (4:00) ===
-  { time: 240, action: 'spotlights', enabled: false },  // Stop spotlights
-  { time: 248, action: 'end' }
+  // === FINALE (3:38-4:05) ===
+  // 3:38 - Fireworks start + props begin flying off
+  { time: 218, action: 'fireworksContinuous', color: 'pink' },
+  { time: 218, action: 'centerLayerFlyAway', duration: 5 },
+  { time: 219, action: 'flyOffFilmStrips' },
+  { time: 220, action: 'flyOffSpeakerAndProjector' },
+  { time: 221, action: 'flyOffPalmTrees' },
+  // 3:42 - Stages fly off
+  { time: 222, action: 'flyOffLayerLeft' },
+  { time: 222, action: 'flyOffLayerRight' },
+  // 3:47 - All props gone, kill fireworks
+  { time: 227, action: 'fadeOutFireworks' },
+  { time: 228, action: 'stopFireworks' },
+  // 3:50 - Final helicopter flies away
+  { time: 230, action: 'helicopterFlyOffTopLeft' },
+  // === END (4:05) ===
+  { time: 237, action: 'spotlights', enabled: false },
+  { time: 245, action: 'end' }
 ]
 
 // Get position styles for a layer based on canvas bounds
@@ -6502,6 +6580,17 @@ function showHannahMainShowLayer(layerId, assetKey) {
     if (layerId === 'plane') {
       startHelicopterFloat('plane')
     }
+
+    // Apply float + glow to star assets on center layer (same bounce as stages)
+    if (layerId === 'center' && STAR_ASSETS.has(assetKey)) {
+      injectStarGlowStyle()
+      layer.classList.add('vmkpal-star-glow')
+      stageFloatPhases['center'] = stageFloatPhases['center'] || 0
+      startStageFloat('center')
+    } else if (layerId === 'center') {
+      layer.classList.remove('vmkpal-star-glow')
+      stopStageFloat('center')
+    }
   }
 }
 
@@ -6516,9 +6605,10 @@ function hideHannahMainShowLayer(layerId) {
       stopHelicopterFloat()
     }
 
-    // Stop floating animation for stage layers
-    if (layerId === 'left' || layerId === 'right') {
+    // Stop floating animation for stage/center layers
+    if (layerId === 'left' || layerId === 'right' || layerId === 'center') {
       stopStageFloat(layerId)
+      if (layerId === 'center') layer.classList.remove('vmkpal-star-glow')
     }
   }
 }
@@ -6635,6 +6725,31 @@ function stopAllStageFloats() {
     stageFloatAnimationId = null
   }
 }
+
+// Star float/glow - star assets get the same float as stages + pulsing glow
+let starGlowStyleInjected = false
+function injectStarGlowStyle() {
+  if (starGlowStyleInjected) return
+  starGlowStyleInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    @keyframes vmkpal-star-glow {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(255, 200, 255, 0.6)) drop-shadow(0 0 30px rgba(200, 100, 255, 0.3)); }
+      50% { filter: drop-shadow(0 0 20px rgba(255, 200, 255, 0.9)) drop-shadow(0 0 50px rgba(200, 100, 255, 0.5)); }
+    }
+    .vmkpal-star-glow {
+      animation: vmkpal-star-glow 2s ease-in-out infinite;
+    }
+  `
+  document.head.appendChild(style)
+}
+
+// Star assets that get the float/glow effect (hannah on star)
+const STAR_ASSETS = new Set([
+  '11_star_lightup', '12_dancing_star', '13_butterfly', '13_transform',
+  '14_winged_dancing', '15_disappearing', '15.25_star_animate', '17_reverse_star',
+  '18_finale'
+])
 
 // Helicopter floating animation state
 let helicopterFloatPhase = 0
@@ -6949,16 +7064,19 @@ function spawnProjectorFromRight() {
   `
   document.body.appendChild(projector)
 
-  // Animate from right side
+  // Animate from right side - float slowly at mid-stage height
   hannahFlyingPropsElements.push({
     element: projector,
     xProp: 1.2,
-    yProp: 0.88,  // Lower into bottom right corner
-    endX: 0.88,   // Farther right
-    speed: 0.006,
+    yProp: 0.45,
+    endX: 0.70,
+    speed: 0.002,
     fromLeft: false,
-    widthProp: 0.06,  // Same size as speaker
-    bobPhase: Math.random() * Math.PI * 2
+    widthProp: 0.06,
+    bobPhase: Math.random() * Math.PI * 2,
+    wander: true,
+    wanderPhaseX: Math.random() * Math.PI * 2,
+    wanderPhaseY: Math.random() * Math.PI * 2
   })
 
   setTimeout(() => projector.style.opacity = '1', 50)
@@ -6994,12 +7112,15 @@ function spawnSpeakerFromLeft() {
   hannahFlyingPropsElements.push({
     element: speaker,
     xProp: -0.2,
-    yProp: 0.88,  // Bottom left corner (matches projector height)
-    endX: 0.10,   // Farther into left corner
-    speed: 0.006,
+    yProp: 0.45,  // 45% from top (55% from bottom)
+    endX: 0.27,
+    speed: 0.002,
     fromLeft: true,
     widthProp: 0.06,
-    bobPhase: Math.random() * Math.PI * 2
+    bobPhase: Math.random() * Math.PI * 2,
+    wander: true,
+    wanderPhaseX: Math.random() * Math.PI * 2,
+    wanderPhaseY: Math.random() * Math.PI * 2
   })
 
   setTimeout(() => speaker.style.opacity = '1', 50)
@@ -7184,12 +7305,15 @@ function planeFlyOffLeft(assetKey) {
 function spawnButterfliesAndFlyAway() {
   const bounds = getGameCanvasBounds()
   // Spawn in center behind Hannah (aligned with center layer position)
-  const centerX = bounds.left + bounds.width * 0.5
-  const centerY = bounds.top + bounds.height * 0.42
+  const spawnXProp = 0.5
+  const spawnYProp = 0.42
 
   // Use pink Hannah Montana butterfly only
   const pinkButterflyPath = HANNAH_MAIN_ASSETS['pink_butterfly']
-  const numButterflies = 18  // More butterflies
+  const numButterflies = 18
+
+  const wanderingButterflies = []
+  const wanderDuration = 15000  // Stay on screen for 15 seconds
 
   // Create butterflies
   for (let i = 0; i < numButterflies; i++) {
@@ -7202,35 +7326,86 @@ function spawnButterfliesAndFlyAway() {
 
       const size = 18 + Math.random() * 12
 
-      // Spawn with slight offset from center for more natural look
-      const spawnOffsetX = (Math.random() - 0.5) * bounds.width * 0.1
-      const spawnOffsetY = (Math.random() - 0.5) * bounds.height * 0.1
-
       butterfly.style.cssText = `
         position: fixed;
         width: ${size}px;
         height: auto;
         pointer-events: none;
         z-index: 2147483638;
-        opacity: 1;
-        left: ${centerX + spawnOffsetX}px;
-        top: ${centerY + spawnOffsetY}px;
-        transition: left 3.5s ease-out, top 3.5s ease-out, opacity 2.5s;
+        opacity: 0;
+        transition: opacity 1s;
       `
       document.body.appendChild(butterfly)
+      setTimeout(() => butterfly.style.opacity = '1', 50)
 
-      // Fly away in random directions
-      setTimeout(() => {
-        const angle = (Math.PI * 2 / numButterflies) * i + (Math.random() - 0.5) * 0.8
-        const distance = bounds.width * (0.5 + Math.random() * 0.3)
-        butterfly.style.left = (centerX + Math.cos(angle) * distance) + 'px'
-        butterfly.style.top = (centerY + Math.sin(angle) * distance * 0.7) + 'px'
-        butterfly.style.opacity = '0'
-
-        setTimeout(() => butterfly.remove(), 4000)
-      }, 100)
-    }, i * 80)  // Faster spawn rate
+      // Each butterfly gets its own wander parameters
+      wanderingButterflies.push({
+        element: butterfly,
+        xProp: spawnXProp + (Math.random() - 0.5) * 0.1,
+        yProp: spawnYProp + (Math.random() - 0.5) * 0.1,
+        phaseX: Math.random() * Math.PI * 2,
+        phaseY: Math.random() * Math.PI * 2,
+        speedX: 0.003 + Math.random() * 0.002,
+        speedY: 0.004 + Math.random() * 0.002,
+        radiusX: 0.15 + Math.random() * 0.2,
+        radiusY: 0.12 + Math.random() * 0.15,
+        driftX: (Math.random() - 0.5) * 0.00015,
+        driftY: -0.00005 - Math.random() * 0.0001,
+        spawnTime: performance.now()
+      })
+    }, i * 80)
   }
+
+  // Animate all butterflies wandering
+  function animateWanderingButterflies() {
+    if (!isHannahMainShowActive || wanderingButterflies.length === 0) return
+
+    const bounds = getGameCanvasBounds()
+    const now = performance.now()
+
+    for (let i = wanderingButterflies.length - 1; i >= 0; i--) {
+      const b = wanderingButterflies[i]
+      if (!b.element.parentNode) {
+        wanderingButterflies.splice(i, 1)
+        continue
+      }
+
+      const age = now - b.spawnTime
+
+      // Fade out in last 3 seconds
+      if (age > wanderDuration - 3000) {
+        b.element.style.opacity = '0'
+        if (age > wanderDuration) {
+          b.element.remove()
+          wanderingButterflies.splice(i, 1)
+          continue
+        }
+      }
+
+      // Wander using sine waves + slow drift
+      b.phaseX += b.speedX
+      b.phaseY += b.speedY
+      b.xProp += b.driftX
+      b.yProp += b.driftY
+
+      const x = bounds.left + (b.xProp + Math.sin(b.phaseX) * b.radiusX + Math.sin(b.phaseX * 0.7) * b.radiusX * 0.3) * bounds.width
+      const y = bounds.top + (b.yProp + Math.sin(b.phaseY) * b.radiusY + Math.sin(b.phaseY * 0.6) * b.radiusY * 0.3) * bounds.height
+
+      // Flip to face movement direction
+      const dx = Math.cos(b.phaseX) * b.speedX
+      b.element.style.transform = dx < 0 ? 'scaleX(-1)' : ''
+
+      b.element.style.left = x + 'px'
+      b.element.style.top = y + 'px'
+    }
+
+    if (wanderingButterflies.length > 0) {
+      requestAnimationFrame(animateWanderingButterflies)
+    }
+  }
+
+  // Start animation loop once first butterfly spawns
+  setTimeout(() => animateWanderingButterflies(), 100)
 }
 
 // Slow gator parade (slower movement)
@@ -7254,6 +7429,7 @@ function spawnGatorParadeSlow() {
       z-index: 2147483646;
       opacity: 0;
       transition: opacity 0.5s;
+      transform: scaleX(-1);
     `
     document.body.appendChild(gator)
     gatorParadeElements.push(gator)
@@ -7289,7 +7465,7 @@ function spawnGatorParadeSlow() {
   if (!gatorParadeAnimationId) {
     let paradePhase = 0
     const startX = bounds.width * 1.1
-    const endX = -bounds.width * 1.0  // Move fully off screen (accounting for tree offsets)
+    const endX = -bounds.width * 1.5  // Move fully off screen (accounting for wider tree spacing)
 
     function animateSlowParade() {
       if (!isHannahMainShowActive) {
@@ -7304,7 +7480,7 @@ function spawnGatorParadeSlow() {
         if (!el || !el.parentNode) return
 
         // Gator (index 0) leads, trees trail behind (higher index = further right/behind)
-        const offset = index * bounds.width * 0.15
+        const offset = index * bounds.width * 0.28
         const x = bounds.left + startX + (endX - startX) * paradePhase + offset
         const y = bounds.top + bounds.height * 0.65 + Math.sin(paradePhase * 10 + index) * 5
 
@@ -7347,28 +7523,41 @@ function helicopterReenterFromTopRight(assetKey) {
   layer.src = chrome.runtime.getURL(assetPath)
   layer.style.opacity = '1'
 
-  const bounds = getGameCanvasBounds()
-  const startX = bounds.left + bounds.width * 1.1
-  const startY = bounds.top - bounds.height * 0.2
-  const endX = bounds.left + bounds.width * 0.6
-  const endY = bounds.top + bounds.height * 0.1
+  // Use proportional coordinates matching other helicopter sizing (50% canvas width)
+  const startXProp = 1.1
+  const startYProp = -0.2
+  const endXProp = 0.25
+  const endYProp = 0.05
+  const widthProp = 0.5
 
-  layer.style.left = startX + 'px'
-  layer.style.top = startY + 'px'
-  layer.style.width = (bounds.width * 0.3) + 'px'
+  const bounds = getGameCanvasBounds()
+  layer.style.left = (bounds.left + bounds.width * startXProp) + 'px'
+  layer.style.top = (bounds.top + bounds.height * startYProp) + 'px'
+  layer.style.width = (bounds.width * widthProp) + 'px'
+
+  // Update final position so float animation matches seamlessly
+  helicopterFinalPosition = { xProp: endXProp, yProp: endYProp, widthProp: widthProp }
 
   const startTime = performance.now()
-  const duration = 3000
+  const duration = 5000  // Slower, smoother glide
 
   function animateReenter() {
     if (!isHannahMainShowActive) return
 
+    const bounds = getGameCanvasBounds()
     const elapsed = performance.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
-    const eased = 1 - Math.pow(1 - progress, 3)
+    // Smooth ease-in-out for gentle glide
+    const eased = progress < 0.5
+      ? 2 * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 2) / 2
 
-    layer.style.left = (startX + (endX - startX) * eased) + 'px'
-    layer.style.top = (startY + (endY - startY) * eased) + 'px'
+    const xProp = startXProp + (endXProp - startXProp) * eased
+    const yProp = startYProp + (endYProp - startYProp) * eased
+
+    layer.style.left = (bounds.left + bounds.width * xProp) + 'px'
+    layer.style.top = (bounds.top + bounds.height * yProp) + 'px'
+    layer.style.width = (bounds.width * widthProp) + 'px'
 
     if (progress < 1) {
       requestAnimationFrame(animateReenter)
@@ -7446,9 +7635,9 @@ function startContinuousFireworks(color) {
     createFirework(x, y, color || 'pink')
   }
 
-  // Launch immediately and then every 400ms
+  // Launch immediately and then every 800ms (reduced intensity)
   launchFirework()
-  continuousFireworksInterval = setInterval(launchFirework, 400)
+  continuousFireworksInterval = setInterval(launchFirework, 800)
 }
 
 function stopContinuousFireworks() {
@@ -7716,214 +7905,805 @@ function flyOffSpeakerAndProjector() {
 
 // Resize handler for Hannah Main Show
 let hannahMainShowResizeHandler = null
-let hannahDebugTimer = null
 
-// Create debug timer overlay (DEV_MODE only)
-function createHannahDebugTimer() {
-  if (!DEV_MODE) return null
+// ============================================================================
+// ShowRunner - Reusable choreographed show engine with DEV_MODE scrubber
+// ============================================================================
+class ShowRunner {
+  constructor(config) {
+    this.id = config.id
+    this.choreography = config.choreography
+    this.sections = config.sections || []
+    this.audioPath = config.audioPath
+    this.duration = config.duration
+    this.executeEvent = config.executeEvent
+    this.onStart = config.onStart
+    this.reconstructState = config.reconstructState
+    this.onCleanup = config.onCleanup
+    this.getIsActive = config.getIsActive
+    this.setIsActive = config.setIsActive
 
-  const timer = document.createElement('div')
-  timer.id = 'vmkpal-hannah-debug-timer'
-  timer.style.cssText = `
-    position: fixed;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: #00ff00;
-    font-family: monospace;
-    font-size: 24px;
-    font-weight: bold;
-    padding: 8px 16px;
-    border-radius: 8px;
-    z-index: 2147483647;
-    pointer-events: none;
-    border: 2px solid #00ff00;
-  `
-  document.body.appendChild(timer)
-  return timer
-}
-
-function updateHannahDebugTimer(elapsedSeconds) {
-  if (!hannahDebugTimer) return
-  const mins = Math.floor(elapsedSeconds / 60)
-  const secs = Math.floor(elapsedSeconds % 60)
-  const ms = Math.floor((elapsedSeconds % 1) * 10)
-  hannahDebugTimer.textContent = `${mins}:${secs.toString().padStart(2, '0')}.${ms}`
-}
-
-function removeHannahDebugTimer() {
-  if (hannahDebugTimer) {
-    hannahDebugTimer.remove()
-    hannahDebugTimer = null
+    this._interval = null
+    this._audio = null
+    this._accumulatedTime = 0
+    this._lastTickTime = 0
+    this._lastIndex = -1
+    this._paused = false
+    this._speed = 1
+    this._scrubberEl = null
+    this._scrubberTimeEl = null
+    this._scrubberBarFill = null
+    this._scrubberSectionLabel = null
+    this._scrubberSpeedBtns = []
+    this._scrubberPlayBtn = null
+    this._keyHandler = null
+    this._isSeeking = false
   }
+
+  start(offsetSeconds = 0) {
+    if (this.getIsActive()) return
+
+    this.setIsActive(true)
+    this._paused = false
+    this._isSeeking = false
+    const isLateJoin = offsetSeconds > 5
+    console.log(`MyVMK Genie: Starting ${this.id} show` + (isLateJoin ? ` (syncing to ${Math.floor(offsetSeconds)}s)` : ''))
+
+    // Let the show do its own setup (globals, night overlay, resize listener, etc.)
+    this.onStart(offsetSeconds)
+
+    // Audio setup
+    const audioUrl = chrome.runtime.getURL(this.audioPath)
+    this._audio = new Audio(audioUrl)
+    this._audio.currentTime = offsetSeconds
+    this._audio.playbackRate = this._speed
+    this._audio.muted = isAllAudioMuted
+    this._audio.play().catch(e => console.log('MyVMK Genie: Audio play failed', e))
+    this._audio.onended = () => this.stop()
+
+    // Timing
+    this._accumulatedTime = offsetSeconds
+    this._lastTickTime = performance.now()
+    this._lastIndex = -1
+
+    // Late join state reconstruction
+    if (isLateJoin) {
+      this._lastIndex = this.reconstructState(offsetSeconds)
+      console.log(`MyVMK Genie: Late join - ${this.id} at index`, this._lastIndex)
+    }
+
+    // Scrubber (DEV_MODE only)
+    if (DEV_MODE) this._createScrubber()
+
+    // Choreography loop
+    this._interval = setInterval(() => {
+      // Check seeking first - isActive is temporarily false during seek
+      if (this._isSeeking || this._paused) return
+      if (!this.getIsActive()) {
+        clearInterval(this._interval)
+        return
+      }
+
+      const now = performance.now()
+      const dt = (now - this._lastTickTime) / 1000
+      this._lastTickTime = now
+      this._accumulatedTime += dt * this._speed
+
+      // Update scrubber
+      if (DEV_MODE) this._updateScrubber()
+
+      // Process choreography events
+      for (let i = this._lastIndex + 1; i < this.choreography.length; i++) {
+        const event = this.choreography[i]
+        if (event.time <= this._accumulatedTime) {
+          this.executeEvent(event)
+          this._lastIndex = i
+        } else {
+          break
+        }
+      }
+    }, 100)
+  }
+
+  stop(immediate = false) {
+    if (!this.getIsActive()) return
+    console.log(`MyVMK Genie: Stopping ${this.id} show`)
+
+    // Stop audio
+    if (this._audio) {
+      this._audio.onended = null
+      this._audio.pause()
+      this._audio = null
+    }
+
+    // Remove scrubber
+    this._removeScrubber()
+
+    // Clear choreography interval
+    if (this._interval) {
+      clearInterval(this._interval)
+    }
+
+    // Let the show clean up its own effects and DOM
+    this.onCleanup(immediate)
+
+    // Reset engine state
+    this._interval = null
+    this._accumulatedTime = 0
+    this._lastIndex = -1
+    this._paused = false
+    this._isSeeking = false
+  }
+
+  seek(targetSeconds) {
+    if (!this.getIsActive()) return
+
+    targetSeconds = Math.max(0, Math.min(targetSeconds, this.duration))
+    this._isSeeking = true
+
+    // Clean up current state immediately (no fades)
+    this.onCleanup(true)
+
+    // Re-activate the show (onCleanup sets isActive=false)
+    this.setIsActive(true)
+
+    // Re-setup show (night overlay, resize listener, etc.)
+    this.onStart(targetSeconds)
+
+    // Reconstruct state at target time
+    this._lastIndex = this.reconstructState(targetSeconds)
+    this._accumulatedTime = targetSeconds
+    this._lastTickTime = performance.now()
+
+    // Sync audio
+    if (this._audio) {
+      this._audio.currentTime = targetSeconds
+      if (!this._paused) {
+        this._audio.play().catch(e => console.log('MyVMK Genie: Audio seek play failed', e))
+      }
+    }
+
+    this._isSeeking = false
+
+    if (DEV_MODE) this._updateScrubber()
+    console.log(`MyVMK Genie: Seeked ${this.id} to ${targetSeconds.toFixed(1)}s`)
+  }
+
+  togglePause() {
+    if (!this.getIsActive()) return
+    this._paused = !this._paused
+
+    if (this._paused) {
+      if (this._audio) this._audio.pause()
+    } else {
+      this._lastTickTime = performance.now()
+      if (this._audio) this._audio.play().catch(() => {})
+    }
+
+    if (DEV_MODE) this._updatePlayButton()
+  }
+
+  setSpeed(speed) {
+    this._speed = speed
+    if (this._audio) this._audio.playbackRate = speed
+    if (DEV_MODE) this._updateSpeedButtons()
+  }
+
+  // -- Scrubber UI (DEV_MODE only) --
+
+  _createScrubber() {
+    if (this._scrubberEl) return
+
+    const SECTION_COLORS = [
+      '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c',
+      '#3498db', '#9b59b6', '#e91e63', '#00bcd4', '#ff9800', '#8bc34a'
+    ]
+
+    const el = document.createElement('div')
+    el.id = `vmkpal-showrunner-scrubber-${this.id}`
+
+    // Position at the bottom of the game canvas
+    const bounds = getGameCanvasBounds()
+    el.style.cssText = `
+      position: fixed; bottom: ${window.innerHeight - (bounds.top + bounds.height)}px;
+      left: ${bounds.left}px; width: ${bounds.width}px; z-index: 2147483647;
+      background: rgba(0,0,0,0.92); color: #fff; font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px; padding: 6px 12px 8px; border-top: 2px solid #444;
+      user-select: none; pointer-events: auto; box-sizing: border-box;
+    `
+
+    // Draggable via drag handle
+    let isDragMoving = false
+    let dragOffsetX = 0
+    let dragOffsetY = 0
+    let hasBeenDragged = false
+
+    const onDragMove = (e) => {
+      if (!isDragMoving) return
+      el.style.left = (e.clientX - dragOffsetX) + 'px'
+      el.style.top = (e.clientY - dragOffsetY) + 'px'
+      el.style.bottom = 'auto'
+    }
+    const onDragEnd = () => {
+      isDragMoving = false
+    }
+    document.addEventListener('mousemove', onDragMove)
+    document.addEventListener('mouseup', onDragEnd)
+    this._scrubberDragCleanup = () => {
+      document.removeEventListener('mousemove', onDragMove)
+      document.removeEventListener('mouseup', onDragEnd)
+    }
+
+    // Update scrubber position on resize (only if not manually dragged)
+    this._scrubberResizeHandler = () => {
+      if (hasBeenDragged) return
+      const b = getGameCanvasBounds()
+      el.style.bottom = (window.innerHeight - (b.top + b.height)) + 'px'
+      el.style.left = b.left + 'px'
+      el.style.width = b.width + 'px'
+    }
+    window.addEventListener('resize', this._scrubberResizeHandler)
+
+    // Row 1: Controls
+    const controls = document.createElement('div')
+    controls.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 5px;'
+
+    // Drag handle
+    const dragHandle = document.createElement('span')
+    dragHandle.textContent = '\u2630'
+    dragHandle.title = 'Drag to move'
+    dragHandle.style.cssText = `
+      cursor: grab; font-size: 16px; color: #888; padding: 2px 4px;
+      border-radius: 3px; line-height: 1;
+    `
+    dragHandle.addEventListener('mousedown', (e) => {
+      isDragMoving = true
+      hasBeenDragged = true
+      dragOffsetX = e.clientX - el.getBoundingClientRect().left
+      dragOffsetY = e.clientY - el.getBoundingClientRect().top
+      dragHandle.style.cursor = 'grabbing'
+      e.preventDefault()
+    })
+    document.addEventListener('mouseup', () => { dragHandle.style.cursor = 'grab' })
+    controls.appendChild(dragHandle)
+
+    // Play/Pause button
+    const playBtn = document.createElement('button')
+    playBtn.textContent = this._paused ? '\u25B6' : '\u275A\u275A'
+    playBtn.style.cssText = `
+      background: none; border: 1px solid #888; color: #fff; cursor: pointer;
+      font-size: 14px; padding: 2px 8px; border-radius: 4px; min-width: 36px;
+    `
+    playBtn.addEventListener('click', () => this.togglePause())
+    this._scrubberPlayBtn = playBtn
+    controls.appendChild(playBtn)
+
+    // Time display
+    const timeEl = document.createElement('span')
+    timeEl.style.cssText = 'color: #00ff00; font-size: 14px; font-weight: bold; min-width: 110px;'
+    this._scrubberTimeEl = timeEl
+    controls.appendChild(timeEl)
+
+    // Speed buttons
+    const speeds = [0.25, 0.5, 1, 2]
+    const speedContainer = document.createElement('span')
+    speedContainer.style.cssText = 'display: flex; gap: 3px; margin-left: 4px;'
+    this._scrubberSpeedBtns = []
+    speeds.forEach(s => {
+      const btn = document.createElement('button')
+      btn.textContent = s + 'x'
+      btn.dataset.speed = s
+      btn.style.cssText = `
+        background: ${s === this._speed ? '#3498db' : '#333'}; border: 1px solid #666;
+        color: #fff; cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 3px;
+        font-family: monospace;
+      `
+      btn.addEventListener('click', () => this.setSpeed(s))
+      speedContainer.appendChild(btn)
+      this._scrubberSpeedBtns.push(btn)
+    })
+    controls.appendChild(speedContainer)
+
+    // Section label
+    const sectionLabel = document.createElement('span')
+    sectionLabel.style.cssText = 'color: #f1c40f; font-size: 12px; margin-left: auto; font-weight: bold;'
+    this._scrubberSectionLabel = sectionLabel
+    controls.appendChild(sectionLabel)
+
+    el.appendChild(controls)
+
+    // Row 2: Timeline bar
+    const barContainer = document.createElement('div')
+    barContainer.style.cssText = `
+      position: relative; height: 18px; background: #222; border-radius: 3px;
+      cursor: pointer; margin-bottom: 4px; border: 1px solid #555;
+    `
+
+    // Progress fill
+    const barFill = document.createElement('div')
+    barFill.style.cssText = `
+      position: absolute; top: 0; left: 0; height: 100%; background: rgba(52,152,219,0.5);
+      border-radius: 3px 0 0 3px; pointer-events: none; transition: width 0.1s linear;
+    `
+    this._scrubberBarFill = barFill
+    barContainer.appendChild(barFill)
+
+    // Playhead
+    const playhead = document.createElement('div')
+    playhead.style.cssText = `
+      position: absolute; top: -2px; width: 3px; height: 22px; background: #fff;
+      border-radius: 2px; pointer-events: none; transition: left 0.1s linear;
+      box-shadow: 0 0 4px rgba(255,255,255,0.5);
+    `
+    playhead.id = `vmkpal-showrunner-playhead-${this.id}`
+    barContainer.appendChild(playhead)
+
+    // Click/drag to seek (throttled — full state rebuild is expensive)
+    let isDragging = false
+    let seekPending = false
+    let pendingSeekRatio = 0
+    const seekFromEvent = (e) => {
+      const rect = barContainer.getBoundingClientRect()
+      pendingSeekRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+      // Update visual immediately for responsiveness
+      barFill.style.width = (pendingSeekRatio * 100) + '%'
+      playhead.style.left = (pendingSeekRatio * 100) + '%'
+      if (!seekPending) {
+        seekPending = true
+        requestAnimationFrame(() => {
+          seekPending = false
+          this.seek(pendingSeekRatio * this.duration)
+        })
+      }
+    }
+    barContainer.addEventListener('mousedown', (e) => {
+      isDragging = true
+      seekFromEvent(e)
+      e.stopPropagation()
+    })
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) seekFromEvent(e)
+    })
+    document.addEventListener('mouseup', () => { isDragging = false })
+
+    el.appendChild(barContainer)
+
+    // Row 3: Section markers
+    if (this.sections.length > 0) {
+      const sectionsRow = document.createElement('div')
+      sectionsRow.style.cssText = 'position: relative; height: 16px; display: flex; gap: 1px;'
+
+      this.sections.forEach((section, i) => {
+        const pct = ((section.end - section.start) / this.duration) * 100
+        const sEl = document.createElement('div')
+        sEl.style.cssText = `
+          flex: 0 0 ${pct}%; height: 100%; background: ${SECTION_COLORS[i % SECTION_COLORS.length]}44;
+          border: 1px solid ${SECTION_COLORS[i % SECTION_COLORS.length]}88;
+          border-radius: 2px; display: flex; align-items: center; justify-content: center;
+          font-size: 9px; color: #ccc; overflow: hidden; white-space: nowrap;
+          cursor: pointer; transition: background 0.15s;
+        `
+        sEl.textContent = section.name
+        sEl.title = `${section.name} (${this._fmtTime(section.start)} - ${this._fmtTime(section.end)})`
+        sEl.addEventListener('click', () => this.seek(section.start))
+        sEl.addEventListener('mouseenter', () => { sEl.style.background = SECTION_COLORS[i % SECTION_COLORS.length] + '88' })
+        sEl.addEventListener('mouseleave', () => { sEl.style.background = SECTION_COLORS[i % SECTION_COLORS.length] + '44' })
+        sectionsRow.appendChild(sEl)
+      })
+
+      el.appendChild(sectionsRow)
+    }
+
+    // Keyboard shortcuts
+    this._keyHandler = (e) => {
+      // Don't capture if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (!this.getIsActive()) return
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault()
+          this.togglePause()
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          this.seek(this._accumulatedTime - (e.shiftKey ? 10 : 2))
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          this.seek(this._accumulatedTime + (e.shiftKey ? 10 : 2))
+          break
+        case 'Digit1': this.setSpeed(0.25); break
+        case 'Digit2': this.setSpeed(0.5); break
+        case 'Digit3': this.setSpeed(1); break
+        case 'Digit4': this.setSpeed(2); break
+      }
+    }
+    document.addEventListener('keydown', this._keyHandler)
+
+    document.body.appendChild(el)
+    this._scrubberEl = el
+    this._updateScrubber()
+  }
+
+  _updateScrubber() {
+    if (!this._scrubberEl) return
+
+    const t = this._accumulatedTime
+    const pct = Math.min(100, (t / this.duration) * 100)
+
+    // Time display
+    this._scrubberTimeEl.textContent = `${this._fmtTime(t)} / ${this._fmtTime(this.duration)}`
+
+    // Progress bar
+    this._scrubberBarFill.style.width = pct + '%'
+
+    // Playhead
+    const playhead = this._scrubberEl.querySelector(`#vmkpal-showrunner-playhead-${this.id}`)
+    if (playhead) playhead.style.left = `calc(${pct}% - 1px)`
+
+    // Section label
+    const currentSection = this.sections.find(s => t >= s.start && t < s.end)
+    this._scrubberSectionLabel.textContent = currentSection ? currentSection.name : ''
+  }
+
+  _updatePlayButton() {
+    if (this._scrubberPlayBtn) {
+      this._scrubberPlayBtn.textContent = this._paused ? '\u25B6' : '\u275A\u275A'
+    }
+  }
+
+  _updateSpeedButtons() {
+    this._scrubberSpeedBtns.forEach(btn => {
+      const isActive = parseFloat(btn.dataset.speed) === this._speed
+      btn.style.background = isActive ? '#3498db' : '#333'
+    })
+  }
+
+  _removeScrubber() {
+    if (this._scrubberEl) {
+      this._scrubberEl.remove()
+      this._scrubberEl = null
+    }
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler)
+      this._keyHandler = null
+    }
+    if (this._scrubberResizeHandler) {
+      window.removeEventListener('resize', this._scrubberResizeHandler)
+      this._scrubberResizeHandler = null
+    }
+    if (this._scrubberDragCleanup) {
+      this._scrubberDragCleanup()
+      this._scrubberDragCleanup = null
+    }
+    this._scrubberTimeEl = null
+    this._scrubberBarFill = null
+    this._scrubberSectionLabel = null
+    this._scrubberSpeedBtns = []
+    this._scrubberPlayBtn = null
+  }
+
+  _fmtTime(seconds) {
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    const ms = Math.floor((seconds % 1) * 10)
+    return `${m}:${s.toString().padStart(2, '0')}.${ms}`
+  }
+}
+
+// ============================================================================
+// Hannah Main Show - ShowRunner integration
+// ============================================================================
+
+let hannahShowRunner = null
+
+// Reconstruct Hannah Main Show state at a given time (used for late-join and seek)
+// Returns the lastIndex processed
+function reconstructHannahMainShowState(offsetSeconds) {
+  let resultIndex = -1
+  const layerState = {}
+  const toggleState = {
+    wind: false,
+    spotlights: null,
+    stagePulse: false,
+    discoBall: null,
+    jackJackBubbles: false,
+    hannahLanterns: false,
+    lightwall: null
+  }
+  let helicopterAsset = null
+  let helicopterAction = null
+
+  // Track spawned persistent elements
+  let hasFilmStrips = false
+  let hasSpeaker = false
+  let hasProjector = false
+  let hasPalmTrees = null  // null or colors array
+  let hasDarkStar = false
+  let hasFlyingProps = null  // null or props array
+  let hasFireworks = null  // null or color
+  let hasHMLogo = false
+
+  for (let i = 0; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
+    const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
+    if (event.time <= offsetSeconds) {
+      resultIndex = i
+
+      // Track layer states
+      if (event.action === 'showLayer' || event.action === 'riseLayer') {
+        layerState[event.layer] = event.asset
+      } else if (event.action === 'hideLayer') {
+        delete layerState[event.layer]
+      }
+      // Track toggle effects
+      else if (event.action === 'wind') {
+        toggleState.wind = event.enabled
+      }
+      else if (event.action === 'spotlights') {
+        toggleState.spotlights = event.enabled === false ? null : (event.colors || [event.color, event.color, 'white'])
+      }
+      else if (event.action === 'stagePulse') {
+        toggleState.stagePulse = event.enabled
+      }
+      else if (event.action === 'discoBall') {
+        toggleState.discoBall = event.enabled ? (event.color || 'pink') : null
+      }
+      else if (event.action === 'jackJackBubbles') {
+        toggleState.jackJackBubbles = event.enabled
+      }
+      else if (event.action === 'hannahLanterns') {
+        toggleState.hannahLanterns = event.enabled
+      }
+      else if (event.action === 'lightwall') {
+        toggleState.lightwall = event.enabled ? (event.color || 'gold') : null
+      }
+      // Track helicopter state
+      else if (event.action === 'helicopterFlyInSlow' || event.action === 'helicopterFlyIn' ||
+               event.action === 'helicopterBackForth' || event.action === 'helicopterWander' ||
+               event.action === 'helicopterReenter' || event.action === 'replaceHelicopter') {
+        helicopterAsset = event.asset
+        helicopterAction = event.action
+      }
+      else if (event.action === 'helicopterFlyOffTopLeft' || event.action === 'planeFlyOffLeft') {
+        helicopterAsset = null
+      }
+      // Track spawned elements
+      else if (event.action === 'dropFilmStrips') {
+        hasFilmStrips = true
+      } else if (event.action === 'hideFilmStrips' || event.action === 'flyOffFilmStrips') {
+        hasFilmStrips = false
+      }
+      else if (event.action === 'spawnSpeakerLeft') {
+        hasSpeaker = true
+      } else if (event.action === 'flyOffSpeakerAndProjector') {
+        hasSpeaker = false
+        hasProjector = false
+      }
+      else if (event.action === 'spawnProjector') {
+        hasProjector = true
+      }
+      else if (event.action === 'spawnPalmTrees') {
+        hasPalmTrees = event.colors || ['white']
+      } else if (event.action === 'flyOffPalmTrees') {
+        hasPalmTrees = null
+      }
+      else if (event.action === 'spawnDarkStar') {
+        hasDarkStar = true
+      } else if (event.action === 'hideDarkStar') {
+        hasDarkStar = false
+      }
+      else if (event.action === 'spawnFlyingProps') {
+        hasFlyingProps = event.props
+      }
+      else if (event.action === 'fireworksContinuous') {
+        hasFireworks = event.color || 'pink'
+      } else if (event.action === 'fadeOutFireworks' || event.action === 'stopFireworks') {
+        hasFireworks = null
+      }
+      else if (event.action === 'floatLogoDown') {
+        hasHMLogo = true
+      }
+      else if (event.action === 'centerLayerFlyAway') {
+        delete layerState['center']
+      }
+      else if (event.action === 'flyOffLayerLeft') {
+        delete layerState['left']
+      }
+      else if (event.action === 'flyOffLayerRight') {
+        delete layerState['right']
+      }
+    } else {
+      break
+    }
+  }
+
+  // Apply layer states
+  for (const [layer, asset] of Object.entries(layerState)) {
+    showHannahMainShowLayer(layer, asset)
+  }
+
+  // Apply toggle effects
+  if (toggleState.wind) startShakeEffect('wind')
+  if (toggleState.spotlights) startColoredSpotlights(toggleState.spotlights)
+  if (toggleState.stagePulse) startHannahStagePulse()
+  if (toggleState.discoBall) startHannahDiscoBall(toggleState.discoBall)
+  if (toggleState.jackJackBubbles) startJackJackBubbles()
+  if (toggleState.hannahLanterns) startHannahLanterns()
+  if (toggleState.lightwall) startLightWall([toggleState.lightwall], 'wave', 'background')
+
+  // Apply helicopter state
+  if (helicopterAsset && helicopterAction) {
+    if (helicopterAction === 'helicopterWander' || helicopterAction === 'helicopterBackForth') {
+      startHelicopterWander()
+    } else {
+      showHannahMainShowLayer('helicopter', helicopterAsset)
+    }
+  }
+
+  // Restore spawned persistent elements
+  if (hasFilmStrips) dropFilmStrips()
+  if (hasSpeaker) spawnSpeakerFromLeft()
+  if (hasProjector) spawnProjectorFromRight()
+  if (hasPalmTrees) spawnHannahPalmTrees(hasPalmTrees)
+  if (hasDarkStar) spawnDarkStarFromRight()
+  if (hasFlyingProps) spawnHannahFlyingProps(hasFlyingProps)
+  if (hasFireworks) startContinuousFireworks(hasFireworks)
+  if (hasHMLogo) floatHMLogoDown()
+
+  console.log('MyVMK Genie: Reconstructed state at', offsetSeconds, 'index:', resultIndex)
+  return resultIndex
+}
+
+// Cleanup the Hannah Main Show effects and DOM (called by ShowRunner or directly)
+function cleanupHannahMainShow(immediate = false) {
+  isHannahMainShowActive = false
+
+  // Stop genie icon pulse
+  stopGenieIconPulse()
+
+  // Remove resize listener
+  if (hannahMainShowResizeHandler) {
+    window.removeEventListener('resize', hannahMainShowResizeHandler)
+    hannahMainShowResizeHandler = null
+  }
+
+  // Clear choreography interval (legacy, in case called directly)
+  if (hannahMainShowInterval) {
+    clearInterval(hannahMainShowInterval)
+    hannahMainShowInterval = null
+  }
+
+  // Stop audio and restore game audio (only if ShowRunner isn't managing audio)
+  if (hannahMainShowAudio) {
+    hannahMainShowAudio.onended = null
+    hannahMainShowAudio.pause()
+    hannahMainShowAudio = null
+  }
+  if (!isAllAudioMuted) unmuteGameAudio()
+
+  // Hide and remove all layers
+  for (const layerId of Object.keys(hannahMainShowLayers)) {
+    const layer = hannahMainShowLayers[layerId]
+    if (layer) {
+      if (immediate) {
+        if (layer.parentNode) layer.parentNode.removeChild(layer)
+      } else {
+        layer.style.opacity = '0'
+        setTimeout(() => {
+          if (layer.parentNode) {
+            layer.parentNode.removeChild(layer)
+          }
+        }, 500)
+      }
+    }
+    hannahMainShowLayers[layerId] = null
+  }
+
+  // Stop effects
+  stopNightOverlay()
+  stopLightWall()
+  stopGatorParade()
+  stopShakeEffect()  // Stop wind if active
+  stopHelicopterFloat()  // Stop floating animation
+  stopAllStageFloats()   // Stop stage floating animations
+  stopHannahFlyingProps()  // Stop flying speakers/lights/palm trees
+  stopHannahStagePulse()   // Stop stage pulsing
+  stopHelicopterBackForth()  // Stop helicopter back-and-forth
+  stopHannahDiscoBall()    // Stop disco ball effect
+  stopSpotlights()         // Stop spotlights
+  stopButterflyEffect()    // Stop butterflies
+  stopFireworks()          // Stop fireworks
+  stopContinuousFireworks()  // Stop continuous fireworks
+  stopJackJackBubbles()    // Stop Jack Jack bubbles
+
+  // Stop helicopter wander animation
+  if (helicopterWanderAnimationId) {
+    cancelAnimationFrame(helicopterWanderAnimationId)
+    helicopterWanderAnimationId = null
+  }
+
+  // Clean up any remaining lanterns
+  document.querySelectorAll('.vmkpal-hannah-main-lantern').forEach(el => el.remove())
+  // Clean up flying props and palm trees
+  document.querySelectorAll('.vmkpal-hannah-flying-prop').forEach(el => el.remove())
+  document.querySelectorAll('.vmkpal-hannah-palm-tree').forEach(el => el.remove())
+  // Clean up film strips
+  cleanupFilmStrips()
+  document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => el.remove())
+  // Clean up dark star
+  if (darkStarElement) {
+    darkStarElement.remove()
+    darkStarElement = null
+  }
+  document.querySelectorAll('.vmkpal-hannah-dark-star').forEach(el => el.remove())
+  // Clean up slow gator parade elements
+  document.querySelectorAll('.vmkpal-hannah-gator-slow').forEach(el => el.remove())
+  // Clean up spawned butterflies
+  document.querySelectorAll('.vmkpal-hannah-spawn-butterfly').forEach(el => el.remove())
+  // Clean up Jack Jack bubbles
+  document.querySelectorAll('.vmkpal-hannah-jackjack-bubble').forEach(el => el.remove())
+  // Clean up HM logo
+  document.querySelectorAll('.vmkpal-hannah-hm-logo').forEach(el => el.remove())
+  // Clean up disco ball
+  document.querySelectorAll('#vmkpal-hannah-disco-ball').forEach(el => el.remove())
+  // Clean up all layers
+  document.querySelectorAll('.vmkpal-hannah-main-layer').forEach(el => el.remove())
+  // Clean up performance lanterns
+  document.querySelectorAll('.vmkpal-hannah-lantern').forEach(el => el.remove())
+  document.querySelectorAll('.vmkpal-hannah-lantern-performance').forEach(el => el.remove())
+  // Catch-all cleanup for any remaining Hannah elements
+  document.querySelectorAll('[class*="vmkpal-hannah-"]').forEach(el => el.remove())
+  document.querySelectorAll('[id*="vmkpal-hannah-"]').forEach(el => el.remove())
+
+  // Reset state
+  hannahMainShowStartTime = null
+  lastHannahMainShowIndex = -1
+}
+
+// Setup callback for Hannah Main Show (called by ShowRunner on start/seek)
+function setupHannahMainShow(offsetSeconds) {
+  // Reset helicopter dimensions for fresh start
+  helicopterLockedDimensions = null
+
+  // Add resize listener to update layer positions
+  hannahMainShowResizeHandler = () => {
+    updateHannahMainShowLayerPositions()
+    updateFilmStripPositions()
+  }
+  window.addEventListener('resize', hannahMainShowResizeHandler)
+
+  // Start night overlay for atmosphere
+  startNightOverlay(true)
+
+  // Pulse the genie icon during the show
+  startGenieIconPulse()
+
+  // Mute game audio
+  muteGameAudio()
 }
 
 // Start the Hannah Montana Main Show
 function startHannahMainShow(offsetSeconds = 0) {
   if (isHannahMainShowActive) return
 
-  isHannahMainShowActive = true
-  const isLateJoin = offsetSeconds > 5
-  console.log('MyVMK Genie: Starting Hannah Montana Main Show' + (isLateJoin ? ` (syncing to ${Math.floor(offsetSeconds)}s)` : ''))
-
-  // Reset helicopter dimensions for fresh start
-  helicopterLockedDimensions = null
-
-  // Create debug timer (DEV_MODE only)
-  hannahDebugTimer = createHannahDebugTimer()
-
-  // Add resize listener to update layer positions
-  hannahMainShowResizeHandler = () => updateHannahMainShowLayerPositions()
-  window.addEventListener('resize', hannahMainShowResizeHandler)
-
-  // Start night overlay for atmosphere
-  startNightOverlay(true)
-
-  // Mute game audio and play our show audio
-  muteGameAudio()
-  const audioUrl = chrome.runtime.getURL(HANNAH_MAIN_AUDIO)
-  hannahMainShowAudio = new Audio(audioUrl)
-  hannahMainShowAudio.currentTime = offsetSeconds
-  hannahMainShowAudio.play().catch(e => console.log('MyVMK Genie: Audio play failed', e))
-
-  // When audio ends, stop the show
-  hannahMainShowAudio.onended = () => {
-    stopHannahMainShow()
+  if (!hannahShowRunner) {
+    hannahShowRunner = new ShowRunner({
+      id: 'hannah-main',
+      choreography: HANNAH_MAIN_SHOW_CHOREOGRAPHY,
+      sections: HANNAH_MAIN_SHOW_SECTIONS,
+      audioPath: HANNAH_MAIN_AUDIO,
+      duration: 245,
+      executeEvent: (event) => executeHannahMainShowEvent(event),
+      onStart: (offset) => setupHannahMainShow(offset),
+      reconstructState: (offset) => reconstructHannahMainShowState(offset),
+      onCleanup: (immediate) => cleanupHannahMainShow(immediate),
+      getIsActive: () => isHannahMainShowActive,
+      setIsActive: (v) => { isHannahMainShowActive = v },
+    })
   }
 
-  // Initialize timing
-  hannahMainShowStartTime = performance.now() - (offsetSeconds * 1000)
-  lastHannahMainShowIndex = -1
-
-  // For late joiners, apply current state by tracking all toggle effects
-  if (isLateJoin) {
-    const layerState = {}
-    const toggleState = {
-      wind: false,
-      spotlights: null,  // null = off, or colors array
-      stagePulse: false,
-      discoBall: null,   // null = off, or color
-      jackJackBubbles: false,
-      hannahLanterns: false,
-      lightwall: null    // null = off, or color
-    }
-    let helicopterAsset = null
-    let helicopterAction = null  // Track last helicopter action
-
-    for (let i = 0; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
-      const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
-      if (event.time <= offsetSeconds) {
-        lastHannahMainShowIndex = i
-
-        // Track layer states
-        if (event.action === 'showLayer' || event.action === 'riseLayer') {
-          layerState[event.layer] = event.asset
-        } else if (event.action === 'hideLayer') {
-          delete layerState[event.layer]
-        }
-        // Track toggle effects
-        else if (event.action === 'wind') {
-          toggleState.wind = event.enabled
-        }
-        else if (event.action === 'spotlights') {
-          toggleState.spotlights = event.enabled === false ? null : (event.colors || [event.color, event.color, 'white'])
-        }
-        else if (event.action === 'stagePulse') {
-          toggleState.stagePulse = event.enabled
-        }
-        else if (event.action === 'discoBall') {
-          toggleState.discoBall = event.enabled ? (event.color || 'pink') : null
-        }
-        else if (event.action === 'jackJackBubbles') {
-          toggleState.jackJackBubbles = event.enabled
-        }
-        else if (event.action === 'hannahLanterns') {
-          toggleState.hannahLanterns = event.enabled
-        }
-        else if (event.action === 'lightwall') {
-          toggleState.lightwall = event.enabled ? (event.color || 'gold') : null
-        }
-        // Track helicopter state
-        else if (event.action === 'helicopterFlyInSlow' || event.action === 'helicopterFlyIn' ||
-                 event.action === 'helicopterBackForth' || event.action === 'helicopterWander' ||
-                 event.action === 'helicopterReenter' || event.action === 'replaceHelicopter') {
-          helicopterAsset = event.asset
-          helicopterAction = event.action
-        }
-        else if (event.action === 'helicopterFlyOffTopLeft' || event.action === 'planeFlyOffLeft') {
-          helicopterAsset = null  // Helicopter left
-        }
-      } else {
-        break
-      }
-    }
-
-    // Apply layer states
-    for (const [layer, asset] of Object.entries(layerState)) {
-      showHannahMainShowLayer(layer, asset)
-    }
-
-    // Apply toggle effects
-    if (toggleState.wind) {
-      startShakeEffect('wind')
-    }
-    if (toggleState.spotlights) {
-      startColoredSpotlights(toggleState.spotlights)
-    }
-    if (toggleState.stagePulse) {
-      startHannahStagePulse()
-    }
-    if (toggleState.discoBall) {
-      startHannahDiscoBall(toggleState.discoBall)
-    }
-    if (toggleState.jackJackBubbles) {
-      startJackJackBubbles()
-    }
-    if (toggleState.hannahLanterns) {
-      startHannahLanterns()
-    }
-    if (toggleState.lightwall) {
-      startLightWall([toggleState.lightwall], 'wave', 'background')
-    }
-
-    // Apply helicopter state - show it in place if it should be visible
-    if (helicopterAsset && helicopterAction) {
-      // For late join, just show helicopter in its wandering/hovering position
-      if (helicopterAction === 'helicopterWander' || helicopterAction === 'helicopterBackForth') {
-        startHelicopterWander()  // Start wandering from current position
-      } else if (helicopterAsset) {
-        // Show helicopter in center position
-        showHannahMainShowLayer('helicopter', helicopterAsset)
-      }
-    }
-
-    console.log('MyVMK Genie: Late join - Hannah Main Show at index', lastHannahMainShowIndex, 'toggles:', toggleState)
-  }
-
-  // Start choreography loop
-  hannahMainShowInterval = setInterval(() => {
-    if (!isHannahMainShowActive) {
-      clearInterval(hannahMainShowInterval)
-      return
-    }
-
-    const elapsedSeconds = (performance.now() - hannahMainShowStartTime) / 1000
-
-    // Update debug timer
-    updateHannahDebugTimer(elapsedSeconds)
-
-    // Process choreography events
-    for (let i = lastHannahMainShowIndex + 1; i < HANNAH_MAIN_SHOW_CHOREOGRAPHY.length; i++) {
-      const event = HANNAH_MAIN_SHOW_CHOREOGRAPHY[i]
-      if (event.time <= elapsedSeconds) {
-        executeHannahMainShowEvent(event)
-        lastHannahMainShowIndex = i
-      } else {
-        break
-      }
-    }
-  }, 100)
+  hannahShowRunner.start(offsetSeconds)
 }
 
 // Execute a choreography event
@@ -8181,108 +8961,15 @@ function executeHannahMainShowEvent(event) {
 }
 
 // Stop the Hannah Montana Main Show
-function stopHannahMainShow() {
+function stopHannahMainShow(immediate = false) {
   if (!isHannahMainShowActive) return
 
-  isHannahMainShowActive = false
-  console.log('MyVMK Genie: Stopping Hannah Montana Main Show')
-
-  // Remove resize listener
-  if (hannahMainShowResizeHandler) {
-    window.removeEventListener('resize', hannahMainShowResizeHandler)
-    hannahMainShowResizeHandler = null
+  if (hannahShowRunner) {
+    hannahShowRunner.stop(immediate)
+  } else {
+    // Fallback: direct cleanup if somehow called without ShowRunner
+    cleanupHannahMainShow(immediate)
   }
-
-  // Clear choreography interval
-  if (hannahMainShowInterval) {
-    clearInterval(hannahMainShowInterval)
-    hannahMainShowInterval = null
-  }
-
-  // Remove debug timer
-  removeHannahDebugTimer()
-
-  // Stop audio and restore game audio
-  if (hannahMainShowAudio) {
-    hannahMainShowAudio.onended = null // Remove listener to prevent double-stop
-    hannahMainShowAudio.pause()
-    hannahMainShowAudio = null
-  }
-  unmuteGameAudio()
-
-  // Hide and remove all layers
-  for (const layerId of Object.keys(hannahMainShowLayers)) {
-    const layer = hannahMainShowLayers[layerId]
-    if (layer) {
-      layer.style.opacity = '0'
-      setTimeout(() => {
-        if (layer.parentNode) {
-          layer.parentNode.removeChild(layer)
-        }
-      }, 500)
-    }
-    hannahMainShowLayers[layerId] = null
-  }
-
-  // Stop effects
-  stopNightOverlay()
-  stopLightWall()
-  stopGatorParade()
-  stopShakeEffect()  // Stop wind if active
-  stopHelicopterFloat()  // Stop floating animation
-  stopAllStageFloats()   // Stop stage floating animations
-  stopHannahFlyingProps()  // Stop flying speakers/lights/palm trees
-  stopHannahStagePulse()   // Stop stage pulsing
-  stopHelicopterBackForth()  // Stop helicopter back-and-forth
-  stopHannahDiscoBall()    // Stop disco ball effect
-  stopSpotlights()         // Stop spotlights
-  stopButterflies()        // Stop butterflies
-  stopFireworks()          // Stop fireworks
-  stopContinuousFireworks()  // Stop continuous fireworks
-  stopJackJackBubbles()    // Stop Jack Jack bubbles
-
-  // Stop helicopter wander animation
-  if (helicopterWanderAnimationId) {
-    cancelAnimationFrame(helicopterWanderAnimationId)
-    helicopterWanderAnimationId = null
-  }
-
-  // Clean up any remaining lanterns
-  document.querySelectorAll('.vmkpal-hannah-main-lantern').forEach(el => el.remove())
-  // Clean up flying props and palm trees
-  document.querySelectorAll('.vmkpal-hannah-flying-prop').forEach(el => el.remove())
-  document.querySelectorAll('.vmkpal-hannah-palm-tree').forEach(el => el.remove())
-  // Clean up film strips
-  cleanupFilmStrips()
-  document.querySelectorAll('.vmkpal-hannah-film-strip').forEach(el => el.remove())
-  // Clean up dark star
-  if (darkStarElement) {
-    darkStarElement.remove()
-    darkStarElement = null
-  }
-  document.querySelectorAll('.vmkpal-hannah-dark-star').forEach(el => el.remove())
-  // Clean up slow gator parade elements
-  document.querySelectorAll('.vmkpal-hannah-gator-slow').forEach(el => el.remove())
-  // Clean up spawned butterflies
-  document.querySelectorAll('.vmkpal-hannah-spawn-butterfly').forEach(el => el.remove())
-  // Clean up Jack Jack bubbles
-  document.querySelectorAll('.vmkpal-hannah-jackjack-bubble').forEach(el => el.remove())
-  // Clean up HM logo
-  document.querySelectorAll('.vmkpal-hannah-hm-logo').forEach(el => el.remove())
-  // Clean up disco ball
-  document.querySelectorAll('#vmkpal-hannah-disco-ball').forEach(el => el.remove())
-  // Clean up all layers
-  document.querySelectorAll('.vmkpal-hannah-main-layer').forEach(el => el.remove())
-  // Clean up performance lanterns
-  document.querySelectorAll('.vmkpal-hannah-lantern').forEach(el => el.remove())
-  document.querySelectorAll('.vmkpal-hannah-lantern-performance').forEach(el => el.remove())
-  // Catch-all cleanup for any remaining Hannah elements
-  document.querySelectorAll('[class*="vmkpal-hannah-"]').forEach(el => el.remove())
-  document.querySelectorAll('[id*="vmkpal-hannah-"]').forEach(el => el.remove())
-
-  // Reset state
-  hannahMainShowStartTime = null
-  lastHannahMainShowIndex = -1
 }
 
 // Toggle the Hannah Montana Main Show (for DEV_MODE testing only)
@@ -8492,12 +9179,22 @@ function animateHannahFlyingProps() {
       item.xProp -= item.speed
     }
 
-    // Bob up and down
+    // Bob up and down, or wander freely within a radius
     item.bobPhase += 0.03
-    const bobOffset = Math.sin(item.bobPhase) * 0.02
+    let xOffset = 0
+    let yOffset = Math.sin(item.bobPhase) * 0.02
 
-    const actualX = bounds.left + (item.xProp * bounds.width)
-    const actualY = bounds.top + ((item.yProp + bobOffset) * bounds.height)
+    if (item.wander) {
+      // Advance wander phases at different rates for organic movement
+      item.wanderPhaseX += 0.008
+      item.wanderPhaseY += 0.011
+      // Wander within ~10% radius using layered sine waves
+      xOffset = Math.sin(item.wanderPhaseX) * 0.05 + Math.sin(item.wanderPhaseX * 0.7) * 0.03
+      yOffset = Math.sin(item.wanderPhaseY) * 0.04 + Math.sin(item.wanderPhaseY * 0.6) * 0.03
+    }
+
+    const actualX = bounds.left + ((item.xProp + xOffset) * bounds.width)
+    const actualY = bounds.top + ((item.yProp + yOffset) * bounds.height)
 
     item.element.style.left = actualX + 'px'
     item.element.style.top = actualY + 'px'
@@ -8599,17 +9296,18 @@ function dropFilmStrips() {
       tape.src = chrome.runtime.getURL(assetPath)
       tape.className = 'vmkpal-hannah-film-strip'
 
-      const tapeWidth = bounds.width * 0.40  // 40% of canvas width
       const isLeft = index === 0
-
-      // Position: left tape on left edge, right tape on right edge
-      const xPos = isLeft ? bounds.left : bounds.left + bounds.width * 0.60
+      // Store proportional positions for resize tracking
+      tape.dataset.xProp = isLeft ? '0' : '0.60'
+      tape.dataset.widthProp = '0.40'
+      tape.dataset.yProp = '-0.3' // Start above canvas
+      tape.dataset.finalYProp = '0.05' // Final resting position
 
       tape.style.cssText = `
         position: fixed;
-        left: ${xPos}px;
-        top: ${bounds.top - bounds.height * 0.3}px;
-        width: ${tapeWidth}px;
+        left: ${bounds.left + (isLeft ? 0 : bounds.width * 0.60)}px;
+        top: ${bounds.top + bounds.height * -0.3}px;
+        width: ${bounds.width * 0.40}px;
         height: auto;
         pointer-events: none;
         z-index: 2147483642;
@@ -8624,10 +9322,25 @@ function dropFilmStrips() {
         tape.style.opacity = '1'
         setTimeout(() => {
           // Drop to final position (hanging from top)
+          tape.dataset.yProp = tape.dataset.finalYProp
           tape.style.top = `${bounds.top + bounds.height * 0.05}px`
         }, 100)
       }, 50)
     }, index * 300)  // Stagger the drops slightly
+  })
+}
+
+function updateFilmStripPositions() {
+  if (hannahFilmStripElements.length === 0) return
+  const bounds = getGameCanvasBounds()
+  hannahFilmStripElements.forEach(tape => {
+    if (!tape || !tape.parentNode) return
+    const xProp = parseFloat(tape.dataset.xProp)
+    const yProp = parseFloat(tape.dataset.yProp)
+    const widthProp = parseFloat(tape.dataset.widthProp)
+    tape.style.left = (bounds.left + bounds.width * xProp) + 'px'
+    tape.style.top = (bounds.top + bounds.height * yProp) + 'px'
+    tape.style.width = (bounds.width * widthProp) + 'px'
   })
 }
 
@@ -9312,8 +10025,8 @@ function floatHMLogoDown() {
   let yProp = -0.3
   const xProp = 0.35  // Centered horizontally
 
-  // Logo size (30% of canvas width)
-  const logoWidthProp = 0.30
+  // Logo size (25% of canvas width)
+  const logoWidthProp = 0.25
   const logoWidth = bounds.width * logoWidthProp
 
   logo.style.cssText = `
@@ -9322,8 +10035,9 @@ function floatHMLogoDown() {
     height: auto;
     pointer-events: none;
     opacity: 0;
-    z-index: 2147483638;
+    z-index: 2147483642;
     transition: opacity 1s ease-in-out;
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 30px rgba(255, 255, 255, 0.4));
   `
   logo.dataset.widthProp = logoWidthProp
 
@@ -10021,6 +10735,23 @@ function checkKingdomSyncNight() {
     return
   }
 
+  // Track game session state based on room detection
+  if (GAME_LOBBY_ROOMS.has(currentRoomId)) {
+    // Entered a game lobby - start game session, disable night mode
+    isInGameSession = true
+    if (isKingdomSyncNightActive) stopKingdomSyncNight()
+    return
+  } else if (isInGameSession && currentRoomId && !GAME_LOBBY_ROOMS.has(currentRoomId)) {
+    // Detected a new non-lobby room - end game session
+    isInGameSession = false
+  }
+
+  // Don't apply night mode while in a game session
+  if (isInGameSession) {
+    if (isKingdomSyncNightActive) stopKingdomSyncNight()
+    return
+  }
+
   if (isKingdomSyncNightTime()) {
     if (!isKingdomSyncNightActive) startKingdomSyncNight()
   } else {
@@ -10130,6 +10861,29 @@ function checkAfricaRoomAudio() {
 
 function startAfricaRoomAudio() {
   if (isAfricaRoomAudioActive) return
+
+  // Delay Africa audio on initial load to avoid muting game AudioContexts during room initialization
+  // The interceptor's muted flag suppresses all new AudioContexts, which breaks game loading
+  const timeSinceFirstRoom = Date.now() - firstRoomDetectedAt
+  if (firstRoomDetectedAt && timeSinceFirstRoom < 8000) {
+    const delay = 8000 - timeSinceFirstRoom
+    console.log('MyVMK Genie: Delaying Africa room audio by', delay, 'ms (initial load)')
+    if (africaAudioStartTimeout) clearTimeout(africaAudioStartTimeout)
+    africaAudioStartTimeout = setTimeout(() => {
+      africaAudioStartTimeout = null
+      // Re-check that we're still in Africa before starting
+      if (KINGDOM_SYNC_ROOMS.AFRICA.has(currentRoomId) && isKingdomSyncEnabled && !isAfricaRoomAudioActive) {
+        startAfricaRoomAudioNow()
+      }
+    }, delay)
+    return
+  }
+
+  startAfricaRoomAudioNow()
+}
+
+function startAfricaRoomAudioNow() {
+  if (isAfricaRoomAudioActive) return
   isAfricaRoomAudioActive = true
   console.log('MyVMK Genie: Starting Africa room audio')
 
@@ -10142,13 +10896,20 @@ function startAfricaRoomAudio() {
 
   africaAudioIframe = document.createElement('iframe')
   africaAudioIframe.id = 'vmkpal-africa-audio'
-  africaAudioIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}`
+  // enablejsapi=1 is required for postMessage mute/unmute commands to work
+  const muteParam = isAllAudioMuted ? '&mute=1' : ''
+  africaAudioIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&enablejsapi=1${muteParam}`
   africaAudioIframe.allow = 'autoplay; encrypted-media'
   africaAudioIframe.style.cssText = 'position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px;'
   document.body.appendChild(africaAudioIframe)
 }
 
 function stopAfricaRoomAudio() {
+  // Clear any pending delayed start
+  if (africaAudioStartTimeout) {
+    clearTimeout(africaAudioStartTimeout)
+    africaAudioStartTimeout = null
+  }
   if (!isAfricaRoomAudioActive) return
   isAfricaRoomAudioActive = false
   console.log('MyVMK Genie: Stopping Africa room audio')
@@ -10159,8 +10920,8 @@ function stopAfricaRoomAudio() {
     africaAudioIframe = null
   }
 
-  // Restore game audio
-  unmuteGameAudio()
+  // Restore game audio (unless mute toggle is enabled)
+  if (!isAllAudioMuted) unmuteGameAudio()
 }
 
 // ============================================
@@ -11435,8 +12196,8 @@ function startGenieEventSystem() {
   // Then fetch periodically
   setInterval(fetchGenieEvents, GENIE_EVENTS_FETCH_INTERVAL)
 
-  // Check for active events every 10 seconds
-  genieEventCheckInterval = setInterval(checkGenieEvents, 10000) // Check every 10 seconds
+  // Check for active events every 30 seconds
+  genieEventCheckInterval = setInterval(checkGenieEvents, 30000)
 }
 
 // Get scheduled Genie events for calendar display
@@ -11819,6 +12580,14 @@ function createOverlaysPanel() {
           startHannahPerformance()
         }
       }
+    ))
+
+    // Hannah Montana MAIN Choreographed Show (full 4-minute sequence)
+    grid.appendChild(createOverlayToggle(
+      '🎬',
+      'HM Main',
+      () => isHannahMainShowActive,
+      toggleHannahMainShow
     ))
 
   }
@@ -12784,16 +13553,70 @@ function createSettingsPanel() {
 
   // Version info (reads from manifest.json)
   const versionInfo = document.createElement('div')
-  versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 8px;'
+  versionInfo.style.cssText = 'text-align: center; color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 8px; user-select: none;'
   const manifestVersion = chrome.runtime.getManifest().version
-  versionInfo.textContent = `MyVMK Genie v${manifestVersion}`
+  versionInfo.textContent = `MyVMK Genie v${manifestVersion}${DEV_MODE ? ' (dev)' : ''}`
   div.appendChild(versionInfo)
+
+  // Hidden dev mode toggle: tap version 5 times (only in dev builds)
+  if (IS_DEV_BUILD) {
+    let tapCount = 0
+    let tapTimer = null
+    versionInfo.style.cursor = 'default'
+    versionInfo.addEventListener('click', () => {
+      tapCount++
+      if (tapTimer) clearTimeout(tapTimer)
+      tapTimer = setTimeout(() => { tapCount = 0 }, 2000)
+      if (tapCount >= 5) {
+        tapCount = 0
+        const willDisable = DEV_MODE // if currently on, we're turning it off
+        chrome.storage.local.set({ devModeDisabled: willDisable }, () => {
+          const msg = willDisable ? 'Dev mode disabled — reloading...' : 'Dev mode enabled — reloading...'
+          showNotification(msg, 'success')
+          setTimeout(() => location.reload(), 1000)
+        })
+      }
+    })
+  }
 
   return div
 }
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.16',
+    date: '2026-04-04',
+    changes: [
+      'Added Club Neon Guest Room mapping (Kingdom Sync + event scheduling)'
+    ]
+  },
+  {
+    version: '2.1.15',
+    date: '2026-04-03',
+    changes: [
+      'Fixed Africa room not loading when it\'s the first room entered after launching the game',
+      'Performance: reduced lag during choreographed shows and room changes'
+    ]
+  },
+  {
+    version: '2.1.14',
+    date: '2026-04-02',
+    changes: [
+      'Hannah Montana event improvements',
+      'Mute button fix',
+      'Room detection for Kingdom Sync improved',
+      'Sci-Fi Dine-In lantern fix'
+    ]
+  },
+  {
+    version: '2.1.13',
+    date: '2025-03-29',
+    changes: [
+      'Mute All Audio: One-click button to mute/unmute all audio (game + Genie)',
+      'Smarter Night Mode: Automatically disables during minigames (Pirates, Fireworks, etc.)'
+    ]
+  },
   {
     version: '2.1.12',
     date: '2025-03-25',
@@ -13566,22 +14389,23 @@ function createAudioLearningPanel() {
   // Initialize the list
   updateMappingsList()
 
-  // Update audio display periodically
-  const updateAudioDisplay = () => {
-    const folderEl = document.getElementById('vmkpal-detected-folder')
-    const displayEl = document.getElementById('vmkpal-detected-audio')
-    if (detectedAudioUrl) {
-      if (folderEl) {
+  // Update audio display periodically (dev-only panel)
+  if (DEV_MODE) {
+    const updateAudioDisplay = () => {
+      const folderEl = document.getElementById('vmkpal-detected-folder')
+      if (!folderEl) return
+      const displayEl = document.getElementById('vmkpal-detected-audio')
+      if (detectedAudioUrl) {
         const folder = getAudioFolder(detectedAudioUrl)
         folderEl.textContent = folder || 'Unknown folder'
         folderEl.style.color = '#4ade80'
-      }
-      if (displayEl) {
-        displayEl.textContent = detectedAudioUrl
+        if (displayEl) {
+          displayEl.textContent = detectedAudioUrl
+        }
       }
     }
+    setInterval(updateAudioDisplay, 2000)
   }
-  setInterval(updateAudioDisplay, 2000) // Update every 2 seconds
 
   return div
 }
@@ -14961,6 +15785,126 @@ function unmuteGameAudio() {
   console.log('MyVMK Genie: Restored game audio')
 }
 
+// Toggle mute all audio (game + Genie audio)
+function toggleMuteAllAudio() {
+  isAllAudioMuted = !isAllAudioMuted
+
+  if (isAllAudioMuted) {
+    // Mute game audio
+    muteGameAudio()
+    // Mute Genie audio (YouTube iframe, audio player, etc.)
+    muteGenieAudio()
+    showNotification('🔇 All audio muted', 'success')
+  } else {
+    // Unmute Genie audio first
+    unmuteGenieAudio()
+    // Unmute game audio (unless Genie player is active, it will mute game audio)
+    const hasActivePlayer = document.getElementById('vmkpal-persistent-player')?.innerHTML ||
+                           audioPlayer
+    if (!hasActivePlayer) {
+      unmuteGameAudio()
+    }
+    showNotification('🔊 Audio unmuted', 'info')
+  }
+
+  chrome.storage.local.set({ allAudioMuted: isAllAudioMuted })
+  updateMuteButtonState()
+}
+
+// Mute all Genie-controlled audio (YouTube, audio player, Africa audio, etc.)
+function muteGenieAudio() {
+  // Mute YouTube iframe by posting message
+  if (youtubeIframe) {
+    youtubeIframe.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*')
+  }
+  // Mute HTML audio player
+  if (audioPlayer) {
+    audioPlayer.muted = true
+  }
+  // Mute Africa audio iframe
+  if (typeof africaAudioIframe !== 'undefined' && africaAudioIframe) {
+    africaAudioIframe.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*')
+  }
+  // Mute Hannah billboard iframe
+  if (typeof hannahBillboardContainer !== 'undefined' && hannahBillboardContainer) {
+    const iframe = hannahBillboardContainer.querySelector('iframe')
+    if (iframe) {
+      iframe.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*')
+    }
+  }
+  // Mute ShowRunner audio (Hannah Main Show)
+  if (typeof hannahShowRunner !== 'undefined' && hannahShowRunner && hannahShowRunner._audio) {
+    hannahShowRunner._audio.muted = true
+  }
+}
+
+// Unmute all Genie-controlled audio
+function unmuteGenieAudio() {
+  // Unmute YouTube iframe
+  if (youtubeIframe) {
+    youtubeIframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*')
+  }
+  // Unmute HTML audio player
+  if (audioPlayer) {
+    audioPlayer.muted = false
+  }
+  // Unmute Africa audio iframe
+  if (typeof africaAudioIframe !== 'undefined' && africaAudioIframe) {
+    africaAudioIframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*')
+  }
+  // Unmute Hannah billboard iframe
+  if (typeof hannahBillboardContainer !== 'undefined' && hannahBillboardContainer) {
+    const iframe = hannahBillboardContainer.querySelector('iframe')
+    if (iframe) {
+      iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*')
+    }
+  }
+  // Unmute ShowRunner audio (Hannah Main Show)
+  if (typeof hannahShowRunner !== 'undefined' && hannahShowRunner && hannahShowRunner._audio) {
+    hannahShowRunner._audio.muted = false
+  }
+}
+
+// Update the mute button icon and style in the header
+// Genie icon pulsing glow during events
+let genieIconPulseStyleInjected = false
+function injectGenieIconPulseStyle() {
+  if (genieIconPulseStyleInjected) return
+  genieIconPulseStyleInjected = true
+  const style = document.createElement('style')
+  style.id = 'vmkpal-genie-pulse-style'
+  style.textContent = `
+    @keyframes vmkpal-genie-pulse {
+      0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 150, 255, 0.6)) drop-shadow(0 0 20px rgba(200, 100, 255, 0.3)); }
+      50% { filter: drop-shadow(0 0 16px rgba(255, 150, 255, 0.9)) drop-shadow(0 0 35px rgba(200, 100, 255, 0.6)); }
+    }
+    .vmkpal-genie-pulse img {
+      animation: vmkpal-genie-pulse 2s ease-in-out infinite;
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function startGenieIconPulse() {
+  injectGenieIconPulseStyle()
+  const menuBtn = document.querySelector('#vmkpal-toolbar button[title="MyVMK Genie Menu"]')
+  if (menuBtn) menuBtn.classList.add('vmkpal-genie-pulse')
+}
+
+function stopGenieIconPulse() {
+  const menuBtn = document.querySelector('#vmkpal-toolbar button[title="MyVMK Genie Menu"]')
+  if (menuBtn) menuBtn.classList.remove('vmkpal-genie-pulse')
+}
+
+function updateMuteButtonState() {
+  const muteBtn = document.getElementById('vmkpal-mute-btn')
+  if (muteBtn) {
+    muteBtn.textContent = isAllAudioMuted ? '🔇' : '🔊'
+    muteBtn.title = isAllAudioMuted ? 'Unmute All Audio' : 'Mute All Audio'
+    muteBtn.style.background = isAllAudioMuted ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.1)'
+  }
+}
+
 function playAudio(url, startMinimized = false, seekToSeconds = 0) {
   stopAudio(false) // Don't unmute yet, we're about to play new audio
 
@@ -14978,23 +15922,28 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
     const container = ensurePersistentPlayerContainer()
     isPlayerMinimized = startMinimized
 
-    // Build the embed URL
+    // Build the embed URL (enablejsapi=1 required for mute/unmute commands)
     let embedUrl = 'https://www.youtube.com/embed/'
     if (playlistId && !videoId) {
       // Playlist only (no specific video) - use videoseries
-      embedUrl += `videoseries?list=${playlistId}&autoplay=1`
+      embedUrl += `videoseries?list=${playlistId}&autoplay=1&enablejsapi=1`
     } else if (videoId && playlistId) {
       // Video within a playlist
-      embedUrl += `${videoId}?autoplay=1&list=${playlistId}`
+      embedUrl += `${videoId}?autoplay=1&list=${playlistId}&enablejsapi=1`
     } else {
       // Single video - loop it
-      embedUrl += `${videoId}?autoplay=1&loop=1&playlist=${videoId}`
+      embedUrl += `${videoId}?autoplay=1&loop=1&playlist=${videoId}&enablejsapi=1`
     }
 
     // Add start time - either from URL or from seek offset (for late joiners)
     const effectiveStartTime = seekToSeconds > 0 ? Math.floor(seekToSeconds) : startTime
     if (effectiveStartTime) {
       embedUrl += `&start=${effectiveStartTime}`
+    }
+
+    // Start muted if global mute is enabled
+    if (isAllAudioMuted) {
+      embedUrl += '&mute=1'
     }
 
     const isPlaylist = !!playlistId
@@ -15065,6 +16014,13 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
     }
 
     showNotification(isPlaylist ? '🔇 Game muted • Playing playlist' : '🔇 Game muted • Playing YouTube', 'success')
+
+    // If global mute is enabled, mute the new player after a short delay (iframe needs to load)
+    if (isAllAudioMuted && youtubeIframe) {
+      setTimeout(() => {
+        youtubeIframe.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*')
+      }, 1000)
+    }
   } else if (watchPartyUrl) {
     // WatchParty.me - open in popup window (doesn't support iframe embedding)
     const popupWidth = 900
@@ -15092,8 +16048,10 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
       if (watchPartyWindow && watchPartyWindow.closed) {
         // Popup was closed externally - restore game audio and update UI
         watchPartyWindow = null
-        unmuteGameAudio()
-        showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+        if (!isAllAudioMuted) {
+          unmuteGameAudio()
+          showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+        }
         // Update control panel to show "closed" state
         const container = document.getElementById('vmkpal-persistent-player')
         if (container) {
@@ -15153,6 +16111,11 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
 
     // Store reference
     audioPlayer = audioEl
+
+    // Respect global mute state
+    if (isAllAudioMuted) {
+      audioPlayer.muted = true
+    }
 
     // Format time helper
     const formatTime = (seconds) => {
@@ -15222,9 +16185,13 @@ function playAudio(url, startMinimized = false, seekToSeconds = 0) {
     audioPlayer = new Audio(url)
     audioPlayer.loop = true
     audioPlayer.volume = 0.5
+    // Respect global mute state
+    if (isAllAudioMuted) {
+      audioPlayer.muted = true
+    }
     audioPlayer.play().catch(err => {
       showNotification('Audio failed to play', 'error')
-      unmuteGameAudio() // Restore game audio if our audio fails
+      if (!isAllAudioMuted) unmuteGameAudio() // Restore game audio if our audio fails
     })
     showNotification('🔇 Game muted • Playing audio', 'success')
   }
@@ -15327,8 +16294,10 @@ function updateWatchPartyControlPanel(container, isOpen) {
         watchPartyWatcher = setInterval(() => {
           if (watchPartyWindow && watchPartyWindow.closed) {
             watchPartyWindow = null
-            unmuteGameAudio()
-            showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+            if (!isAllAudioMuted) {
+              unmuteGameAudio()
+              showNotification('🔊 WatchParty closed • Game audio restored', 'info')
+            }
             const container = document.getElementById('vmkpal-persistent-player')
             if (container) {
               updateWatchPartyControlPanel(container, false)
@@ -15377,8 +16346,8 @@ function stopAudio(restoreGameAudio = true) {
     }
   }
 
-  // Restore game audio
-  if (restoreGameAudio) {
+  // Restore game audio (unless user has mute toggle enabled)
+  if (restoreGameAudio && !isAllAudioMuted) {
     unmuteGameAudio()
     showNotification('🔊 Game audio restored', 'info')
   }
@@ -16066,13 +17035,7 @@ function updateRoomInfoDisplay() {
   }
 
   // Check for room-specific effects (like Haunted Mansion ghosts, Tinkerbell)
-  checkGhostEffectRoom()
-  checkTinkerbellRoom()
-  checkButterflyRoom()
-  checkMatterhornRoom()
-  checkAfricaRoomAudio()
-  checkSciFiLanterns()
-  checkGenieEvents()
+  checkAllRoomEffects()
 }
 
 // Render the ticker as one continuous scroll: Welcome + all upcoming events
@@ -16271,7 +17234,7 @@ async function init() {
   fillBorderBackground()
 
   // Restore overlay states and audio mappings (non-blocking)
-  chrome.storage.local.get(['rainEnabled', 'starsOverlayEnabled', 'nightOverlayEnabled', 'moneyRainEnabled', 'fireworksEnabled', 'snowEnabled', 'emojiRainEnabled', 'selectedEmoji', 'positionLocked', 'audioRoomMappings'], (result) => {
+  chrome.storage.local.get(['rainEnabled', 'starsOverlayEnabled', 'nightOverlayEnabled', 'moneyRainEnabled', 'fireworksEnabled', 'snowEnabled', 'emojiRainEnabled', 'selectedEmoji', 'positionLocked', 'audioRoomMappings', 'allAudioMuted'], (result) => {
     if (result.audioRoomMappings) {
       audioRoomMappings = result.audioRoomMappings
     }
@@ -16311,6 +17274,10 @@ async function init() {
         isEmojiRainEnabled = false
         toggleEmojiRain()
       }
+      if (result.allAudioMuted) {
+        isAllAudioMuted = false
+        toggleMuteAllAudio()
+      }
     }, 100)
   })
 
@@ -16323,52 +17290,37 @@ async function init() {
       const matchedRoom = findRoomByAudio(detectedAudioUrl)
       if (matchedRoom !== null) {
         hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
         currentRoomId = matchedRoom.id
         currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
         currentLand = matchedRoom.land
         updateRoomInfoDisplay()
-        checkGhostEffectRoom()
-        checkTinkerbellRoom()
-        checkButterflyRoom()
-        checkMatterhornRoom()
-        checkAfricaRoomAudio()
-        checkSciFiLanterns()
-        checkGenieEvents()
+        checkAllRoomEffects()
       }
     }
 
     // Detect HM LOBBY audio playing (HML-*) - resets game state
     if (event.data && event.data.type === 'vmkgenie-hm-lobby-audio') {
       hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
       isInHMGame = false
       currentRoomId = HAUNTED_MANSION_LOBBY_ID
       currentRoom = ROOM_MAP[HAUNTED_MANSION_LOBBY_ID] || 'Haunted Mansion Lobby'
       currentLand = 'New Orleans Square'
       updateRoomInfoDisplay()
-      checkGhostEffectRoom()
-      checkTinkerbellRoom()
-      checkButterflyRoom()
-      checkMatterhornRoom()
-      checkAfricaRoomAudio()
-      checkSciFiLanterns()
-      checkGenieEvents()
+      checkAllRoomEffects()
     }
 
     // Detect HM GAME entered via stage data fetch
     if (event.data && event.data.type === 'vmkgenie-hm-game-entered') {
       hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
       isInHMGame = true
       currentRoomId = HAUNTED_MANSION_GAME_ID
       currentRoom = ROOM_MAP[HAUNTED_MANSION_GAME_ID] || 'Haunted Mansion Game'
       currentLand = 'New Orleans Square'
       updateRoomInfoDisplay()
-      checkGhostEffectRoom()
-      checkTinkerbellRoom()
-      checkButterflyRoom()
-      checkMatterhornRoom()
-      checkAfricaRoomAudio()
-      checkSciFiLanterns()
-      checkGenieEvents()
+      checkAllRoomEffects()
     }
 
     // Detect NPC sound files (backup detection via fetch/XHR interception)
@@ -16384,6 +17336,7 @@ async function init() {
           const roomInfo = NPC_ROOM_MAP[npcFolder]
           if (roomInfo.id !== currentRoomId) {
             hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
             setRoomFromNetwork(roomInfo.id, roomInfo.name)
           }
         }
@@ -16398,18 +17351,13 @@ async function init() {
       const matchedRoom = findRoomByAudio(url)
       if (matchedRoom !== null && matchedRoom.id !== currentRoomId) {
         hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
         currentRoomId = matchedRoom.id
         currentRoom = ROOM_MAP[matchedRoom.id] || `Room ${matchedRoom.id}`
         currentLand = matchedRoom.land
         console.log('MyVMK Genie: Auto-detected room (interceptor):', currentRoom, currentLand ? `(${currentLand})` : '')
         updateRoomInfoDisplay()
-        checkGhostEffectRoom()
-        checkTinkerbellRoom()
-        checkButterflyRoom()
-        checkMatterhornRoom()
-        checkAfricaRoomAudio()
-        checkSciFiLanterns()
-        checkGenieEvents()
+        checkAllRoomEffects()
       }
     }
 
@@ -16425,20 +17373,19 @@ async function init() {
         const sndKey = `vmk_snd_${roomKey}`
         if (typeof AUDIO_ROOM_MAP !== 'undefined' && AUDIO_ROOM_MAP[sndKey]) {
           const roomInfo = AUDIO_ROOM_MAP[sndKey]
+          const wasFirstDetection = !hasDetectedRoomThisSession
+          hasDetectedRoomThisSession = true
+            if (!firstRoomDetectedAt) firstRoomDetectedAt = Date.now()
           if (roomInfo.id !== currentRoomId) {
-            hasDetectedRoomThisSession = true
             currentRoomId = roomInfo.id
             currentRoom = ROOM_MAP[roomInfo.id] || `Room ${roomInfo.id}`
             currentLand = roomInfo.land
             console.log('MyVMK Genie: Auto-detected room from JSON (interceptor):', currentRoom, currentLand ? `(${currentLand})` : '')
             updateRoomInfoDisplay()
-            checkGhostEffectRoom()
-            checkTinkerbellRoom()
-            checkButterflyRoom()
-            checkMatterhornRoom()
-            checkAfricaRoomAudio()
-            checkSciFiLanterns()
-            checkGenieEvents()
+            checkAllRoomEffects()
+          } else if (wasFirstDetection) {
+            // Same room as saved, but first detection this session - trigger effects
+            checkAllRoomEffects()
           }
         }
       }
@@ -16512,9 +17459,24 @@ async function init() {
   }
 }
 
-// Wait for page to load
+// Wait for page to load, but first check if DEV_MODE was toggled off in storage
+function startInit() {
+  if (DEV_MODE) {
+    // In dev builds, check if user has toggled dev mode off
+    chrome.storage.local.get('devModeDisabled', (result) => {
+      if (result.devModeDisabled) {
+        DEV_MODE = false
+        console.log('MyVMK Genie: DEV_MODE disabled by user preference')
+      }
+      init()
+    })
+  } else {
+    init()
+  }
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init)
+  document.addEventListener('DOMContentLoaded', startInit)
 } else {
-  init()
+  startInit()
 }

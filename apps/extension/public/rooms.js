@@ -121,6 +121,8 @@ const ROOM_MAP = {
   320: "Anandapur",
   321: "Gibbons",
   322: "Festival of the Lion King",
+  323: "Safari SITS",
+  324: "Club Neon Guest Room",
   1000: "Pirates of the Caribbean Game Level 1",
   1001: "Pirates of the Caribbean Game Lobby",
   1002: "Pirates of the Caribbean Game Level 2",

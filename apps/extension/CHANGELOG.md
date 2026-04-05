@@ -1,5 +1,52 @@
 # MyVMK Genie Changelog
 
+## 2.1.16
+
+### Features
+- **Club Neon Guest Room**: Added room mapping for `vmk_big_room` → Club Neon Guest Room (ID 324), now detectable via Kingdom Sync and available in event scheduler
+
+## 2.1.15
+
+### Bug Fixes
+- **Africa Room Loading**: Fixed an issue where entering Africa as your first room after launching the game could cause the room to never finish loading. The Africa background music now waits for the game to fully load before starting.
+
+### Performance
+- **Room Change Optimization**: Room effect checks are now debounced to avoid redundant processing when multiple detection paths fire simultaneously
+- **Show Performance**: Reduced choreography timer frequency for Happily Ever After and Hannah Montana shows (less CPU usage during shows)
+- **Background Intervals**: Ambient effect safety-net check reduced from every 5s to 15s; audio display updates now skip when panel is closed
+
+## 2.1.14
+
+### Features
+- **Hannah Montana Main Show**: Updated choreography with smoother transitions
+  - Star assets now hover and glow with pulsing pink/purple effect
+  - Genie icon pulses during Hannah events
+  - Smoother helicopter re-entry animation with new plane asset
+  - Speaker and projector float freely above the stage
+  - Butterflies wander slowly around the screen
+  - Updated finale sequence with staggered prop fly-offs
+  - Reduced fireworks intensity for cleaner visuals
+
+### Bug Fixes
+- **Mute Button**: Now properly mutes game audio and Hannah Main Show audio
+- **Room Detection**: Africa audio and Kingdom Sync effects now activate on first visit when room matches saved state
+- **Sci-Fi Lanterns**: Fixed broken lantern images after file reorganization
+- **Spotlights**: Now properly track game canvas position
+- **Film Strips**: Now properly track game canvas position and resize
+
+## 2.1.13
+
+### Features
+- **Mute All Audio Button**: One-click mute/unmute for all audio (game + Genie audio)
+  - New speaker icon button in panel header
+  - Mutes game audio, YouTube player, Africa audio, and event audio
+  - State persists across sessions
+
+### Improvements
+- **Smarter Night Mode**: Night overlay now disables automatically during minigames
+  - Detects game lobbies (Pirates, Castle Fireworks, Jungle Cruise, Haunted Mansion)
+  - Night mode stays off until you return to a regular room
+
 ## 2.1.12
 
 ### Features

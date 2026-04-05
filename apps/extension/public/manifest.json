@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyVMK Genie",
-  "version": "2.1.12",
+  "version": "2.1.16",
   "description": "Companion extension for MyVMK - quick phrases, screenshots, and more!",
   "permissions": [
     "storage",
@@ -69,7 +69,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["raingif.gif", "myvmk-genie.png", "myvmk-genie-lamp-logo-pink.png", "myvmk-genie-lamp-logo-jafar.png", "genie-background.png", "genie-background-smoky-pink.png", "gene-background-jafar2.png", "genie-host-events.png", "genie-genie-events.png", "genie-community-events.png", "genie-double-credits.png", "bee-static.png", "bee.gif", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png", "Tinkerbelle_Only.gif", "Butterfly1.gif", "Butterfly2.gif", "Butterfly3.gif", "genie-kingdomsync-logo.png", "genie-kingdomsync-logo-on.png", "castle-gardens.png", "genie-cal-basic.png", "genie-cal-pink.png", "genie-cal-jafar.png", "hannah-lantern5.PNG", "hannah-lantern6.PNG", "hannah/*", "hannah/Hannah-Montana-Main/*"],
+      "resources": ["raingif.gif", "myvmk-genie.png", "myvmk-genie-lamp-logo-pink.png", "myvmk-genie-lamp-logo-jafar.png", "genie-background.png", "genie-background-smoky-pink.png", "gene-background-jafar2.png", "genie-host-events.png", "genie-genie-events.png", "genie-community-events.png", "genie-double-credits.png", "bee-static.png", "bee.gif", "audio-interceptor-page.js", "genie-questcover-unclicked.png", "genie-questcover-clicked2.png", "beadie-genie-1.png", "beadie-genie-2.png", "Tinkerbelle_Only.gif", "Butterfly1.gif", "Butterfly2.gif", "Butterfly3.gif", "genie-kingdomsync-logo.png", "genie-kingdomsync-logo-on.png", "castle-gardens.png", "genie-cal-basic.png", "genie-cal-pink.png", "genie-cal-jafar.png", "hannah/*", "hannah/Hannah-Montana-Main/*"],
       "matches": ["https://www.myvmk.com/*", "https://myvmk.com/*"]
     }
   ]

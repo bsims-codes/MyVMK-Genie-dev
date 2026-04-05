@@ -178,19 +178,37 @@
     select { cursor: pointer; }
     select option { background: #1a1a2e; padding: 10px; }
 
-    /* Fix date/time input icons */
-    input[type="date"], input[type="time"] {
+    /* Fix date input icons */
+    input[type="date"] {
       color-scheme: dark;
     }
-    input[type="date"]::-webkit-calendar-picker-indicator,
-    input[type="time"]::-webkit-calendar-picker-indicator {
-      filter: invert(1);
+    input[type="date"]::-webkit-calendar-picker-indicator {
       cursor: pointer;
       opacity: 0.7;
     }
-    input[type="date"]::-webkit-calendar-picker-indicator:hover,
-    input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    input[type="date"]::-webkit-calendar-picker-indicator:hover {
       opacity: 1;
+    }
+
+    /* Custom time picker */
+    .time-picker {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .time-picker select {
+      flex: 1;
+      padding: 10px 8px;
+      text-align: center;
+      appearance: none;
+      -webkit-appearance: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .time-sep {
+      color: rgba(255,255,255,0.6);
+      font-size: 18px;
+      font-weight: bold;
     }
 
     /* Effects checkbox grid */
@@ -616,7 +634,15 @@
             </div>
             <div class="form-group">
               <label>Time (ET) *</label>
-              <input type="time" id="genie-time" required>
+              <div class="time-picker" id="genie-time-picker">
+                <select id="genie-hour"></select>
+                <span class="time-sep">:</span>
+                <select id="genie-minute"></select>
+                <select id="genie-ampm">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
 
             <div class="form-group">
@@ -779,7 +805,15 @@
             </div>
             <div class="form-group">
               <label>Time (ET) *</label>
-              <input type="time" id="community-time" required>
+              <div class="time-picker" id="community-time-picker">
+                <select id="community-hour"></select>
+                <span class="time-sep">:</span>
+                <select id="community-minute"></select>
+                <select id="community-ampm">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
 
             <div class="form-group">
@@ -1022,7 +1056,8 @@
       70: "Africa", 71: "Expedition Everest", 72: "Sci-Fi Dine-In",
       95: "New Orleans Square", 97: "Blue Bayou", 99: "Fantasyland Courtyard",
       140: "Penny Arcade", 279: "Fireworks Show!", 291: "Epcot Entrance",
-      300: "Pixar Pier Entrance", 1104: "Haunted Mansion Lobby", 1105: "Haunted Mansion Game"
+      300: "Pixar Pier Entrance", 324: "Club Neon Guest Room",
+      1104: "Haunted Mansion Lobby", 1105: "Haunted Mansion Game"
     };
 
     // Effect icons
@@ -1040,8 +1075,54 @@
     let tickerIcon = '';
     let hasUnsavedChanges = false;
 
+    // Time picker helpers
+    function initTimePickers() {
+      ['genie', 'community'].forEach(prefix => {
+        const hourSel = document.getElementById(`${prefix}-hour`);
+        const minSel = document.getElementById(`${prefix}-minute`);
+        for (let h = 1; h <= 12; h++) {
+          const opt = document.createElement('option');
+          opt.value = h;
+          opt.textContent = String(h).padStart(2, '0');
+          hourSel.appendChild(opt);
+        }
+        for (let m = 0; m < 60; m += 5) {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = String(m).padStart(2, '0');
+          minSel.appendChild(opt);
+        }
+        // Default to 7:00 PM
+        hourSel.value = 7;
+        minSel.value = 0;
+        document.getElementById(`${prefix}-ampm`).value = 'PM';
+      });
+    }
+
+    function getTimeValue(prefix) {
+      let h = parseInt(document.getElementById(`${prefix}-hour`).value);
+      const m = parseInt(document.getElementById(`${prefix}-minute`).value);
+      const ampm = document.getElementById(`${prefix}-ampm`).value;
+      if (ampm === 'AM' && h === 12) h = 0;
+      else if (ampm === 'PM' && h !== 12) h += 12;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    function setTimeValue(prefix, timeStr) {
+      let [h, m] = timeStr.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      if (h === 0) h = 12;
+      else if (h > 12) h -= 12;
+      document.getElementById(`${prefix}-hour`).value = h;
+      // Snap to nearest 5-min option
+      const snapped = Math.round(m / 5) * 5;
+      document.getElementById(`${prefix}-minute`).value = snapped >= 60 ? 55 : snapped;
+      document.getElementById(`${prefix}-ampm`).value = ampm;
+    }
+
     // Initialize
     function init() {
+      initTimePickers();
       initRoomSelects();
       if (binId && apiKey) {
         document.getElementById('bin-id').value = binId;
@@ -1401,7 +1482,7 @@
       document.getElementById('genie-title').value = event.title || '';
       document.getElementById('genie-desc').value = event.description || '';
       document.getElementById('genie-date').value = formatEtDate(event.startTime);
-      document.getElementById('genie-time').value = formatEtTime(event.startTime);
+      setTimeValue('genie', formatEtTime(event.startTime));
       document.getElementById('genie-duration').value = event.durationMinutes || 5;
       // Include hannah-main in effects if this is a Hannah Main Show event
       let effectsToSet = event.effects || event.effect || [];
@@ -1439,7 +1520,7 @@
     document.getElementById('genie-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('genie-date').value;
-      const time = document.getElementById('genie-time').value;
+      const time = getTimeValue('genie');
       const roomId = document.getElementById('genie-room').value;
       const editIndex = parseInt(document.getElementById('genie-edit-index').value);
       const isEditing = editIndex >= 0;
@@ -1494,7 +1575,7 @@
       document.getElementById('community-desc').value = event.description || '';
       document.getElementById('community-submitter').value = event.submittedBy || '';
       document.getElementById('community-date').value = formatEtDate(event.startTime);
-      document.getElementById('community-time').value = formatEtTime(event.startTime);
+      setTimeValue('community', formatEtTime(event.startTime));
       document.getElementById('community-duration').value = event.durationMinutes || 30;
       document.getElementById('community-room').value = event.roomId || '';
       document.getElementById('community-audio').value = event.audioUrl || '';
@@ -1518,7 +1599,7 @@
     document.getElementById('community-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const date = document.getElementById('community-date').value;
-      const time = document.getElementById('community-time').value;
+      const time = getTimeValue('community');
       const roomId = document.getElementById('community-room').value;
       const editIndex = parseInt(document.getElementById('community-edit-index').value);
       const isEditing = editIndex >= 0;
