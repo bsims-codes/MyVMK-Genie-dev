@@ -2381,6 +2381,7 @@ function createToolbar() {
   featureGrid.appendChild(createFeatureButton('📖', 'Commands', createCommandsPanel))
   featureGrid.appendChild(createActionButton('🏆', 'Prizes', createPrizeTrackerPanel))
   if (DEV_MODE) {
+    featureGrid.appendChild(createActionButton('🏠', 'My Rooms', openMyRoomsPanel))
     featureGrid.appendChild(createFeatureButton('🎫', 'Queue', createQueueAlertsPanel))
     featureGrid.appendChild(createFeatureButton('🎧', 'Room Audio', createAudioLearningPanel))
   }
@@ -10381,7 +10382,9 @@ function stopFogEffect() {
   console.log('MyVMK Genie: Stopped fog effect')
 }
 
-// Castle Gardens Overlay - castle image in front of fireworks
+// Castle Gardens Overlay - green-screen video keyed in front of fireworks
+let castleVideoEl = null
+let castleVideoRAF = null
 function startCastleOverlay() {
   if (isCastleOverlayActive) return
   isCastleOverlayActive = true
@@ -10398,24 +10401,83 @@ function startCastleOverlay() {
     height: ${bounds.height}px;
     pointer-events: none;
     z-index: 2147483646;
-    background-image: url('${chrome.runtime.getURL('castle-gardens.png')}');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
     opacity: 0;
     transition: opacity 1s ease-in;
+    overflow: hidden;
   `
+
+  // Hidden source video (decoded by browser, drawn into canvas each frame)
+  castleVideoEl = document.createElement('video')
+  castleVideoEl.src = chrome.runtime.getURL('castle-green-screen.mov')
+  castleVideoEl.loop = true
+  castleVideoEl.muted = true
+  castleVideoEl.autoplay = true
+  castleVideoEl.playsInline = true
+  castleVideoEl.crossOrigin = 'anonymous'
+  castleVideoEl.style.cssText = 'position: absolute; left: -9999px; top: -9999px; width: 1px; height: 1px;'
+  document.body.appendChild(castleVideoEl)
+
+  // Visible canvas where chroma-keyed frames are drawn
+  const canvas = document.createElement('canvas')
+  canvas.style.cssText = 'width: 100%; height: 100%; display: block;'
+  castleOverlay.appendChild(canvas)
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
+  const drawFrame = () => {
+    if (!isCastleOverlayActive || !castleVideoEl) return
+    if (castleVideoEl.readyState >= 2 && castleVideoEl.videoWidth) {
+      if (canvas.width !== castleVideoEl.videoWidth) {
+        canvas.width = castleVideoEl.videoWidth
+        canvas.height = castleVideoEl.videoHeight
+      }
+      ctx.drawImage(castleVideoEl, 0, 0, canvas.width, canvas.height)
+      const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const d = frame.data
+      // Simple green-screen chroma key: drop pixels where green dominates
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2]
+        if (g > 90 && g > r * 1.3 && g > b * 1.3) {
+          d[i + 3] = 0
+        }
+      }
+      ctx.putImageData(frame, 0, 0)
+    }
+    castleVideoRAF = requestAnimationFrame(drawFrame)
+  }
+
+  const startPlayback = () => {
+    castleVideoEl.play().catch(err => {
+      console.warn('MyVMK Genie: Castle video play failed', err)
+    })
+    drawFrame()
+  }
+  if (castleVideoEl.readyState >= 2) {
+    startPlayback()
+  } else {
+    castleVideoEl.addEventListener('loadeddata', startPlayback, { once: true })
+  }
+
   document.body.appendChild(castleOverlay)
 
   requestAnimationFrame(() => {
     if (castleOverlay) castleOverlay.style.opacity = '1'
   })
-  console.log('MyVMK Genie: Started Castle Gardens overlay')
+  console.log('MyVMK Genie: Started Castle Gardens overlay (video chroma key)')
 }
 
 function stopCastleOverlay() {
   if (!isCastleOverlayActive || !castleOverlay) return
   isCastleOverlayActive = false
+
+  if (castleVideoRAF) {
+    cancelAnimationFrame(castleVideoRAF)
+    castleVideoRAF = null
+  }
+  if (castleVideoEl) {
+    try { castleVideoEl.pause() } catch (e) {}
+    if (castleVideoEl.parentNode) castleVideoEl.remove()
+    castleVideoEl = null
+  }
 
   castleOverlay.style.opacity = '0'
   const overlayToRemove = castleOverlay
@@ -10887,12 +10949,16 @@ function startAfricaRoomAudioNow() {
   isAfricaRoomAudioActive = true
   console.log('MyVMK Genie: Starting Africa room audio')
 
-  // Mute game audio
+  // Mute game audio (even when mute toggle is on, this ensures game stays muted)
   muteGameAudio()
 
   // Create hidden iframe for YouTube audio
   const videoId = getYouTubeVideoId(AFRICA_ROOM_AUDIO_URL)
   if (!videoId) return
+
+  // Remove any stale Africa iframe that might exist
+  const existingIframe = document.getElementById('vmkpal-africa-audio')
+  if (existingIframe) existingIframe.remove()
 
   africaAudioIframe = document.createElement('iframe')
   africaAudioIframe.id = 'vmkpal-africa-audio'
@@ -10902,6 +10968,21 @@ function startAfricaRoomAudioNow() {
   africaAudioIframe.allow = 'autoplay; encrypted-media'
   africaAudioIframe.style.cssText = 'position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px;'
   document.body.appendChild(africaAudioIframe)
+
+  // Verify the iframe loaded - if it fails, retry once after a short delay
+  africaAudioIframe.onerror = () => {
+    console.log('MyVMK Genie: Africa audio iframe failed to load, retrying...')
+    if (isAfricaRoomAudioActive && KINGDOM_SYNC_ROOMS.AFRICA.has(currentRoomId)) {
+      africaAudioIframe.remove()
+      africaAudioIframe = null
+      isAfricaRoomAudioActive = false
+      setTimeout(() => {
+        if (KINGDOM_SYNC_ROOMS.AFRICA.has(currentRoomId) && isKingdomSyncEnabled && !isAfricaRoomAudioActive) {
+          startAfricaRoomAudioNow()
+        }
+      }, 2000)
+    }
+  }
 }
 
 function stopAfricaRoomAudio() {
@@ -12029,7 +12110,9 @@ function spawnCollectible(collectible) {
 
   // Create the image
   const img = document.createElement('img')
-  img.src = collectible.imageUrl
+  img.src = collectible.imageAsset
+    ? chrome.runtime.getURL(collectible.imageAsset)
+    : collectible.imageUrl
   img.style.cssText = `
     width: 100%;
     height: 100%;
@@ -13584,6 +13667,30 @@ function createSettingsPanel() {
 
 // Changelog data
 const CHANGELOG = [
+  {
+    version: '2.1.23',
+    date: '2026-05-05',
+    changes: [
+      'Added WS - Mexico room mapping'
+    ]
+  },
+  {
+    version: '2.1.22',
+    date: '2026-05-04',
+    changes: [
+      'Bug fix'
+    ]
+  },
+  {
+    version: '2.1.21',
+    date: '2026-05-02',
+    changes: [
+      'New "Play Now" button on the MyVMK home page',
+      'Africa room audio now plays correctly with the mute button',
+      'Cleaned up where the Prize Tracker sync indicator shows',
+      'Dark theme unlock fix and small bug fixes'
+    ]
+  },
   {
     version: '2.1.16',
     date: '2026-04-04',
@@ -15798,9 +15905,9 @@ function toggleMuteAllAudio() {
   } else {
     // Unmute Genie audio first
     unmuteGenieAudio()
-    // Unmute game audio (unless Genie player is active, it will mute game audio)
+    // Unmute game audio (unless Genie player or Africa room audio is active)
     const hasActivePlayer = document.getElementById('vmkpal-persistent-player')?.innerHTML ||
-                           audioPlayer
+                           audioPlayer || isAfricaRoomAudioActive
     if (!hasActivePlayer) {
       unmuteGameAudio()
     }
@@ -15851,6 +15958,11 @@ function unmuteGenieAudio() {
   // Unmute Africa audio iframe
   if (typeof africaAudioIframe !== 'undefined' && africaAudioIframe) {
     africaAudioIframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*')
+  } else if (isAfricaRoomAudioActive && !africaAudioIframe) {
+    // Africa should be playing but iframe is missing - recreate it
+    console.log('MyVMK Genie: Africa audio iframe missing during unmute, recreating')
+    isAfricaRoomAudioActive = false
+    startAfricaRoomAudioNow()
   }
   // Unmute Hannah billboard iframe
   if (typeof hannahBillboardContainer !== 'undefined' && hannahBillboardContainer) {
@@ -17458,6 +17570,327 @@ async function init() {
     setTimeout(() => runDebug(), 3000)
   }
 }
+
+// ============================================
+// ROOM DETECTOR + MY ROOMS (uses room-detector-page.js)
+// Mirrors the BertoGz Trunk extension's structural detection: latches the
+// game's room-loader function, then watches the meta object for id/name/isMine.
+// We use isMine to auto-play user-uploaded audio when they enter their own room.
+// ============================================
+const VMKGENIE_ROOM_SOURCE = 'vmkgenie-room-detector'
+let _roomDetectorInjected = false
+let _detectedRoomId = null
+let _detectedRoomName = null
+let _detectedRoomIsMine = false
+let _myRoomCustomAudio = null         // HTMLAudioElement | null
+let _myRoomCustomAudioSrcId = null    // room id whose audio is currently playing
+const MY_ROOMS_AUDIO_KEY = 'myRoomsCustomAudio'   // { [roomId]: { name, dataUrl } }
+const MY_ROOMS_KNOWN_KEY = 'myRoomsKnown'         // { [roomId]: { name, lastSeen } }
+const MY_ROOM_AUDIO_VOLUME = 0.5
+const MY_ROOM_AUDIO_MAX_BYTES = 4 * 1024 * 1024   // 4 MB limit for chrome.storage.local
+
+function injectRoomDetectorScript() {
+  if (_roomDetectorInjected) return
+  _roomDetectorInjected = true
+  try {
+    const script = document.createElement('script')
+    script.src = chrome.runtime.getURL('room-detector-page.js')
+    script.onload = function () { this.remove() }
+    script.onerror = function () {
+      console.error('MyVMK Genie: failed to load room-detector-page.js')
+      _roomDetectorInjected = false
+    }
+    ;(document.head || document.documentElement).appendChild(script)
+  } catch (e) {
+    console.error('MyVMK Genie: room detector injection error', e)
+    _roomDetectorInjected = false
+  }
+}
+
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return
+  const data = event.data
+  if (!data || data.source !== VMKGENIE_ROOM_SOURCE) return
+  if (data.kind === 'roomChange') {
+    handleStructuralRoomChange(data.payload || {}, data.debug || {})
+  }
+})
+
+function handleStructuralRoomChange(payload, debug) {
+  const id = payload.id != null ? String(payload.id) : null
+  const name = typeof payload.name === 'string' ? payload.name : null
+  const isMine = payload.isMine === true
+
+  // Always log so we can compare against the audio-map detection.
+  console.log('[Genie room-detector]', { id, name, isMine, debug })
+
+  _detectedRoomId = id
+  _detectedRoomName = name
+  _detectedRoomIsMine = isMine
+
+  if (isMine && id) {
+    // Remember this owned room so the My Rooms panel can list it later.
+    chrome.storage.local.get(MY_ROOMS_KNOWN_KEY, (res) => {
+      const known = (res && res[MY_ROOMS_KNOWN_KEY]) || {}
+      known[id] = { name: name || `Room ${id}`, lastSeen: Date.now() }
+      chrome.storage.local.set({ [MY_ROOMS_KNOWN_KEY]: known })
+    })
+  }
+
+  // Update playback to match the new room state.
+  updateMyRoomCustomAudioPlayback()
+
+  // Re-render My Rooms panel if open.
+  if (_myRoomsPanelEl) refreshMyRoomsPanel()
+}
+
+function updateMyRoomCustomAudioPlayback() {
+  const id = _detectedRoomId
+  const isMine = _detectedRoomIsMine
+
+  // If we're not in a room we own, stop anything playing.
+  if (!isMine || !id) {
+    stopMyRoomCustomAudio()
+    return
+  }
+
+  // Already playing the right one? Nothing to do.
+  if (_myRoomCustomAudio && _myRoomCustomAudioSrcId === id && !_myRoomCustomAudio.paused) {
+    return
+  }
+
+  chrome.storage.local.get(MY_ROOMS_AUDIO_KEY, (res) => {
+    const map = (res && res[MY_ROOMS_AUDIO_KEY]) || {}
+    const entry = map[id]
+    if (!entry || !entry.dataUrl) {
+      stopMyRoomCustomAudio()
+      return
+    }
+    // Don't re-create if the same source for the same room is already loaded.
+    if (_myRoomCustomAudio && _myRoomCustomAudioSrcId === id) {
+      _myRoomCustomAudio.play().catch(() => {})
+      return
+    }
+    stopMyRoomCustomAudio()
+    const audio = new Audio(entry.dataUrl)
+    audio.loop = true
+    audio.volume = MY_ROOM_AUDIO_VOLUME
+    _myRoomCustomAudio = audio
+    _myRoomCustomAudioSrcId = id
+    audio.play().catch((err) => {
+      console.warn('MyVMK Genie: custom room audio play failed', err)
+    })
+  })
+}
+
+function stopMyRoomCustomAudio() {
+  if (_myRoomCustomAudio) {
+    try { _myRoomCustomAudio.pause() } catch (e) {}
+    try { _myRoomCustomAudio.src = '' } catch (e) {}
+  }
+  _myRoomCustomAudio = null
+  _myRoomCustomAudioSrcId = null
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('read failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
+let _myRoomsPanelEl = null
+function openMyRoomsPanel() {
+  if (_myRoomsPanelEl) return
+  injectRoomDetectorScript()
+
+  const backdrop = document.createElement('div')
+  backdrop.style.cssText = `
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 2147483647;
+    display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, sans-serif;
+  `
+
+  const panel = document.createElement('div')
+  panel.style.cssText = `
+    width: 480px; max-width: 92vw; max-height: 80vh;
+    background: linear-gradient(135deg, #1e1b4b 0%, #2e1065 50%, #1e1b4b 100%);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 12px;
+    color: white;
+    display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    overflow: hidden;
+  `
+
+  panel.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+      <span style="font-size: 22px;">🏠</span>
+      <div style="flex: 1;">
+        <div style="font-size: 15px; font-weight: 600;">My Rooms</div>
+        <div style="font-size: 11px; color: rgba(255,255,255,0.55); margin-top: 2px;">Custom audio plays automatically when you're in your own room.</div>
+      </div>
+      <button id="vmkgenie-myrooms-close" title="Close" style="background: rgba(255,255,255,0.08); border: none; border-radius: 6px; width: 30px; height: 30px; color: white; cursor: pointer; font-size: 14px;">✕</button>
+    </div>
+    <div id="vmkgenie-myrooms-body" style="flex: 1; overflow-y: auto; padding: 12px 16px;"></div>
+  `
+
+  backdrop.appendChild(panel)
+  document.body.appendChild(backdrop)
+  _myRoomsPanelEl = backdrop
+
+  function close() {
+    if (!_myRoomsPanelEl) return
+    _myRoomsPanelEl.remove()
+    _myRoomsPanelEl = null
+    document.removeEventListener('keydown', onKey)
+  }
+  function onKey(e) { if (e.key === 'Escape') close() }
+  panel.querySelector('#vmkgenie-myrooms-close').onclick = close
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close() })
+  document.addEventListener('keydown', onKey)
+
+  refreshMyRoomsPanel()
+}
+
+function refreshMyRoomsPanel() {
+  const body = _myRoomsPanelEl && _myRoomsPanelEl.querySelector('#vmkgenie-myrooms-body')
+  if (!body) return
+
+  chrome.storage.local.get([MY_ROOMS_AUDIO_KEY, MY_ROOMS_KNOWN_KEY], (res) => {
+    const audioMap = (res && res[MY_ROOMS_AUDIO_KEY]) || {}
+    const known = (res && res[MY_ROOMS_KNOWN_KEY]) || {}
+
+    // Merge audio entries with known rooms so users can also see rooms that
+    // have audio set but haven't been visited again this session.
+    const allIds = new Set([...Object.keys(audioMap), ...Object.keys(known)])
+
+    let html = ''
+
+    // Status / current room card
+    const inOwnRoom = _detectedRoomIsMine && _detectedRoomId
+    const currentTitle = inOwnRoom
+      ? `You're in your own room: <strong>${escapeHtml(_detectedRoomName || `Room ${_detectedRoomId}`)}</strong> <span style="color: rgba(255,255,255,0.4);">(#${escapeHtml(_detectedRoomId)})</span>`
+      : (_detectedRoomId
+          ? `Currently in: <strong>${escapeHtml(_detectedRoomName || `Room ${_detectedRoomId}`)}</strong> — not your room.`
+          : `Not in a room yet. Walk into one of your rooms to see options here.`)
+    const statusBg = inOwnRoom ? 'linear-gradient(135deg, rgba(16,185,129,0.18), rgba(16,185,129,0.08))' : 'rgba(255,255,255,0.04)'
+    const statusBorder = inOwnRoom ? 'rgba(16,185,129,0.45)' : 'rgba(255,255,255,0.08)'
+    html += `
+      <div id="vmkgenie-myrooms-status" style="padding: 12px 14px; border-radius: 10px; background: ${statusBg}; border: 1px solid ${statusBorder}; margin-bottom: 14px; font-size: 13px;">
+        ${currentTitle}
+        ${inOwnRoom ? `
+          <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <label style="cursor: pointer; padding: 6px 12px; border-radius: 6px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); font-size: 12px; font-weight: 500;">
+              Upload audio
+              <input type="file" id="vmkgenie-myroom-upload" accept="audio/*" style="display: none;">
+            </label>
+            ${audioMap[_detectedRoomId] ? `
+              <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Current: ${escapeHtml(audioMap[_detectedRoomId].name)}</span>
+              <button id="vmkgenie-myroom-clear" style="padding: 5px 10px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.8); border-radius: 6px; cursor: pointer; font-size: 11px;">Remove</button>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>`
+
+    // List of owned rooms with their audio status
+    if (allIds.size === 0) {
+      html += `<div style="padding: 30px 16px; text-align: center; color: rgba(255,255,255,0.45); font-size: 12px;">No owned rooms detected yet.</div>`
+    } else {
+      html += `<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(196,181,253,0.7); font-weight: 600; margin-bottom: 6px;">Your rooms</div>`
+      const sorted = Array.from(allIds).sort((a, b) => {
+        const an = (known[a] && known[a].lastSeen) || 0
+        const bn = (known[b] && known[b].lastSeen) || 0
+        return bn - an
+      })
+      for (const id of sorted) {
+        const name = (known[id] && known[id].name) || `Room ${id}`
+        const audio = audioMap[id]
+        const isCurrent = _detectedRoomId === id && _detectedRoomIsMine
+        html += `
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.04); margin-bottom: 6px; ${isCurrent ? 'border: 1px solid rgba(16,185,129,0.4);' : ''}">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(name)} ${isCurrent ? '<span style="font-size: 10px; color: #34d399; font-weight: 600; margin-left: 6px;">CURRENT</span>' : ''}</div>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px;">
+                #${escapeHtml(id)}${audio ? ` • ${escapeHtml(audio.name)}` : ' • no audio set'}
+              </div>
+            </div>
+            ${audio ? `<button data-remove-id="${escapeHtml(id)}" style="padding: 5px 10px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.8); border-radius: 6px; cursor: pointer; font-size: 11px;">Remove</button>` : ''}
+          </div>`
+      }
+    }
+
+    body.innerHTML = html
+
+    // Wire upload (current room only)
+    const upload = body.querySelector('#vmkgenie-myroom-upload')
+    if (upload) {
+      upload.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0]
+        if (!file) return
+        if (file.size > MY_ROOM_AUDIO_MAX_BYTES) {
+          showNotification(`File too large (max ${Math.floor(MY_ROOM_AUDIO_MAX_BYTES / 1024 / 1024)} MB)`, 'error')
+          return
+        }
+        try {
+          const dataUrl = await readFileAsDataUrl(file)
+          chrome.storage.local.get(MY_ROOMS_AUDIO_KEY, (cur) => {
+            const map = (cur && cur[MY_ROOMS_AUDIO_KEY]) || {}
+            map[_detectedRoomId] = { name: file.name, dataUrl }
+            chrome.storage.local.set({ [MY_ROOMS_AUDIO_KEY]: map }, () => {
+              if (chrome.runtime.lastError) {
+                showNotification('Save failed: ' + chrome.runtime.lastError.message, 'error')
+                return
+              }
+              showNotification(`Saved audio for ${_detectedRoomName || 'this room'}`, 'success')
+              updateMyRoomCustomAudioPlayback()
+              refreshMyRoomsPanel()
+            })
+          })
+        } catch (err) {
+          showNotification('Could not read file', 'error')
+        }
+      })
+    }
+
+    // Wire clear (current room)
+    const clearBtn = body.querySelector('#vmkgenie-myroom-clear')
+    if (clearBtn && _detectedRoomId) {
+      clearBtn.onclick = () => removeMyRoomAudio(_detectedRoomId)
+    }
+
+    // Wire remove buttons in the list
+    body.querySelectorAll('button[data-remove-id]').forEach(btn => {
+      btn.onclick = () => removeMyRoomAudio(btn.getAttribute('data-remove-id'))
+    })
+  })
+}
+
+function removeMyRoomAudio(id) {
+  chrome.storage.local.get(MY_ROOMS_AUDIO_KEY, (cur) => {
+    const map = (cur && cur[MY_ROOMS_AUDIO_KEY]) || {}
+    if (!map[id]) return
+    delete map[id]
+    chrome.storage.local.set({ [MY_ROOMS_AUDIO_KEY]: map }, () => {
+      if (_myRoomCustomAudioSrcId === id) stopMyRoomCustomAudio()
+      refreshMyRoomsPanel()
+    })
+  })
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[<>&"']/g, c => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+
+// Inject the room detector at startup so isMine + roomChange events flow as
+// soon as the user enters the game.
+injectRoomDetectorScript()
 
 // Wait for page to load, but first check if DEV_MODE was toggled off in storage
 function startInit() {

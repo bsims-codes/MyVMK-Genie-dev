@@ -197,7 +197,8 @@
   // Add a sync status indicator on main site
   function addSyncIndicator() {
     if (isInIframe()) return // Only on main site
-    if (window.location.pathname.includes('admin.html')) return // Not on admin page
+    // Only show on the prize tracker page
+    if (!window.location.pathname.includes('myvmk-monthly-prize-tracker')) return
 
     const indicator = document.createElement('div')
     indicator.id = 'prize-tracker-sync-indicator'

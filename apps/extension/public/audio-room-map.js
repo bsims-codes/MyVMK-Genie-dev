@@ -67,6 +67,9 @@ const AUDIO_ROOM_MAP = {
   // California Adventure
   'vmk_snd_pixar_pier_entrance': { id: 300, land: 'California Adventure' },
 
+  // World Showcase (Epcot)
+  'vmk_snd_ws_mexico': { id: 301, land: 'World Showcase' },
+
   // Guest Rooms
   'vmk_snd_big_room': { id: 324, land: 'Guest Rooms' },
 }

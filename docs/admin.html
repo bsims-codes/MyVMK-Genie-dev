@@ -904,10 +904,50 @@
             </div>
 
             <div class="form-group span-2">
-              <label>Image URL *</label>
-              <input type="url" id="collectible-image" required placeholder="https://example.com/curse.png">
-              <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px;">
-                Direct link to image (PNG with transparency recommended). Use chrome.runtime.getURL for extension assets.
+              <label>Image Source *</label>
+              <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                  <input type="radio" name="collectible-image-source" value="asset" checked onchange="toggleImageSource()"> Bundled Asset
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                  <input type="radio" name="collectible-image-source" value="url" onchange="toggleImageSource()"> Custom URL
+                </label>
+              </div>
+              <div id="collectible-image-asset-group">
+                <select id="collectible-image-asset" onchange="previewCollectibleImage()">
+                  <option value="">Select an image</option>
+                  <optgroup label="Collectible Items">
+                    <option value="curse-red.png">curse-red.png (Red Crystal)</option>
+                    <option value="myvmk-genie-lamp-logo-jafar.png">Jafar Lamp Logo</option>
+                    <option value="myvmk-genie-lamp-logo-pink.png">Pink Lamp Logo</option>
+                  </optgroup>
+                  <optgroup label="Genie Icons">
+                    <option value="beadie-genie-1.png">Beadie Genie 1</option>
+                    <option value="beadie-genie-2.png">Beadie Genie 2</option>
+                    <option value="myvmk-genie.png">Genie Icon</option>
+                    <option value="genie-kingdomsync-logo.png">Kingdom Sync Logo</option>
+                  </optgroup>
+                  <optgroup label="Animated">
+                    <option value="Tinkerbelle_Only.gif">Tinkerbell</option>
+                    <option value="Butterfly1.gif">Butterfly 1</option>
+                    <option value="Butterfly2.gif">Butterfly 2</option>
+                    <option value="Butterfly3.gif">Butterfly 3</option>
+                    <option value="bee.gif">Bee (animated)</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="castle-gardens.png">Castle Gardens</option>
+                    <option value="bee-static.png">Bee (static)</option>
+                  </optgroup>
+                </select>
+                <div id="collectible-image-preview" style="margin-top: 8px; display: none;">
+                  <img id="collectible-preview-img" style="max-width: 60px; max-height: 60px; border-radius: 6px; background: rgba(255,255,255,0.05); padding: 4px;">
+                </div>
+              </div>
+              <div id="collectible-image-url-group" style="display: none;">
+                <input type="url" id="collectible-image" placeholder="https://example.com/curse.png">
+                <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px;">
+                  Direct link to image (PNG with transparency recommended)
+                </div>
               </div>
             </div>
 
@@ -1056,7 +1096,7 @@
       70: "Africa", 71: "Expedition Everest", 72: "Sci-Fi Dine-In",
       95: "New Orleans Square", 97: "Blue Bayou", 99: "Fantasyland Courtyard",
       140: "Penny Arcade", 279: "Fireworks Show!", 291: "Epcot Entrance",
-      300: "Pixar Pier Entrance", 324: "Club Neon Guest Room",
+      300: "Pixar Pier Entrance", 301: "WS - Mexico", 324: "Club Neon Guest Room",
       1104: "Haunted Mansion Lobby", 1105: "Haunted Mansion Game"
     };
 
@@ -1654,6 +1694,36 @@
 
     // === COLLECTIBLES ===
 
+    function toggleImageSource() {
+      const source = document.querySelector('input[name="collectible-image-source"]:checked').value;
+      document.getElementById('collectible-image-asset-group').style.display = source === 'asset' ? 'block' : 'none';
+      document.getElementById('collectible-image-url-group').style.display = source === 'url' ? 'block' : 'none';
+    }
+
+    function previewCollectibleImage() {
+      const select = document.getElementById('collectible-image-asset');
+      const preview = document.getElementById('collectible-image-preview');
+      const img = document.getElementById('collectible-preview-img');
+      if (select.value) {
+        // Can't use chrome.runtime.getURL from admin page, so show filename only
+        // The extension will resolve the asset path at runtime
+        img.src = `https://raw.githubusercontent.com/AirVMK/Genie/main/apps/extension/public/${select.value}`;
+        img.onerror = () => { img.alt = select.value; };
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+      }
+    }
+
+    function getCollectibleImageSource() {
+      const source = document.querySelector('input[name="collectible-image-source"]:checked').value;
+      if (source === 'asset') {
+        return { imageAsset: document.getElementById('collectible-image-asset').value, imageUrl: '' };
+      } else {
+        return { imageAsset: '', imageUrl: document.getElementById('collectible-image').value };
+      }
+    }
+
     function renderCollectibles() {
       const list = document.getElementById('collectibles-list');
       document.getElementById('collectible-count').textContent = `${collectibles.length} collectible${collectibles.length !== 1 ? 's' : ''}`;
@@ -1674,7 +1744,10 @@
                 <span>📐 ${c.size || 60}px</span>
               </div>
               <div class="event-audio" style="background: rgba(139, 92, 246, 0.1);">
-                <img src="${c.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;"> ${c.imageUrl.split('/').pop()}
+                ${c.imageAsset
+                  ? `📦 ${c.imageAsset} <span style="color: rgba(139, 92, 246, 0.6);">(bundled)</span>`
+                  : `<img src="${c.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;"> ${c.imageUrl.split('/').pop()}`
+                }
               </div>
             </div>
             <div class="event-actions">
@@ -1692,7 +1765,18 @@
       document.getElementById('collectible-name').value = c.name || '';
       document.getElementById('collectible-room').value = c.roomId || '';
       document.getElementById('collectible-theme').value = c.unlockTheme || '';
-      document.getElementById('collectible-image').value = c.imageUrl || '';
+      // Restore image source
+      if (c.imageAsset) {
+        document.querySelector('input[name="collectible-image-source"][value="asset"]').checked = true;
+        document.getElementById('collectible-image-asset').value = c.imageAsset;
+        document.getElementById('collectible-image').value = '';
+        previewCollectibleImage();
+      } else {
+        document.querySelector('input[name="collectible-image-source"][value="url"]').checked = true;
+        document.getElementById('collectible-image').value = c.imageUrl || '';
+        document.getElementById('collectible-image-asset').value = '';
+      }
+      toggleImageSource();
       document.getElementById('collectible-speed').value = c.speed || 'medium';
       document.getElementById('collectible-size').value = c.size || 60;
       document.getElementById('collectible-enabled').checked = c.enabled !== false;
@@ -1709,6 +1793,9 @@
       document.getElementById('collectible-cancel-btn').style.display = 'none';
       document.getElementById('collectible-enabled').checked = true;
       document.getElementById('collectible-speed').value = 'medium';
+      document.querySelector('input[name="collectible-image-source"][value="asset"]').checked = true;
+      toggleImageSource();
+      document.getElementById('collectible-image-preview').style.display = 'none';
     }
 
     document.getElementById('collectible-form').addEventListener('submit', (e) => {
@@ -1717,13 +1804,20 @@
       const editIndex = parseInt(document.getElementById('collectible-edit-index').value);
       const isEditing = editIndex >= 0;
 
+      const imgSource = getCollectibleImageSource();
+      if (!imgSource.imageAsset && !imgSource.imageUrl) {
+        setStatus('Please select a bundled image or enter a custom URL', 'error');
+        return;
+      }
+
       const collectible = {
         id: isEditing ? collectibles[editIndex].id : generateId('collectible'),
         name: document.getElementById('collectible-name').value,
         roomId: parseInt(roomId),
         roomName: ROOMS[roomId],
         unlockTheme: document.getElementById('collectible-theme').value,
-        imageUrl: document.getElementById('collectible-image').value,
+        imageAsset: imgSource.imageAsset || undefined,
+        imageUrl: imgSource.imageUrl || undefined,
         speed: document.getElementById('collectible-speed').value,
         size: parseInt(document.getElementById('collectible-size').value) || 60,
         enabled: document.getElementById('collectible-enabled').checked

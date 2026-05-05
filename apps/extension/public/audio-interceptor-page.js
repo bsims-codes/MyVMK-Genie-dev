@@ -15,6 +15,51 @@
   // INTERCEPT Image() constructor for image replacement
   // ==========================================
   const OriginalImage = window.Image;
+
+  // Image URL sniffer (toggled by content script via CustomEvent).
+  // Deduplicates by URL "pattern" — last numeric segment collapsed to <N> —
+  // so we see one log line per URL family (e.g. inventory icons keyed by id).
+  window.__vmkGenieImageSniffer = {
+    enabled: false,
+    seenUrls: new Set(),
+    seenPatterns: new Map() // pattern -> { count, sample }
+  };
+  function patternForUrl(u) {
+    if (typeof u !== 'string') return null;
+    return u
+      .replace(/[?#].*$/, '')
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<UUID>')
+      .replace(/\/\d+(\.\w+)$/, '/<N>$1')
+      .replace(/=\d+(&|$)/g, '=<N>$1');
+  }
+  function maybeLogUrl(value, source) {
+    const s = window.__vmkGenieImageSniffer;
+    if (!s || !s.enabled) return;
+    if (typeof value !== 'string' || !value) return;
+    // Skip blob:/data: URLs — already-resolved in-memory references; the
+    // upstream fetch is what we actually want.
+    if (value.startsWith('blob:') || value.startsWith('data:')) return;
+    if (s.seenUrls.has(value)) return;
+    s.seenUrls.add(value);
+    const pattern = patternForUrl(value) || value;
+    const ent = s.seenPatterns.get(pattern);
+    if (ent) {
+      ent.count++;
+    } else {
+      s.seenPatterns.set(pattern, { count: 1, sample: value, source: source });
+      console.log('%c[Genie image-sniffer] %s pattern:', 'color:#a78bfa', source, pattern, '\n  e.g.', value);
+    }
+  }
+  function maybeLogImageSrc(value) { maybeLogUrl(value, 'IMG'); }
+  window.addEventListener('vmkgenie-image-sniffer-on', () => {
+    window.__vmkGenieImageSniffer.enabled = true;
+    console.log('[Genie image-sniffer] ENABLED — load the in-game inventory and walk around. Run window.__vmkGenieImageSniffer.seenPatterns to dump.');
+  });
+  window.addEventListener('vmkgenie-image-sniffer-off', () => {
+    window.__vmkGenieImageSniffer.enabled = false;
+    console.log('[Genie image-sniffer] DISABLED.', window.__vmkGenieImageSniffer.seenPatterns.size, 'patterns recorded.');
+  });
+
   window.Image = function(width, height) {
     const img = new OriginalImage(width, height);
 
@@ -27,6 +72,7 @@
         return _src;
       },
       set: function(value) {
+        maybeLogImageSrc(value);
         if (window.__vmkGenieImageReplace.enabled &&
             window.__vmkGenieImageReplace.targetPattern &&
             window.__vmkGenieImageReplace.replacementUrl &&
@@ -193,6 +239,8 @@
   window.fetch = function(url, options) {
     const urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : String(url));
 
+    maybeLogUrl(urlStr, 'FETCH');
+
     // IMAGE REPLACEMENT: If enabled and URL matches target pattern, redirect to replacement
     if (window.__vmkGenieImageReplace.enabled &&
         window.__vmkGenieImageReplace.targetPattern &&
@@ -237,6 +285,8 @@
   const originalXHROpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     let urlStr = String(url);
+
+    maybeLogUrl(urlStr, 'XHR');
 
     // IMAGE REPLACEMENT: If enabled and URL matches target pattern, redirect to replacement
     if (window.__vmkGenieImageReplace.enabled &&

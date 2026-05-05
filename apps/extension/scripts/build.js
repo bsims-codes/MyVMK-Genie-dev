@@ -28,9 +28,11 @@ const jsFiles = [
   'popup.js',
   'audio-interceptor.js',
   'audio-interceptor-page.js',
+  'room-detector-page.js',
   'audio-room-map.js',
   'rooms.js',
-  'prize-tracker-bridge.js'
+  'prize-tracker-bridge.js',
+  'home-button-swap.js'
 ];
 
 // Files to copy as-is
@@ -62,11 +64,12 @@ const staticFiles = [
   'genie-kingdomsync-logo.png',
   'genie-kingdomsync-logo-on.png',
   'castle-gardens.png',
+  'castle-green-screen.mov',
   'genie-cal-basic.png',
   'genie-cal-pink.png',
   'genie-cal-jafar.png',
-  'hannah-lantern5.PNG',
-  'hannah-lantern6.PNG'
+  'curse-red.png',
+  'genie-play-now-button.png'
 ];
 
 // Transform Chrome manifest to Firefox manifest
@@ -127,10 +130,16 @@ async function processJsFiles(outputDir, browser = 'chrome') {
 
     // For release builds: disable DEV_MODE
     if (isRelease) {
+      const before = content;
       content = content.replace(
-        /const DEV_MODE = true/g,
-        'const DEV_MODE = false'
+        /(?:const|let)\s+DEV_MODE\s*=\s*true/g,
+        'let DEV_MODE = false'
       );
+      // Safety check: fail the build if DEV_MODE replacement didn't work on content.js
+      if (file === 'content.js' && content === before) {
+        console.error('❌ FATAL: DEV_MODE replacement failed in content.js! Check the declaration format.');
+        process.exit(1);
+      }
     }
 
     // Minify for release builds and strip console.log
@@ -144,7 +153,7 @@ async function processJsFiles(outputDir, browser = 'chrome') {
         content = result.code;
         console.log(`✅ ${file} (minified, logs stripped, DEV_MODE=false)`);
       } catch (e) {
-        console.log(`⚠️  ${file} (minification failed, using original)`);
+        console.log(`⚠️  ${file} (minification failed, using original): ${e.message}`);
         fs.writeFileSync(outputPath, content);
         continue;
       }

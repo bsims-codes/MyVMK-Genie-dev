@@ -1,5 +1,23 @@
 # MyVMK Genie Changelog
 
+## 2.1.23
+
+- Added WS - Mexico room mapping.
+
+## 2.1.22
+
+- Bug fix.
+
+## 2.1.21
+
+### What's new
+- **New "Play Now" button on the MyVMK home page** — same one-click access, fresher look.
+
+### Bug fixes
+- Africa room audio now works correctly with the mute button (no more silent rooms or doubled-up audio after unmuting).
+- Prize Tracker sync indicator now only shows on the Prize Tracker page.
+- Dark theme unlock fix and small bug fixes.
+
 ## 2.1.16
 
 ### Features
