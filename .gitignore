@@ -25,3 +25,10 @@ npm-debug.log*
 
 # Extension packages
 *.zip
+
+# Internal reference material — keep locally, never commit
+inventorySync.bundle.js
+.claude/tmpscan/
+
+# Stray Windows shell artifacts
+nul
