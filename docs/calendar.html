@@ -227,8 +227,10 @@
   <button class="refresh-btn" onclick="loadEvents()" title="Refresh">↻</button>
 
   <script>
-    const BIN_ID = '69b4de67aa77b81da9e28bfe';
-    const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}/latest`;
+    // Genie + Community events are served from the repo over the
+    // raw.githubusercontent.com CDN (free, unmetered reads). Same source the
+    // extension reads from; updated by the admin panel (admin.html).
+    const EVENTS_URL = 'https://raw.githubusercontent.com/bsims-codes/MyVMK-Genie-dev/main/docs/genie-events.json';
     const ICS_URL = 'https://bsims-codes.github.io/myvmk-ics/myvmk.ics';
 
     const EFFECT_ICONS = {
@@ -330,8 +332,8 @@
       const now = new Date();
 
       try {
-        // Fetch JSONBin events (Genie + Community)
-        const jsonResponse = await fetch(JSONBIN_URL);
+        // Fetch Genie + Community events from the CDN-hosted JSON
+        const jsonResponse = await fetch(EVENTS_URL);
         if (jsonResponse.ok) {
           const data = await jsonResponse.json();
           const record = data.record || data;
@@ -348,7 +350,7 @@
           });
         }
       } catch (err) {
-        console.error('Failed to fetch JSONBin events:', err);
+        console.error('Failed to fetch events:', err);
       }
 
       try {
