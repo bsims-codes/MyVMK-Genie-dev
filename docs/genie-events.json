@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-07-04T17:22:56.691Z",
+  "lastUpdated": "2026-07-04T19:58:55.922Z",
   "genieEvents": [
     {
       "id": "genie-1773459367996-ux0v06jq4",
@@ -16,8 +16,8 @@
     {
       "id": "genie-1783185732194-20xmnpnh7",
       "title": "ClubVMK 4th of July Party",
-      "startTime": "2026-07-04T20:00:00.000Z",
-      "durationMinutes": 30,
+      "startTime": "2026-07-04T20:05:00.000Z",
+      "durationMinutes": 10,
       "effects": [
         "fireworks"
       ],
