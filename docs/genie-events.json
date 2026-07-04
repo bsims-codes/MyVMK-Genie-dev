@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-03-14T03:37:11.885Z",
+  "lastUpdated": "2026-07-04T17:22:56.691Z",
   "genieEvents": [
     {
       "id": "genie-1773459367996-ux0v06jq4",
@@ -12,7 +12,31 @@
       "durationMinutes": 18,
       "effect": "fireworks",
       "enabled": true
+    },
+    {
+      "id": "genie-1783185732194-20xmnpnh7",
+      "title": "ClubVMK 4th of July Party",
+      "startTime": "2026-07-04T20:00:00.000Z",
+      "durationMinutes": 30,
+      "effects": [
+        "fireworks"
+      ],
+      "includeTinkerbell": true,
+      "audioUrl": "https://www.youtube.com/playlist?list=PLxFycXVYYhX7SESbFq8orL8wP_r54H_7C",
+      "enabled": true
+    },
+    {
+      "id": "genie-1783185766787-ou4dlq4sl",
+      "title": "4th of July Hannah Montana",
+      "roomId": 72,
+      "roomName": "Sci-Fi Dine-In",
+      "startTime": "2026-07-04T20:30:00.000Z",
+      "durationMinutes": 5,
+      "enabled": true,
+      "unlockTheme": "hannah",
+      "hannahMainShow": true
     }
   ],
-  "communityEvents": []
+  "communityEvents": [],
+  "collectibles": []
 }
